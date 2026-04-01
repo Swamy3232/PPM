@@ -20,6 +20,7 @@ from routes.groups import router as groups_router
 from routes.masterproposals import router as master_proposals_router
 from routes.notification import router as notification_router
 from routes.customers import router as customers_router
+from routes.remarksroutes import router as remarks_router
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -50,3 +51,4 @@ app.include_router(groups_router)
 app.include_router(master_proposals_router)
 app.include_router(notification_router)
 app.include_router(customers_router)
+app.include_router(remarks_router)

@@ -43,6 +43,7 @@ async def create_document(
     project_id: Optional[int] = Form(None),
     stage_id: Optional[int] = Form(None),
     uploaded_by: Optional[str] = Form(None),
+    version: Optional[str] = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
@@ -61,6 +62,7 @@ async def create_document(
         stage_id=stage_id,
         uploaded_by=uploaded_by,
         url=url,
+        version=version,
     )
     db.add(document)
     db.commit()
@@ -96,6 +98,7 @@ async def create_document(
         project_id=document.project_id,
         stage_id=document.stage_id,
         uploaded_by=document.uploaded_by,
+        version=document.version,
         created_at=document.created_at,
         updated_at=document.updated_at,
     )
@@ -121,6 +124,7 @@ def list_documents(db: Session = Depends(get_db)) -> List[DocumentResponse]:
                 project_id=doc.project_id,
                 stage_id=doc.stage_id,
                 uploaded_by=doc.uploaded_by,
+                version=doc.version,
                 created_at=doc.created_at,
                 updated_at=doc.updated_at,
                 closure_report=closure_report,
@@ -148,6 +152,7 @@ def get_document(document_id: int, db: Session = Depends(get_db)) -> DocumentRes
         project_id=doc.project_id,
         stage_id=doc.stage_id,
         uploaded_by=doc.uploaded_by,
+        version=doc.version,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         closure_report=closure_report,
@@ -162,6 +167,7 @@ async def update_document(
     project_id: Optional[int] = Form(None),
     stage_id: Optional[int] = Form(None),
     uploaded_by: Optional[str] = Form(None),
+    version: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
@@ -177,6 +183,7 @@ async def update_document(
     if project_id: doc.project_id = project_id
     if stage_id: doc.stage_id = stage_id
     if uploaded_by: doc.uploaded_by = uploaded_by
+    if version: doc.version = version
 
     if file:
         old_name = extract_object_name_from_url(doc.url)
@@ -207,6 +214,7 @@ async def update_document(
         project_id=doc.project_id,
         stage_id=doc.stage_id,
         uploaded_by=doc.uploaded_by,
+        version=doc.version,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         closure_report=closure_report,

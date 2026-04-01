@@ -248,6 +248,49 @@ def list_proposals(db: Session = Depends(get_db)) -> List[ProposalResponse]:
     return db.query(Proposal).filter(Proposal.is_acknowledged == None).order_by(desc(Proposal.id)).all()
 
 
+@router.get("/unacknowledged")
+def list_unacknowledged_proposals(
+    db: Session = Depends(get_db),
+    date_field: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> List[ProposalResponse]:
+
+    query = db.query(Proposal).filter(
+        or_(Proposal.is_acknowledged.is_(None), Proposal.is_acknowledged.is_(False))
+    )
+
+    if date_field and start_date and end_date:
+        column_map = {
+            'enquiry_date': Proposal.enquiry_date,
+            'quote_date': Proposal.quote_date,
+            'revised_negotiated_quote_date': Proposal.revised_negotiated_quote_date,
+            'order_date': Proposal.order_date,
+            'delivery_date': Proposal.delivery_date,
+            'extended_delivery_date': Proposal.extended_delivery_date,
+            'date_of_actual_commencement': Proposal.date_of_actual_commencement,
+            'dispatch_date': Proposal.dispatch_date,
+            'technical_completed_year': Proposal.technical_completed_year,
+            'financial_completed_year': Proposal.financial_completed_year,
+            'details_of_external_internal_review_meeting': Proposal.details_of_external_internal_review_meeting,
+            'created_at': Proposal.created_at,
+            'updated_at': Proposal.updated_at,
+        }
+        if date_field in column_map:
+            column = column_map[date_field]
+            query = query.filter(column >= start_date, column <= end_date)
+
+    proposals = query.order_by(desc(Proposal.id)).all()
+    result = []
+    for proposal in proposals:
+        proposal_data = {k: v for k, v in proposal.__dict__.items() if not k.startswith("_")}
+        payments = db.query(Payment).filter(Payment.project_id == proposal.id).all()
+        payments_data = [{k: v for k, v in p.__dict__.items() if not k.startswith("_")} for p in payments]
+        proposal_data["payments"] = payments_data
+        result.append(proposal_data)
+    return result
+
+
 @router.get("/payments")
 def get_proposals_with_payments(db: Session = Depends(get_db)):
     """
@@ -406,10 +449,7 @@ def get_proposals_by_name(
         proposals_query = (
             db.query(Proposal)
             .filter(
-                or_(
-                    func.lower(Proposal.quotation_given_by_name) == name_lower,
-                    func.lower(Proposal.project_co_ordinator).contains(name_lower),
-                ),
+                func.lower(Proposal.project_co_ordinator).contains(name_lower),
                 Proposal.is_acknowledged == True,
             )
             .distinct(Proposal.id)
@@ -739,11 +779,13 @@ def get_proposal_stats_by_scientist(name: str, db: Session = Depends(get_db)):
     Returns counts for: totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, ongoingProjects
     """
     from models.user_model import User
+    import re
     
-    name_lower = name.strip().lower()
+    # Clean up the name: remove extra spaces and normalize
+    name_clean = re.sub(r'\s+', ' ', name.strip()).lower()
     
     # Check if user exists and is a scientist
-    user = db.query(User).filter(func.lower(User.name) == name_lower).first()
+    user = db.query(User).filter(func.lower(User.name) == name_clean).first()
     if not user:
         raise HTTPException(status_code=404, detail=f"User '{name}' not found")
     
@@ -752,10 +794,7 @@ def get_proposal_stats_by_scientist(name: str, db: Session = Depends(get_db)):
     
     # Base filter: project_co_ordinator contains scientist name AND acknowledged
     base_filter = and_(
-        or_(
-            func.lower(Proposal.quotation_given_by_name) == name_lower,
-            func.lower(Proposal.project_co_ordinator).contains(name_lower),
-        ),
+        func.lower(Proposal.project_co_ordinator).contains(name_clean),
         Proposal.is_acknowledged == True
     )
     
@@ -993,6 +1032,11 @@ def coordinator_update(payload: CoordinatorUpdate, db: Session = Depends(get_db)
 
     # ⭐ NEW FIELD HERE
     proposal.updated_by = payload.updated_by
+
+    # Update proposal status when provided by coordinator/GH edit modal.
+    # This endpoint previously ignored `proposal_status`, so GH edits didn't persist.
+    if payload.proposal_status is not None:
+        proposal.proposal_status = payload.proposal_status
 
     if payload.technical_completed_year:
         proposal.technical_completed_year = payload.technical_completed_year

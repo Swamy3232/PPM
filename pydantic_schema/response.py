@@ -22,6 +22,7 @@ class ProposalResponse(BaseModel):
     quote_description: Optional[str] = None
     quote_date: Optional[str] = None
     quote_amount: Optional[str] = None
+    proposal_status: Optional[str] = None
 
     revised_negotiated: Optional[str] = Field(
         default=None, alias="revised/negotiated"
@@ -121,6 +122,7 @@ class DocumentResponse(BaseModel):
     project_id: Optional[int] = None
     stage_id: Optional[int] = None
     uploaded_by: Optional[str] = None
+    version: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -23,6 +23,7 @@ class Proposal(Base):
     quote_description = Column(String, nullable=True)
     quote_date = Column(String, nullable=True)
     quote_amount = Column(String, nullable=True)
+    proposal_status = Column(String, nullable=True)
 
     revised_negotiated = Column("revised/negotiated", String, nullable=True)
     revised_negotiated_quote_date = Column("revised/negotiated_quote_date", String, nullable=True)
@@ -63,7 +64,20 @@ class Proposal(Base):
     documents = relationship("Document", back_populates="proposal", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="proposal", cascade="all, delete-orphan")
     progress_entries = relationship("Progress", back_populates="proposal", cascade="all, delete-orphan")
+class Remarks(Base):
+    __tablename__ = "remarks"  
 
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    
+    from_ = Column("from_", String, nullable=True)
+    to = Column(String, nullable=True)
+
+    updated_at = Column(DateTime(timezone=False), nullable=True)
+
+    project_id = Column(Integer, nullable=True)
+    remarks_description = Column(String, nullable=True)
+    respond_to_remarks = Column(String, nullable=True)
 
 # -------------------------------------------------
 # STAGE TABLE
@@ -89,6 +103,7 @@ class Document(Base):
     name = Column(String, nullable=True)
     description = Column(String, nullable=True)
     url = Column(String, nullable=True)
+    version = Column(String, nullable=True)
 
     project_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"))
     stage_id = Column(Integer, ForeignKey("stages.id", ondelete="SET NULL"))

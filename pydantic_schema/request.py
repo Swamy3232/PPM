@@ -20,6 +20,7 @@ class ProposalBase(BaseModel):
     quote_description: Optional[str] = None
     quote_date: Optional[str] = None
     quote_amount: Optional[str] = None
+    proposal_status: Optional[str] = None
 
     revised_negotiated: Optional[str] = Field(
         default=None, alias="revised/negotiated"
@@ -76,6 +77,7 @@ class CoordinatorUpdate(BaseModel):
     project_id: int
     co_ordinator_remarks: str
     extended_delivery_date: str
+    proposal_status: Optional[str] = None
     technical_completed_year: Optional[str] = None
     updated_by: Optional[str] = None
 

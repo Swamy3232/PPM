@@ -7,4 +7,6 @@ minio
 psycopg2-binary
 uvicorn[standard]
 python-multipart
+apscheduler
+alembic
 
