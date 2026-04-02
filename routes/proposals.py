@@ -114,6 +114,15 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
 
     data["is_acknowledged"] = True
 
+    # Check if project_number already exists
+    if data.get("project_number"):
+        existing_proposal = db.query(Proposal).filter(Proposal.project_number == data["project_number"]).first()
+        if existing_proposal:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Project Number '{data['project_number']}' already exists. Please use a unique project number."
+            )
+
     if getattr(payload, "revised_negotiated", None) is not None:
         data["revised_negotiated"] = payload.revised_negotiated
     if getattr(payload, "revised_negotiated_quote_date", None) is not None:
@@ -452,6 +461,14 @@ def get_proposals_by_name(
                 func.lower(Proposal.project_co_ordinator).contains(name_lower),
                 Proposal.is_acknowledged == True,
             )
+            .distinct(Proposal.id)
+            .all()
+        )
+    elif effective_role == 'director':
+        # Director can see all proposals
+        proposals_query = (
+            db.query(Proposal)
+            .filter(Proposal.is_acknowledged == True)
             .distinct(Proposal.id)
             .all()
         )
@@ -1243,6 +1260,12 @@ def bulk_create_proposals(
             
         # Set acknowledged flag for bulk imports
         data["is_acknowledged"] = True
+        
+        # Check if project_number already exists
+        if data.get("project_number"):
+            existing_proposal = db.query(Proposal).filter(Proposal.project_number == data["project_number"]).first()
+            if existing_proposal:
+                continue  # Skip this row if project number already exists
         
         proposal = Proposal(**data)
         db.add(proposal)
