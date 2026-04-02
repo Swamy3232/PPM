@@ -33,6 +33,8 @@ function Sidebar() {
       ? 'projects'
       : section === 'analytics'
       ? 'analytics'
+      // : section === 'financial-analytics'
+      // ? 'financial-analytics'
       : section === 'master-proposals'
       ? 'master-proposals'
       : section === 'notification'
@@ -66,6 +68,8 @@ function Sidebar() {
 
   const [notificationCount, setNotificationCount] = useState(0);
   const [selectedRole, setSelectedRole] = useState('');
+  const isDirector = basePath === 'director'
+  const isCH = basePath === 'ch'
 
   useEffect(() => {
     // Treat Scientist as same as GH
@@ -178,12 +182,14 @@ function Sidebar() {
             if (info.key === 'configuration') navigate(`${prefix}/configuration`)
             else if (info.key === 'projects') navigate(`${prefix}/projects`)
             else if (info.key === 'analytics') navigate(`${prefix}/analytics`)
+            // else if (info.key === 'financial-analytics') navigate(`${prefix}/financial-analytics`)
             else if (info.key === 'master-proposals') navigate(`${prefix}/master-proposals`)
             else if (info.key === 'gh-master-proposals') navigate(`${prefix}/gh-master-proposals`)
             else if (info.key === 'notification') navigate(`${prefix}/notification`)
             else if (info.key === 'gh-notification') navigate(`${prefix}/gh-notification`)
             else if (info.key === 'access-control') navigate(`${prefix}/access-control`)
             else if (info.key === 'customers') navigate(`${prefix}/customers`)
+            
             else navigate(`${prefix}/proposals`)
           }}
           items={[
@@ -238,11 +244,17 @@ function Sidebar() {
                 ]
               : []),
 
-            ...(normalizedBasePath === 'admin' ? [{
+            ...((normalizedBasePath === 'admin' || isDirector || isCH) ? [{
                     key: 'analytics',
                     icon: <BarChartOutlined />,
-                    label: 'Analytics'
+                    label: isCH ? 'CH Analytics' : isDirector ? 'Project Analytics' : 'Analytics',
             }] : []),
+
+            // ...(isDirector ? [{
+            //         key: 'financial-analytics',
+            //         icon: <BarChartOutlined />,
+            //         label: 'Financial Analytics',
+            // }] : []),
 
             ...(normalizedBasePath === 'admin'
               ? [

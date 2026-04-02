@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  DeleteOutlined,
-  EditOutlined,
   EyeOutlined,
-  PlusOutlined,
   SearchOutlined,
   DownloadOutlined,
   FilterOutlined,
   CalendarOutlined,
-  MessageOutlined,
-  UploadOutlined,
 } from '@ant-design/icons'
 import {
   AutoComplete,
@@ -19,7 +14,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Space,
   Spin,
   Table,
@@ -150,6 +144,13 @@ const uniqueKey = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2)
 
+const normalizeValue = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .normalize('NFKC')
+    .toLowerCase()
+
 const mapApiToUi = (record) => {
   const mapped = {}
   TABLE_FIELDS.forEach((field) => {
@@ -171,15 +172,7 @@ const mapUiToApi = (values) => {
   return payload
 }
 
-const ActionButtons = ({ label, onAdd }) => (
-  <Space wrap>
-    <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
-      Add {label}
-    </Button>
-  </Space>
-)
-
-function Proposals() {
+function DirectorProposals() {
   const [form] = Form.useForm()
   const [tableData, setTableData] = useState([])
   const [filteredData, setFilteredData] = useState([])
@@ -198,6 +191,7 @@ function Proposals() {
   const [statusFilter, setStatusFilter] = useState(null)
   const [projectNumberFilter, setProjectNumberFilter] = useState([])
   const [groupFilter, setGroupFilter] = useState([])
+  const [projectCoordinatorFilter, setProjectCoordinatorFilter] = useState([])
   const [isAcknowledgedFilter, setIsAcknowledgedFilter] = useState(null)
   const [selectedDateField, setSelectedDateField] = useState('enquiry_date')
   const [dateRange, setDateRange] = useState(null)
@@ -1084,9 +1078,24 @@ function Proposals() {
     }
 
     if (groupFilter && groupFilter.length > 0) {
-      filtered = filtered.filter((item) =>
-        item.group && groupFilter.includes(item.group),
-      )
+      filtered = filtered.filter((item) => {
+        const groupValue = (item.group || '').trim()
+        if (!groupValue) return false
+        return groupFilter.some((filterValue) => {
+          return (
+            filterValue === groupValue ||
+            groupLookup.nameByCode[filterValue] === groupValue ||
+            groupLookup.codeByName[groupValue] === filterValue
+          )
+        })
+      })
+    }
+
+    if (projectCoordinatorFilter && projectCoordinatorFilter.length > 0) {
+      filtered = filtered.filter((item) => {
+        const coordinator = normalizeValue(item.project_co_ordinator)
+        return projectCoordinatorFilter.some((filterValue) => coordinator === normalizeValue(filterValue))
+      })
     }
 
     if (centreFilter && centreFilter.length > 0) {
@@ -1113,6 +1122,13 @@ function Proposals() {
           item.financial_completed_year &&
           item.financial_completed_year.trim() !== '',
       )
+    } else if (statusFilter === 'financiallyNotCompleted') {
+      filtered = filtered.filter(
+        (item) =>
+          item.technical_completed_year &&
+          item.technical_completed_year.trim() !== '' &&
+          (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
+      )
     } else if (statusFilter === 'pendingProjects') {
       filtered = filtered.filter(
         (item) =>
@@ -1130,7 +1146,7 @@ function Proposals() {
     }
 
     setFilteredData(filtered)
-  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, tableData, selectedDateField, dateRange])
+  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, groupFilter, projectCoordinatorFilter, isAcknowledgedFilter, tableData, selectedDateField, dateRange])
 
   // Get unique centers for filter
   const uniqueCentres = useMemo(() => {
@@ -1149,14 +1165,40 @@ function Proposals() {
     [centres],
   )
 
+  const projectCoordinatorOptions = useMemo(() => {
+    const seen = new Map()
+    tableData
+      .map((item) => (item.project_co_ordinator || '').trim())
+      .filter(Boolean)
+      .forEach((name) => {
+        const normalized = normalizeValue(name)
+        if (!seen.has(normalized)) {
+          seen.set(normalized, name)
+        }
+      })
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [tableData])
+
   const departmentOptions = useMemo(
     () =>
       groups
-        .map((g) => (g.name || '').trim())
-        .filter((name) => name)
+        .map((g) => (g.code || '').trim())
+        .filter((code) => code)
         .sort(),
     [groups],
   )
+
+  const groupLookup = useMemo(() => {
+    const codeByName = {}
+    const nameByCode = {}
+    groups.forEach((g) => {
+      const code = (g.code || '').trim()
+      const name = (g.name || '').trim()
+      if (code) nameByCode[code] = code
+      if (name) codeByName[name] = code
+    })
+    return { codeByName, nameByCode }
+  }, [groups])
 
   const filteredGroups = useMemo(
     () =>
@@ -1412,390 +1454,102 @@ function Proposals() {
   }
 
   const columns = useMemo(() => {
-    const dateFields = new Set([
-      'enquiry_date',
-      'quote_date',
-      'revised_negotiated_quote_date',
-      'order_date',
-      'delivery_date',
-      'extended_delivery_date',
-      'date_of_actual_commencement',
-      'dispatch_date',
-      'created_at',
-      'updated_at',
-      'technical_completed_year',
-      'financial_completed_year',
-    ])
+    return [
+      {
+        key: 'sl_no',
+        title: 'SL NO',
+        width: 90,
+        fixed: 'left',
+        render: (_, __, index) => index + 1,
+      },
+      {
+        key: 'project_number',
+        dataIndex: 'project_number',
+        title: 'Project Number',
+        width: 170,
+        render: (value) => value || '-',
+      },
+      {
+        key: 'activity',
+        dataIndex: 'activity',
+        title: 'Project Name',
+        width: 260,
+        render: (value) => value || '-',
+      },
+      {
+        key: 'customer_name',
+        dataIndex: 'customer_name',
+        title: 'Customer Name',
+        width: 220,
+        render: (value) => value || '-',
+      },
+      {
+        key: 'overdue_days',
+        title: 'Overdue Days',
+        width: 150,
+        render: (_, record) => {
+          const overdueDays = calculateOverdueDays(
+            record.delivery_date,
+            record.extended_delivery_date,
+          )
 
-    const amountFields = new Set([
-      'quote_amount',
-      'revised_negotiated_quote_amount',
-      'order_value',
-    ])
+          if (overdueDays === null) return '-'
 
-    const baseColumns = TABLE_FIELDS.map((field) => {
-      const baseColumn = {
-        key: field.name,
-        dataIndex: field.name,
-        title: field.label,
-        width: field.width,
-        fixed: field.fixed,
-      }
-
-      // Custom render for Status field with styled badges
-      if (field.name === 'status') {
-        return {
-          ...baseColumn,
-          render: (value) => {
-            if (!value) return '-'
-            const statusColors = {
-              'Ongoing': { bg: '#e3f2fd', color: '#1565c0' },
-              'Completed': { bg: '#e8f5e9', color: '#2e7d32' },
-              'Delayed': { bg: '#fff3e0', color: '#e65100' },
-              'On Hold': { bg: '#f3e5f5', color: '#6a1b9a' },
-              'Technically completed': { bg: '#e0f7fa', color: '#00695c' },
-              'Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
-              'Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
-            }
-            const colors = statusColors[value] || { bg: '#f5f5f5', color: '#616161' }
+          if (overdueDays > 0) {
             return (
-              <span style={{
-                padding: '2px 8px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                backgroundColor: colors.bg,
-                color: colors.color,
-                fontWeight: 500,
-              }}>
-                {value}
+              <span style={{ color: '#cf1322', fontWeight: 500 }}>
+                {overdueDays} days overdue
               </span>
             )
           }
-        }
-      }
 
-      // Default render logic for other fields
-      return {
-        ...baseColumn,
-        render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
-      }
-    })
+          if (overdueDays < 0) {
+            return (
+              <span style={{ color: '#389e0d', fontWeight: 500 }}>
+                {Math.abs(overdueDays)} days remaining
+              </span>
+            )
+          }
 
-    // Find index of extended_delivery_date and insert overdue_days after it
-    const extendedDeliveryIndex = baseColumns.findIndex(
-      (col) => col.key === 'extended_delivery_date',
-    )
-
-    const overdueDaysColumn = {
-      key: 'overdue_days',
-      dataIndex: 'overdue_days',
-      title: 'Overdue Days',
-      width: 150,
-      render: (_, record) => {
-        const overdueDays = calculateOverdueDays(
-          record.delivery_date,
-          record.extended_delivery_date,
-        )
-
-        if (overdueDays === null) return '-'
-
-        if (overdueDays > 0) {
-          return (
-            <span style={{ color: '#cf1322', fontWeight: 500 }}>
-              {overdueDays} days overdue
-            </span>
-          )
-        } else if (overdueDays < 0) {
-          return (
-            <span style={{ color: '#389e0d', fontWeight: 500 }}>
-              {Math.abs(overdueDays)} days remaining
-            </span>
-          )
-        } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
               Due Today
             </span>
           )
-        }
+        },
       },
-    }
-
-    // Insert overdue_days column after extended_delivery_date
-    if (extendedDeliveryIndex !== -1) {
-      baseColumns.splice(extendedDeliveryIndex + 1, 0, overdueDaysColumn)
-    }
-
-    // Calculate max payments across all proposals for dynamic columns
-    // Use 1 as minimum to always show at least Invoice 1 columns
-    const maxPayments = Math.max(...tableData.map(p => p.payments?.length || 0), 1)
-
-    // Payment sub-columns configuration (same as table columns)
-    const paymentFields = [
-      { key: 'invoice_no', label: 'Inv#' },
-      { key: 'invoice_date', label: 'Inv Date' },
-      { key: 'gross_amount', label: 'Gross' },
-      { key: 'get_amount', label: 'GST Amt' },
-      { key: 'amount_claimed', label: 'Amt Claimed' },
-      { key: 'amount_recieved', label: 'Amt Recd' },
-      { key: 'recieved_date', label: 'Recd Date' },
-      { key: 'tds', label: 'TDS' },
-      { key: 'get_tds', label: 'GST TDS' },
-      { key: 'ld', label: 'LD' },
-      { key: 'bal', label: 'Balance' },
-      { key: 'follow_up_status', label: 'Status' },
-    ]
-
-    // Generate payment columns after ppm_remarks
-    const paymentColumns = []
-    for (let i = 0; i < maxPayments; i++) {
-      paymentFields.forEach((field) => {
-        paymentColumns.push({
-          key: `inv${i + 1}_${field.key}`,
-          dataIndex: 'payments',
-          title: `Inv ${i + 1} ${field.label}`,
-          width: field.width,
-          render: (_, record) => record.payments?.[i]?.[field.key] || '-',
-        })
-      })
-    }
-
-    // Find index of ppm_remarks and insert payment columns after it
-    const ppmRemarksIndex = baseColumns.findIndex(
-      (col) => col.key === 'ppm_remarks',
-    )
-    if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
-      baseColumns.splice(ppmRemarksIndex + 1, 0, ...paymentColumns)
-    }
-
-    // Add Total Invoice Amount Received column after payment columns
-    const totalInvAmtRecdColumn = {
-      key: 'total_inv_amt_recd',
-      title: 'Total Inv Amt Recd',
-      width: 150,
-      render: (_, record) => {
-        if (!record.payments || record.payments.length === 0) {
-          return <span style={{ color: '#999' }}>0</span>
-        }
-        
-        const total = record.payments.reduce((sum, payment) => {
-          const amount = parseFloat(payment.amount_recieved) || 0
-          return sum + amount
-        }, 0)
-        
-        return (
-          <span style={{ 
-            fontWeight: 600, 
-            color: total > 0 ? '#52c41a' : '#999' 
-          }}>
-            {formatIndianNumber(total)}
-          </span>
-        )
-      },
-    }
-    
-    // Insert total column after payment columns
-    if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
-      const insertIndex = ppmRemarksIndex + 1 + paymentColumns.length
-      baseColumns.splice(insertIndex, 0, totalInvAmtRecdColumn)
-    } else {
-      baseColumns.push(totalInvAmtRecdColumn)
-    }
-
-    // Add Enquiry Documents column before Actions
-    const enquiryDocumentsColumn = {
-      key: 'enquiry_documents',
-      title: 'Enquiry Documents',
-      width: 130,
-      render: (_, record) => {
-        const count = record._docCount
-        if (count === undefined) return <span style={{ color: '#999' }}>-</span>
-        if (count > 0) {
-          return (
-            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDocsModal(record.id)}>
-              View ({count})
-            </Button>
-          )
-        }
-        return <span style={{ color: '#999' }}>No documents</span>
-      },
-    }
-    baseColumns.push(enquiryDocumentsColumn)
-
-    return [
-      ...baseColumns,
       {
-        key: 'actions',
-        title: 'Actions',
+        key: 'dispatch_date',
+        dataIndex: 'dispatch_date',
+        title: 'Dispatch Date',
+        width: 150,
+        render: (value) => formatDate(value),
+      },
+      {
+        key: 'project_co_ordinator',
+        dataIndex: 'project_co_ordinator',
+        title: 'Project Co-ordinator',
+        width: 220,
+        render: (value) => value || '-',
+      },
+      {
+        key: 'more',
+        title: 'More',
         fixed: 'right',
-        width: 170,
+        width: 110,
         render: (_, record) => (
-          <Space size="small">
-            <Button
-              size="small"
-              type="link"
-              icon={<EyeOutlined />}
-              onClick={() => openDetailModal(record)}
-            />
-            <Button
-              size="small"
-              type="link"
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
-            />
-            <Popconfirm
-              title="Confirm delete"
-              description="This action cannot be undone."
-              okText="Delete"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              cancelText="Cancel"
-              onConfirm={() => handleDelete(record)}
-            >
-              <Button
-                size="small"
-                type="link"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
-              />
-            </Popconfirm>
-            {record.queries && record.queries.length > 0 && (
-              <Button
-                size="small"
-                type="link"
-                icon={<MessageOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  openQueriesModal(record)
-                }}
-                style={{
-                  color: record.queries?.some(query => 
-                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                  ) ? '#ff4d4f' : '#1890ff',
-                  fontWeight: record.queries?.some(query => 
-                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                  ) ? 'bold' : 'normal'
-                }}
-              >
-                Queries
-              </Button>
-            )}
-          </Space>
+          <Button
+            size="small"
+            type="link"
+            icon={<EyeOutlined />}
+            onClick={() => openDetailModal(record)}
+          >
+            More
+          </Button>
         ),
       },
-      {
-        title: 'Latest Response',
-        dataIndex: 'latest_response',
-        key: 'latest_response',
-        width: 200,
-        render: (_, record) => {
-          // Show all queries for this project
-          const allQueries = record.queries || []
-          
-          if (allQueries.length === 0) {
-            // Don't show anything when no queries for this project
-            return null
-          }
-          
-          // Find queries with responses
-          const respondedQueries = allQueries.filter(q => q.respond_to_remarks)
-          const pendingQueries = allQueries.filter(q => !q.respond_to_remarks)
-          
-          // Always show Query History button when there are queries
-          return (
-            <div>
-              <div style={{ marginBottom: '8px' }}>
-                {pendingQueries.length > 0 && (
-                  <div style={{ 
-                    color: '#ff4d4f', 
-                    fontWeight: 'bold',
-                    backgroundColor: '#fff2f0',
-                    padding: '4px',
-                    borderRadius: '4px',
-                    border: '1px solid #ffccc7'
-                  }}>
-                    <div>{pendingQueries[0].remarks_description}</div>
-                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-                      From: {pendingQueries[0].from_} | {dayjs(pendingQueries[0].updated_at).format('DD-MM-YYYY HH:mm')}
-                    </div>
-                  </div>
-                )}
-                
-                {respondedQueries.length > 0 && (
-                  <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
-                    <div>{respondedQueries[0].respond_to_remarks}</div>
-                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-                      From: {respondedQueries[0].from_} | {dayjs(respondedQueries[0].updated_at).format('DD-MM-YYYY HH:mm')}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div style={{ marginTop: '8px' }}>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openQueriesModal(record)
-                  }}
-                >
-                  Query History ({allQueries.length})
-                </Button>
-              </div>
-            </div>
-          )
-          
-          // Show latest response if no pending queries
-          const latestResponse = respondedQueries.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]
-          const responseDate = dayjs(latestResponse.updated_at)
-          const today = dayjs().startOf('day')
-          const yesterday = dayjs().subtract(1, 'day').startOf('day')
-          let dateLabel = responseDate.format('DD-MM-YYYY')
-          
-          if (responseDate.isSame(today, 'day')) {
-            dateLabel = 'Today ' + responseDate.format('HH:mm')
-          } else if (responseDate.isSame(yesterday, 'day')) {
-            dateLabel = 'Yesterday ' + responseDate.format('HH:mm')
-          }
-          
-          return (
-            <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
-              <div>{latestResponse.respond_to_remarks}</div>
-              <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-                From: {latestResponse.from_} | {dateLabel}
-              </div>
-            </div>
-          )
-        },
-      },
-      {
-        title: 'Action',
-        key: 'action',
-        width: 80,
-        render: (_, record) => {
-          // Find pending admin queries
-          const pendingAdminQueries = record.queries?.filter(q => 
-            String(q.to) === 'admin' && !q.respond_to_remarks
-          ) || []
-          
-          // Only show Respond button if there are pending admin queries
-          if (pendingAdminQueries.length === 0) {
-            return null
-          }
-          
-          return (
-            <Button
-              size="small"
-              type="primary"
-              onClick={() => openResponseModal(pendingAdminQueries[0])}
-            >
-              Respond
-            </Button>
-          )
-        },
-      },
     ]
-  }, [deletingId, handleDelete, openEditModal, openDetailModal, openDocsModal, openQueriesModal, tableData])
+  }, [openDetailModal])
 
   // Compact projects view derived from proposals (currently unused, but kept)
   const projectRows = useMemo(
@@ -1884,6 +1638,13 @@ function Proposals() {
         item.financial_completed_year.trim() !== '',
     ).length
 
+    const financiallyNotCompleted = tableData.filter(
+      (item) =>
+        item.technical_completed_year &&
+        item.technical_completed_year.trim() !== '' &&
+        (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
+    ).length
+
     const pendingProjects = tableData.filter(
       (item) => item.status === 'Ongoing',
     ).length
@@ -1905,10 +1666,12 @@ function Proposals() {
     })
 
     return {
+      allCount: totalProposals + totalProjects,
       totalProposals,
       totalProjects,
       technicallyCompleted,
       financiallyCompleted,
+      financiallyNotCompleted,
       pendingProjects,
       projectCodeBreakdown,
     }
@@ -1926,15 +1689,36 @@ function Proposals() {
               children: (
                 <div className="space-y-6">
                   {/* Statistics Cards */}
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+<div className="grid grid-cols-1 gap-4 md:grid-cols-6">
                     <Card
-                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('proposals')}
+                      className="bg-gradient-to-br from-slate-500 to-slate-700 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter(null)}
                     >
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Total Proposals
+                            All
+                          </span>
+                        }
+                        value={statistics.allCount}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => {
+                        setStatusFilter('proposals')
+                        setProjectNumberFilter([])
+                      }}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Proposed Projects
                           </span>
                         }
                         value={statistics.totalProposals}
@@ -1986,6 +1770,24 @@ function Proposals() {
                           </span>
                         }
                         value={statistics.technicallyCompleted}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter('financiallyNotCompleted')}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Financially Not Completed
+                          </span>
+                        }
+                        value={statistics.financiallyNotCompleted}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -2059,6 +1861,7 @@ function Proposals() {
                             setStatusFilter(null)
                             setProjectNumberFilter([])
                             setGroupFilter([])
+                            setProjectCoordinatorFilter([])
                             setIsAcknowledgedFilter(null)
                             setSelectedDateField('enquiry_date')
                             setDateRange(null)
@@ -2099,6 +1902,40 @@ function Proposals() {
                           {uniqueCentres.map((center) => (
                             <Select.Option key={center} value={center}>
                               {center}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <Select
+                          mode="multiple"
+                          placeholder="Filter by Group"
+                          value={groupFilter}
+                          onChange={setGroupFilter}
+                          size="large"
+                          allowClear
+                          style={{ width: '100%' }}
+                        >
+                          {departmentOptions.map((name) => (
+                            <Select.Option key={name} value={name}>
+                              {name}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <Select
+                          mode="multiple"
+                          placeholder="Filter by Project Co-ordinator"
+                          value={projectCoordinatorFilter}
+                          onChange={setProjectCoordinatorFilter}
+                          size="large"
+                          allowClear
+                          style={{ width: '100%' }}
+                        >
+                          {(projectCoordinatorOptions || []).map((name) => (
+                            <Select.Option key={name} value={name}>
+                              {name}
                             </Select.Option>
                           ))}
                         </Select>
@@ -2147,108 +1984,26 @@ function Proposals() {
                           </Select>
                         </Form.Item>
                       </Col>
-                      <Col xs={24} sm={12} md={6} className="flex items-end">
-                        <div className="flex gap-2 w-full">
+                      <Col xs={24}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                           <Button
                             type="primary"
                             icon={<DownloadOutlined />}
-                            size="default"
+                            size="small"
                             onClick={handleExportExcel}
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg flex-1"
+                            style={{
+                              background: 'linear-gradient(to right, #10b981, #059669)',
+                              border: 'none',
+                              boxShadow: '0 2px 12px rgba(16, 185, 129, 0.25)',
+                            }}
                           >
                             Export to Excel
                           </Button>
-                          <Button
-                            type="default"
-                            icon={<UploadOutlined />}
-                            size="default"
-                            onClick={() => document.getElementById('excel-import-input').click()}
-                            className="flex-1"
-                          >
-                            Import Excel
-                          </Button>
-                          <input
-                            id="excel-import-input"
-                            type="file"
-                            accept=".xlsx,.xls"
-                            onChange={handleImportFileChange}
-                            style={{ display: 'none' }}
-                          />
                         </div>
                       </Col>
                     </Row>
                   </div>
 
-                  {importPreview && (
-                    <Modal
-                      title={
-                        importPreview
-                          ? `Import Preview – ${importPreview.rows.length} rows (${importPreview.sheetName})`
-                          : 'Import Preview'
-                      }
-                      open={importModalOpen}
-                      onCancel={() => {
-                        setImportModalOpen(false)
-                        setImportPreview(null)
-                      }}
-                      width={1100}
-                      footer={[
-                        <Button
-                          key="cancel"
-                          onClick={() => {
-                            setImportModalOpen(false)
-                            setImportPreview(null)
-                          }}
-                        >
-                          Cancel
-                        </Button>,
-                        <Button
-                          key="submit"
-                          type="primary"
-                          loading={bulkImportLoading}
-                          onClick={handleBulkImport}
-                        >
-                          Submit Import ({importPreview.rows.length} rows)
-                        </Button>,
-                      ]}
-                    >
-                      <div className="overflow-auto max-h-[60vh]">
-                        <table className="min-w-full border-collapse text-sm">
-                          <thead>
-                            <tr>
-                              {importPreview.headers.map((h, idx) => (
-                                <th
-                                  key={idx}
-                                  className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold"
-                                >
-                                  {h || `Column ${idx + 1}`}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {importPreview.rows.slice(0, 200).map((row, rIdx) => (
-                              <tr key={rIdx}>
-                                {importPreview.headers.map((_, cIdx) => (
-                                  <td
-                                    key={cIdx}
-                                    className="border border-slate-200 px-2 py-1"
-                                  >
-                                    {row[cIdx] ?? ''}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {importPreview.rows.length > 200 && (
-                          <p className="mt-2 text-xs text-slate-500">
-                            Showing first 200 rows of {importPreview.rows.length}.
-                          </p>
-                        )}
-                      </div>
-                    </Modal>
-                  )}
 
                   <Modal
                     title="Proposal Details"
@@ -2649,39 +2404,6 @@ function Proposals() {
                           Proposals / Projects
                         </p>
                         <div className="flex items-center gap-4 mb-4">
-                          <ActionButtons label="Proposal / Project" onAdd={openAddModal} />
-                          <Space size="middle">
-                            <Button
-                              type="default"
-                              onClick={() => {
-                                // Filter projects with pending admin queries
-                                const projectsWithPendingQueries = tableData.filter(record => {
-                                  const adminQueries = record.queries?.filter(q => 
-                                    String(q.to) === 'admin' && !q.respond_to_remarks
-                                  ) || []
-                                  return adminQueries.length > 0
-                                })
-                                setFilteredData(projectsWithPendingQueries)
-                                message.info(`Showing ${projectsWithPendingQueries.length} projects with pending queries`)
-                              }}
-                            >
-                              Pending Queries ({tableData.filter(record => {
-                                const adminQueries = record.queries?.filter(q => 
-                                  String(q.to) === 'admin' && !q.respond_to_remarks
-                                ) || []
-                                return adminQueries.length > 0
-                              }).length})
-                            </Button>
-                            <Button
-                              type="default"
-                              onClick={() => {
-                                setFilteredData(tableData)
-                                message.info('Showing all projects')
-                              }}
-                            >
-                              All Projects
-                            </Button>
-                          </Space>
                         </div>
                       </div>
                     </div>
@@ -2691,7 +2413,12 @@ function Proposals() {
                       columns={columns}
                       dataSource={filteredData}
                       loading={tableLoading}
-                      pagination={{ pageSize: 10 }}
+                      pagination={{
+                        defaultPageSize: 10,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50', '100'],
+                        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+                      }}
                       scroll={{ x: 'max-content' }}
                       sticky
                       bordered
@@ -3589,4 +3316,4 @@ function Proposals() {
   )
 }
 
-export default Proposals
+export default DirectorProposals

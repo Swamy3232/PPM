@@ -13,6 +13,11 @@ import Login from './pages/Login'
 import CreateLogin from './pages/CreateLogin'
 import Sidebar from './components/Sidebar'
 import ScientistProposals from './pages/ScientistProposals'
+import DirectorProposals from './pages/Directorproposals'
+import DirectorAnalytics from './pages/directoranalytics'
+import FinancialAnalytics from './pages/financialanalytics'
+import Centerheadanalytics from './pages/chprojectanalytics'
+
 
 import './App.css'
 import AdminNotification from './pages/AdminNotification'
@@ -54,11 +59,13 @@ function RoleProtectedLayout({ basePath }) {
   }
 
   const user = getStoredUser()
-  const userRole = (user?.role || '').toLowerCase()
+ const userRole = (user?.role || '').toLowerCase().trim()
 
-  // Normalize role: only allow 'admin', 'gh', 'ch', 'scientist' — default to 'gh' if unknown
-  const normalizedRole = ['admin', 'gh', 'ch', 'scientist'].includes(userRole) ? userRole : 'gh'
-
+  // Normalize role: only allow 'admin', 'gh', 'ch', 'scientist', 'director' — default to 'gh' if unknown
+  const normalizedRole =
+  ['admin', 'gh', 'ch', 'scientist', 'director'].includes(userRole)
+    ? userRole
+    : 'gh'
   // If user is trying to access a base path that doesn't match their role → redirect
   if (normalizedRole !== basePath) {
     return <Navigate to={`/${normalizedRole}/proposals`} replace />
@@ -69,6 +76,7 @@ function RoleProtectedLayout({ basePath }) {
   // Select correct page components based on role
   let ProposalsComponent = GHProposals
   let ProjectsComponent = GHProjects
+  let AnalyticsComponent = Analytics
 
   if (normalizedRole === 'admin') {
     ProposalsComponent = Proposals
@@ -76,10 +84,15 @@ function RoleProtectedLayout({ basePath }) {
   } else if (normalizedRole === 'ch') {
     ProposalsComponent = CHProposals
     ProjectsComponent = CHProjects
+    AnalyticsComponent = Centerheadanalytics
   } else if (normalizedRole === 'scientist') {
     // Scientist now has its own dedicated component
     ProposalsComponent = ScientistProposals
     ProjectsComponent = GHProjects
+  } else if (normalizedRole === 'director') {
+    ProposalsComponent = DirectorProposals
+    ProjectsComponent = Projects
+    AnalyticsComponent = DirectorAnalytics
   }
   // 'gh' already set as default above
 
@@ -99,7 +112,10 @@ function RoleProtectedLayout({ basePath }) {
             {isAdmin && (
               <Route path="master-proposals" element={<MasterProposals />} />
             )}
-            <Route path="analytics" element={<Analytics />} />
+            <Route path="analytics" element={<AnalyticsComponent />} />
+            {normalizedRole === 'director' && (
+              <Route path="financial-analytics" element={<FinancialAnalytics />} />
+            )}
             <Route path="projects" element={<ProjectsComponent />} />
 
             <Route path='gh-master-proposals' element={<GhMasterProposals/>}/>
@@ -138,6 +154,7 @@ function App() {
           <Route path="/gh/*" element={<RoleProtectedLayout basePath="gh" />} />
           <Route path="/ch/*" element={<RoleProtectedLayout basePath="ch" />} />
           <Route path="/scientist/*" element={<RoleProtectedLayout basePath="scientist" />} />
+          <Route path="/director/*" element={<RoleProtectedLayout basePath="director" />} />
 
           {/* Fallback: any unknown route → login */}
           <Route path="*" element={<Navigate to="/" replace />} />

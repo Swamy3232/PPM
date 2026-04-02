@@ -1471,6 +1471,12 @@ function ScientistProposals() {
         item.financial_completed_year &&
         item.financial_completed_year.trim() !== '',
     ).length
+    const financiallyNotCompleted = tableData.filter(
+      (item) =>
+        item.technical_completed_year &&
+        item.technical_completed_year.trim() !== '' &&
+        (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
+    ).length
     const pendingProjects = tableData.filter(
       (item) => item.status === 'Ongoing',
     ).length
@@ -1492,10 +1498,12 @@ function ScientistProposals() {
     })
 
     return {
+      allCount: totalProposals + totalProjects,
       totalProposals,
       totalProjects,
       technicallyCompleted,
       financiallyCompleted,
+      financiallyNotCompleted,
       pendingProjects,
       projectCodeBreakdown,
     }
@@ -1564,6 +1572,15 @@ function ScientistProposals() {
             item.financial_completed_year.trim() !== '',
         )
         console.log('After financiallyCompleted filter:', filtered.length, 'items')
+      } else if (statusFilter === 'financiallyNotCompleted') {
+        // Filter by technical completed but financial not completed
+        filtered = filtered.filter(
+          (item) =>
+            item.technical_completed_year &&
+            item.technical_completed_year.trim() !== '' &&
+            (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
+        )
+        console.log('After financiallyNotCompleted filter:', filtered.length, 'items')
       } else if (statusFilter === 'pendingProjects') {
         // Filter by ongoing status (same as statistics calculation)
         filtered = filtered.filter(
@@ -1932,7 +1949,13 @@ function ScientistProposals() {
               label: 'Proposals',
               children: (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
+                    <Card
+                      className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer"
+                      onClick={() => setStatusFilter(null)}
+                    >
+                      <Statistic title={<span className="text-white/90">All</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    </Card>
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer"
                       onClick={() => setStatusFilter('proposals')}
@@ -1962,6 +1985,12 @@ function ScientistProposals() {
                       onClick={() => setStatusFilter('technicallyCompleted')}
                     >
                       <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white cursor-pointer"
+                      onClick={() => setStatusFilter('financiallyNotCompleted')}
+                    >
+                      <Statistic title={<span className="text-white/90">Financially Not Completed</span>} value={statistics.financiallyNotCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer"
@@ -2209,6 +2238,40 @@ function ScientistProposals() {
                 <Descriptions.Item label="Revised Quote Date">{formatDate(selectedRecord?.revised_negotiated_quote_date) || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Revised Quote Amount">{selectedRecord?.revised_negotiated_quote_amount || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card title="Project Details" size="small" className="bg-green-50">
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="Project Number">{selectedRecord?.project_number || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Party Name">{selectedRecord?.party_name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Activity">{selectedRecord?.activity || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Project Co-ordinator">{selectedRecord?.project_co_ordinator || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Key Deliverables" span={2}>{selectedRecord?.key_deliverables || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card title="Order Information" size="small" className="bg-orange-50">
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="Order Number">{selectedRecord?.order_number || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Order Date">{formatDate(selectedRecord?.order_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Order Value">{selectedRecord?.order_value || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Delivery Date">{formatDate(selectedRecord?.delivery_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Extended Delivery">{formatDate(selectedRecord?.extended_delivery_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Actual Commencement">{formatDate(selectedRecord?.date_of_actual_commencement) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Dispatch Date">{formatDate(selectedRecord?.dispatch_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Technical Completion Year">{selectedRecord?.technical_completed_year || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Financial Completion Year">{selectedRecord?.financial_completed_year || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Status">{selectedRecord?.status || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card title="Meeting & Remarks" size="small" className="bg-purple-50">
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="Review Meeting Details" span={2}>{selectedRecord?.details_of_external_internal_review_meeting || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Co-ordinator Remarks" span={2}>{selectedRecord?.co_ordinator_remarks || '-'}</Descriptions.Item>
+                <Descriptions.Item label="PPM Remarks" span={2}>{selectedRecord?.ppm_remarks || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Closure Report" span={2}>{selectedRecord?.closer_report || '-'}</Descriptions.Item>
               </Descriptions>
             </Card>
 

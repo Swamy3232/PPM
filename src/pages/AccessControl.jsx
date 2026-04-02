@@ -373,6 +373,7 @@ export default function AccessControl() {
                             <Select.Option value="GH">GH</Select.Option>
                             <Select.Option value="CH">CH</Select.Option>
                             <Select.Option value="Scientist">Scientist</Select.Option>
+                            <Select.Option value="Director">Director</Select.Option>
                         </Select>
                     </Form.Item>
 

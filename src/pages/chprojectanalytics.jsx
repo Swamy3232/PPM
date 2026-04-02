@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   EditOutlined,
   SearchOutlined,
   DownloadOutlined,
   EyeOutlined,
+  FullscreenOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -26,15 +27,19 @@ import {
   AutoComplete,
   Radio,
   Tooltip,
+  Switch,
 } from 'antd'
 import * as XLSX from 'xlsx'
+import { Chart, registerables } from 'chart.js'
+import { TreemapController, TreemapElement } from 'chartjs-chart-treemap'
 import dayjs from 'dayjs'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import '../App.css'
 import { API_BASE_URL } from '../config/api.js'
-import { DISPLAY_DATE_FORMAT, formatDate } from '../config/date.js'
+import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/date.js'
 
+Chart.register(...registerables, TreemapController, TreemapElement)
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
 
@@ -165,7 +170,7 @@ const wrapWithTooltip = (content, maxLength = 30) => {
   )
 }
 
-function Proposals() {
+function Centerheadanalytics() {
   const [form] = Form.useForm()
   const [tableData, setTableData] = useState([])
   const [filteredData, setFilteredData] = useState([])
@@ -217,6 +222,437 @@ function Proposals() {
   const [projectDocs, setProjectDocs] = useState([])
   const [docsLoading, setDocsLoading] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+
+  const chartRef = useRef(null)
+  const chartInstanceRef = useRef(null)
+  const graphCardRef = useRef(null)
+  const [isGraphFullscreen, setIsGraphFullscreen] = useState(false)
+  const [chartType, setChartType] = useState('bar')
+  const [chartMetric, setChartMetric] = useState('count')
+  const [drillLevel, setDrillLevel] = useState('top')
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedCenter, setSelectedCenter] = useState('')
+  const [selectedGroup, setSelectedGroup] = useState('')
+
+  const CATEGORIES = useMemo(
+    () => [
+      { key: 'all', label: 'All' },
+      { key: 'proposals', label: 'Proposals' },
+      { key: 'projects', label: 'Projects' },
+      { key: 'technicallyCompleted', label: 'Technically Completed' },
+      { key: 'financiallyNotCompleted', label: 'Financially Not Completed' },
+      { key: 'financiallyCompleted', label: 'Financially Completed' },
+      { key: 'pendingProjects', label: 'Ongoing Projects' },
+    ],
+    [],
+  )
+
+  const getFinancialValue = useCallback((item) => {
+    const isProject = item.project_number && String(item.project_number).trim() !== ''
+    const rawValue = isProject
+      ? item.order_value ?? item.quote_amount ?? item.revised_negotiated_quote_amount ?? 0
+      : item.quote_amount ?? item.order_value ?? item.revised_negotiated_quote_amount ?? 0
+    const normalized = String(rawValue || '').replace(/,/g, '').trim()
+    return Number(normalized) || 0
+  }, [])
+
+  const formatInCrore = useCallback((value) => {
+    const num = Number(value) || 0
+    const crore = num / 1e7
+    if (!Number.isFinite(crore)) return '0 cr'
+    return `${crore.toFixed(crore % 1 === 0 ? 0 : 2)} cr`
+  }, [])
+
+  const getUniqueCenters = useCallback((items) => {
+    return [...new Set(items.map((item) => (item.center || '').trim()).filter(Boolean))]
+  }, [])
+
+  const matchCategory = useCallback((item, category) => {
+    if (!category || category === 'all') return true
+    if (category === 'proposals') return !item.project_number || item.project_number.toString().trim() === ''
+    if (category === 'projects') return item.project_number && item.project_number.toString().trim() !== ''
+    if (category === 'technicallyCompleted')
+      return item.technical_completed_year && item.technical_completed_year.toString().trim() !== ''
+    if (category === 'financiallyCompleted')
+      return (
+        item.technical_completed_year &&
+        item.technical_completed_year.toString().trim() !== '' &&
+        item.financial_completed_year &&
+        item.financial_completed_year.toString().trim() !== ''
+      )
+    if (category === 'financiallyNotCompleted')
+      return (
+        item.technical_completed_year &&
+        item.technical_completed_year.toString().trim() !== '' &&
+        (!item.financial_completed_year || item.financial_completed_year.toString().trim() === '')
+      )
+    if (category === 'pendingProjects') return (item.status || '').toString().trim().toLowerCase() === 'ongoing'
+    return true
+  }, [])
+
+  const filterForDrill = useCallback(
+    (items) =>
+      items.filter((item) => {
+        if (!matchCategory(item, selectedCategory)) return false
+        if (drillLevel === 'group' || drillLevel === 'coordinator') {
+          if (selectedCenter && item.center !== selectedCenter) return false
+        }
+        if (drillLevel === 'coordinator') {
+          if (selectedGroup && item.group !== selectedGroup) return false
+        }
+        return true
+      }),
+    [drillLevel, matchCategory, selectedCategory, selectedCenter, selectedGroup],
+  )
+
+  const buildBreakdown = useCallback(
+    (items, dimension) => {
+      const totals = {}
+      items.forEach((item) => {
+        const key = String(item[dimension] || 'Unknown').trim() || 'Unknown'
+        totals[key] = (totals[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+      })
+      const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
+      return {
+        labels: entries.map(([key]) => key),
+        values: entries.map(([, value]) => value),
+      }
+    },
+    [chartMetric, getFinancialValue],
+  )
+
+  const chartData = useMemo(() => {
+    const items = filterForDrill(filteredData)
+
+    if (drillLevel === 'top') {
+      if (chartMetric === 'amount') {
+        const totals = CATEGORIES.map((category) =>
+          filteredData
+            .filter((item) => matchCategory(item, category.key))
+            .reduce((sum, item) => sum + getFinancialValue(item), 0),
+        )
+        return {
+          labels: CATEGORIES.map((category) => category.label),
+          values: totals,
+          title: 'CH Analytics — Financials',
+          dimension: 'category',
+        }
+      }
+      const counts = CATEGORIES.map((category) =>
+        filteredData.filter((item) => matchCategory(item, category.key)).length,
+      )
+      return {
+        labels: CATEGORIES.map((category) => category.label),
+        values: counts,
+        title: 'CH Analytics — Counts',
+        dimension: 'category',
+      }
+    }
+
+    if (drillLevel === 'center') {
+      return {
+        ...buildBreakdown(items, 'center'),
+        title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} by Centre`,
+        dimension: 'center',
+      }
+    }
+
+    if (drillLevel === 'group') {
+      return {
+        ...buildBreakdown(items, 'group'),
+        title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedCenter} by Group`,
+        dimension: 'group',
+      }
+    }
+
+    return {
+      ...buildBreakdown(items, 'project_co_ordinator'),
+      title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
+      dimension: 'project_co_ordinator',
+    }
+  }, [buildBreakdown, CATEGORIES, chartMetric, drillLevel, filterForDrill, filteredData, getFinancialValue, matchCategory, selectedCategory, selectedCenter, selectedGroup])
+
+  const handleDrillBack = useCallback(() => {
+    if (drillLevel === 'coordinator') {
+      setDrillLevel('group')
+      setSelectedGroup('')
+      return
+    }
+    if (drillLevel === 'group') {
+      setDrillLevel('center')
+      setSelectedGroup('')
+      return
+    }
+    if (drillLevel === 'center') {
+      setDrillLevel('top')
+      setSelectedCategory('all')
+      setSelectedCenter('')
+      setSelectedGroup('')
+    }
+  }, [drillLevel])
+
+  const categoryKeyFromLabel = useCallback(
+    (label) => {
+      const found = CATEGORIES.find((category) => category.label === label)
+      return found ? found.key : label
+    },
+    [CATEGORIES],
+  )
+
+  const handleChartClick = useCallback(
+    (label) => {
+      const dimension = chartData.dimension
+      if (dimension === 'category') {
+        const categoryKey = categoryKeyFromLabel(label)
+        const categoryItems = filteredData.filter((item) => matchCategory(item, categoryKey))
+        const centers = getUniqueCenters(categoryItems)
+        setSelectedCategory(categoryKey)
+        if (centers.length <= 1) {
+          setSelectedCenter(centers[0] || '')
+          setDrillLevel('group')
+          setSelectedGroup('')
+          return
+        }
+        setDrillLevel('center')
+        setSelectedCenter('')
+        setSelectedGroup('')
+        return
+      }
+      if (dimension === 'center') {
+        setSelectedCenter(label)
+        setDrillLevel('group')
+        setSelectedGroup('')
+        return
+      }
+      if (dimension === 'group') {
+        setSelectedGroup(label)
+        setDrillLevel('coordinator')
+        return
+      }
+    },
+    [categoryKeyFromLabel, chartData.dimension, filteredData, getUniqueCenters, matchCategory],
+  )
+
+  const chartOptions = useMemo(() => {
+    const isPie = chartType === 'pie' || chartType === 'treemap'
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: chartType === 'pie' },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const value = context.parsed?.y ?? context.parsed ?? 0
+              return chartMetric === 'amount'
+                ? `₹ ${formatInCrore(value)}`
+                : `${value} count`
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          display: !isPie,
+          title: { display: !isPie, text: 'Category' },
+        },
+        y: {
+          display: !isPie,
+          title: { display: !isPie, text: chartMetric === 'amount' ? 'Amount (₹ cr)' : 'Count' },
+          ticks: {
+            callback: (value) => (chartMetric === 'amount' ? formatInCrore(value) : value),
+          },
+        },
+      },
+    }
+  }, [chartMetric, chartType, formatInCrore])
+
+  useEffect(() => {
+    if (!chartRef.current) return
+
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy()
+      chartInstanceRef.current = null
+    }
+
+    const ctx = chartRef.current.getContext('2d')
+    const chartTypeToRender = chartType === 'box' ? 'bar' : chartType
+    const totalValue = chartData.values.reduce((acc, v) => acc + Number(v || 0), 0)
+    const isAmountChart = chartMetric === 'amount'
+    const truncate = (s, max = 12) => {
+      const str = String(s ?? '').trim()
+      if (!str) return 'Unknown'
+      return str.length > max ? `${str.slice(0, max)}...` : str
+    }
+
+    const valuePctLabelsPlugin = {
+      id: 'valuePctLabels',
+      afterDatasetsDraw: (chart) => {
+        if (chartTypeToRender === 'treemap') return
+        if (!chart?.ctx) return
+
+        const canvasCtx = chart.ctx
+        const meta = chart.getDatasetMeta(0)
+        const dataset = chart.data.datasets?.[0]
+        const dataValues = (dataset?.data || []).map((v) => Number(v ?? 0))
+        const chartLabels = chart.data.labels || []
+
+        const drawTwoLine = (x, y, line1, line2) => {
+          canvasCtx.save()
+          canvasCtx.textAlign = 'center'
+          canvasCtx.textBaseline = 'middle'
+          canvasCtx.font = '600 11px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+          const isLineChart = chartTypeToRender === 'line'
+          canvasCtx.fillStyle = isLineChart ? '#1f2937' : '#ffffff'
+          canvasCtx.fillText(line1, x, y - 8)
+          canvasCtx.font = '700 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+          canvasCtx.fillText(line2, x, y + 6)
+          canvasCtx.restore()
+        }
+
+        const type = chart.config.type
+        const elements = meta?.data || []
+
+        elements.forEach((el, idx) => {
+          const v = dataValues[idx] ?? 0
+          const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
+          if (v <= 0) return
+          const name = truncate(chartLabels[idx])
+          if ((type === 'pie' || type === 'doughnut') && pct < 2) return
+
+          const labelValue = isAmountChart ? formatInCrore(v) : String(v)
+          const line2 = `${labelValue} (${pct.toFixed(1)}%)`
+
+          if (type === 'pie' || type === 'doughnut') {
+            const arc = el
+            const angle = (arc.startAngle + arc.endAngle) / 2
+            const r = (arc.innerRadius + arc.outerRadius) / 2
+            const x = arc.x + Math.cos(angle) * r
+            const y = arc.y + Math.sin(angle) * r
+            drawTwoLine(x, y, name, line2)
+            return
+          }
+
+          if (type === 'line') {
+            const x = el.x
+            const y = el.y
+            drawTwoLine(x, y - 2, name, line2)
+            return
+          }
+
+          const x = el.x
+          const barTop = el.y
+          const barBottom = el.base ?? el.y + el.height
+          const y = barTop + (barBottom - barTop) / 2
+          if (Number.isFinite(y) && Math.abs(barBottom - barTop) < 18) return
+          drawTwoLine(x, y, name, line2)
+        })
+      },
+    }
+
+    const colors = ['#4f46e5', '#0ea5e9', '#22c55e', '#f97316', '#ef4444']
+
+    const dataset = chartType === 'treemap'
+      ? {
+          tree: chartData.labels.map((label, idx) => ({
+            label,
+            value: Number(chartData.values[idx] ?? 0),
+          })),
+          key: 'value',
+          spacing: 0,
+          borderWidth: 0.5,
+          backgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
+          borderColor: (ctx) => colors[ctx.dataIndex % colors.length],
+          hoverBackgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
+          hoverBorderColor: (ctx) => colors[ctx.dataIndex % colors.length],
+          labels: {
+            display: true,
+            color: '#ffffff',
+            font: { size: 10, weight: '700' },
+            padding: 1,
+            overflow: 'fit',
+            position: 'middle',
+            formatter: (ctx) => {
+              if (ctx.type !== 'data') return ''
+              const v = Number(ctx.raw?.v ?? ctx.raw?.value ?? 0)
+              const totalValue = chartData.values.reduce((sum, x) => sum + Number(x || 0), 0)
+              const percent = totalValue > 0 ? ((v / totalValue) * 100).toFixed(1) : '0.0'
+              return [String(ctx.raw?.label || '').slice(0, 18), `${chartMetric === 'amount' ? formatInCrore(v) : v} (${percent}%)`]
+            },
+          },
+        }
+      : {
+          label: chartMetric === 'amount' ? 'Amount' : 'Count',
+          data: chartData.values,
+          backgroundColor: chartData.labels.map((_, index) => colors[index % colors.length]),
+          borderColor: chartData.labels.map((_, index) => colors[index % colors.length]),
+          borderWidth: 1,
+          fill: chartTypeToRender === 'line' ? false : true,
+          tension: chartTypeToRender === 'line' ? 0.3 : 0,
+        }
+
+    chartInstanceRef.current = new Chart(ctx, {
+      type: chartTypeToRender,
+      data: {
+        labels: chartData.labels,
+        datasets: [dataset],
+      },
+      options: {
+        ...chartOptions,
+        onClick: (evt, elements) => {
+          if (!elements || elements.length === 0) return
+          const activeElement = elements[0]
+          const label = chartInstanceRef.current.data.labels[activeElement.index]
+          handleChartClick(label)
+        },
+      },
+      plugins: [valuePctLabelsPlugin],
+    })
+
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy()
+        chartInstanceRef.current = null
+      }
+    }
+  }, [chartData, chartOptions, chartType])
+
+  const handleToggleGraphFullscreen = async () => {
+    try {
+      const el = graphCardRef.current
+      if (!el) return
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      } else {
+        await el.requestFullscreen()
+      }
+      setTimeout(() => {
+        chartInstanceRef.current?.resize()
+      }, 250)
+    } catch (error) {
+      console.error('Fullscreen mode failed', error)
+      message.error('Unable to toggle full screen.')
+    }
+  }
+
+  const handleDownloadGraph = () => {
+    try {
+      if (!chartInstanceRef.current) {
+        message.warning('Chart is not ready yet.')
+        return
+      }
+      const dataUrl = chartInstanceRef.current.toBase64Image()
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = `ch-analytics_${chartType}_${dayjs().format('YYYY-MM-DD_HH-mm-ss')}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      console.error('Download chart failed', error)
+      message.error('Unable to download chart.')
+    }
+  }
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -1450,17 +1886,73 @@ function Proposals() {
                         )}
                       </Space>
                     </div>
-                    <Table
-                      className="role-proposals-table"
-                      rowKey="id"
-                      columns={columns}
-                      dataSource={filteredData}
-                      loading={tableLoading}
-                      pagination={{ pageSize: 10 }}
-                      tableLayout="fixed"
-                      sticky
-                      bordered
-                    />
+                    <div
+                      ref={graphCardRef}
+                      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${isGraphFullscreen ? 'fixed inset-0 z-50 flex flex-col' : ''}`}
+                      style={isGraphFullscreen ? { background: 'white' } : {}}
+                    >
+                      <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <Title level={4} className="!mb-1">
+                            {chartData.title}
+                          </Title>
+                          <p className="text-slate-500 text-sm">
+                            Showing {filteredData.length} records in chart view
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {drillLevel !== 'top' && (
+                            <Button size="small" onClick={handleDrillBack}>
+                              Back
+                            </Button>
+                          )}
+                          <Button
+                            size="small"
+                            icon={<FullscreenOutlined />}
+                            onClick={handleToggleGraphFullscreen}
+                          >
+                            {isGraphFullscreen ? 'Exit Full' : 'Full screen'}
+                          </Button>
+                          <Button
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            onClick={handleDownloadGraph}
+                          >
+                            Download
+                          </Button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-600">Count</span>
+                            <Switch
+                              size="small"
+                              checked={chartMetric === 'amount'}
+                              onChange={(checked) => setChartMetric(checked ? 'amount' : 'count')}
+                            />
+                            <span className="text-xs text-slate-600">Amount</span>
+                          </div>
+                          <Select
+                            size="small"
+                            value={chartType}
+                            onChange={setChartType}
+                            options={[
+                              { value: 'bar', label: 'Bar' },
+                              { value: 'line', label: 'Line' },
+                              { value: 'box', label: 'Box' },
+                              { value: 'treemap', label: 'Treemap' },
+                              { value: 'pie', label: 'Pie' },
+                            ]}
+                            style={{ minWidth: 140 }}
+                          />
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          minHeight: isGraphFullscreen ? '90vh' : 420,
+                          position: 'relative',
+                        }}
+                      >
+                        <canvas ref={chartRef} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               ),
@@ -1958,4 +2450,4 @@ function Proposals() {
   )
 }
 
-export default Proposals
+export default Centerheadanalytics

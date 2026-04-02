@@ -65,26 +65,35 @@ function Login() {
 
       const userData = response.data
       
-      const token = userData.access_token || userData.token
+      let token = userData.access_token || userData.token
+      if (!token) {
+        const authHeader = response.headers?.authorization || response.headers?.Authorization
+        if (authHeader) {
+          token = authHeader.startsWith('Bearer ')
+            ? authHeader.slice(7)
+            : authHeader
+        }
+      }
+
       if (token) {
         localStorage.setItem('token', token)
         console.log('Token saved to localStorage')
       } else {
-        console.warn('No token found in login response!')
+        console.warn('No token found in login response! Continuing without token.')
       }
 
       const userPayload = {
         user_id: userData.id,
         name: userData.name,
         email: userData.email || values.email,
-        role: userData.role,
+        role: userData.role.toLowerCase(),
         center: userData.center,
         designation: userData.designation,
         group: userData.group,
       }
 
       // Show role selection modal for GH users
-      if (userData.role === 'GH') {
+      if (userData.role.toLowerCase() === 'gh') {
         setPendingUserData(userPayload)
         setShowRoleSelection(true)
       } else {

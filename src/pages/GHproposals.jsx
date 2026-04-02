@@ -89,7 +89,7 @@ const PROPOSAL_FIELDS = [
   { name: 'quotation_given_by_name', label: 'Propsal Given By', width: 200 },
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'party_name', label: 'Party Name', width: 200 },
-  { name: 'activity', label: 'Activity', width: 160 },
+  { name: 'activity', label: 'Project Name', width: 160 },
   { name: 'key_deliverables', label: 'Key Deliverables', width: 240, input: 'textarea' },
   { name: 'order_number', label: 'Order Number', width: 150 },
   { name: 'order_date', label: 'Order Date', width: 150 },
@@ -232,6 +232,7 @@ const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
 const TABLE_FIELDS = [
   { name: 'id', label: 'SL NO', width: 80, render: (text, record, index) => index + 1 },
   { name: 'project_number', label: 'Project Number', width: 140 },
+  { name: 'activity', label: 'Project Name', width: 160 },
   { name: 'customer_name', label: 'Customer Name', width: 180 },
   { name: 'order_date', label: 'Order Date', width: 130 },
   { name: 'delivery_date', label: 'Delivery Date', width: 140 },
@@ -947,6 +948,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     const financiallyCompleted = dataSource.filter(
       (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
     ).length
+    const financiallyNotCompleted = dataSource.filter(
+      (item) => item.technical_completed_year?.trim() && !item.financial_completed_year?.trim()
+    ).length
     const pendingProjects = dataSource.filter(
       (item) =>
         item.status === 'Ongoing',
@@ -968,10 +972,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     })
 
     return {
+      allCount: totalProposals + totalProjects,
       totalProposals,
       totalProjects,
       technicallyCompleted,
       financiallyCompleted,
+      financiallyNotCompleted,
       pendingProjects,
       projectCodeBreakdown,
     }
@@ -1035,6 +1041,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       } else if (statusFilter === 'financiallyCompleted') {
         filtered = filtered.filter(
           (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
+        )
+      } else if (statusFilter === 'financiallyNotCompleted') {
+        filtered = filtered.filter(
+          (item) => item.technical_completed_year?.trim() && !item.financial_completed_year?.trim()
         )
       } else if (statusFilter === 'pendingProjects') {
         filtered = filtered.filter(
@@ -1140,6 +1150,13 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           dataIndex: 'customer_type',
           title: 'Customer Type',
           width: 170,
+        },
+        {
+          key: 'activity',
+          dataIndex: 'activity',
+          title: 'Project Name',
+          width: 220,
+          render: (value) => wrapWithTooltip(value, 25),
         },
         {
           key: 'customer_name',
@@ -1257,6 +1274,13 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           dataIndex: 'project_number',
           title: 'Project Number',
           width: 140,
+        },
+        {
+          key: 'activity',
+          dataIndex: 'activity',
+          title: 'Project Name',
+          width: 200,
+          render: (value) => wrapWithTooltip(value, 25),
         },
         {
           key: 'customer_name',
@@ -1416,8 +1440,11 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
               {/* Header: Stats + Add Button */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1">
+                  <Card className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer" onClick={() => setStatusFilter(null)}>
+                    <Statistic title={<span className="text-white/90">All</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                  </Card>
                   <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer" onClick={() => setStatusFilter('proposals')}>
-                    <Statistic title={<span className="text-white/90">Total Proposals</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Proposed Projects</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer" onClick={() => setStatusFilter('totalProjects')}>
                     <Statistic title={<span className="text-white/90">Total Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
@@ -1436,6 +1463,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                   </Card>
                   <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer" onClick={() => setStatusFilter('technicallyCompleted')}>
                     <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                  </Card>
+                  <Card className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white cursor-pointer" onClick={() => setStatusFilter('financiallyNotCompleted')}>
+                    <Statistic title={<span className="text-white/90">Financially Not Completed</span>} value={statistics.financiallyNotCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer" onClick={() => setStatusFilter('financiallyCompleted')}>
                     <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
@@ -1607,6 +1637,40 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                 <Descriptions.Item label="Revised Quote Date">{formatDate(selectedRecord?.revised_negotiated_quote_date) || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Revised Quote Amount">{selectedRecord?.revised_negotiated_quote_amount || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card title="Project Details" size="small" className="bg-green-50">
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="Project Number">{selectedRecord?.project_number || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Party Name">{selectedRecord?.party_name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Activity">{selectedRecord?.activity || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Project Co-ordinator">{selectedRecord?.project_co_ordinator || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Key Deliverables" span={2}>{selectedRecord?.key_deliverables || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card title="Order Information" size="small" className="bg-orange-50">
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="Order Number">{selectedRecord?.order_number || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Order Date">{formatDate(selectedRecord?.order_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Order Value">{selectedRecord?.order_value || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Delivery Date">{formatDate(selectedRecord?.delivery_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Extended Delivery">{formatDate(selectedRecord?.extended_delivery_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Actual Commencement">{formatDate(selectedRecord?.date_of_actual_commencement) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Dispatch Date">{formatDate(selectedRecord?.dispatch_date) || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Technical Completion Year">{selectedRecord?.technical_completed_year || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Financial Completion Year">{selectedRecord?.financial_completed_year || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Status">{selectedRecord?.status || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card title="Meeting & Remarks" size="small" className="bg-purple-50">
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="Review Meeting Details" span={2}>{selectedRecord?.details_of_external_internal_review_meeting || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Co-ordinator Remarks" span={2}>{selectedRecord?.co_ordinator_remarks || '-'}</Descriptions.Item>
+                <Descriptions.Item label="PPM Remarks" span={2}>{selectedRecord?.ppm_remarks || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Closure Report" span={2}>{selectedRecord?.closer_report || '-'}</Descriptions.Item>
               </Descriptions>
             </Card>
 
