@@ -79,6 +79,15 @@ class Remarks(Base):
     remarks_description = Column(String, nullable=True)
     respond_to_remarks = Column(String, nullable=True)
 
+class ProjectPaymentStages(Base):
+    __tablename__ = "project_payment_stages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    name = Column(String, nullable=True)
+    project_no = Column(String, nullable=True)
+    value = Column(String, nullable=True)
+    status = Column(String, nullable=True)
 # -------------------------------------------------
 # STAGE TABLE
 # -------------------------------------------------
