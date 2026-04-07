@@ -17,6 +17,8 @@ import DirectorProposals from './pages/Directorproposals'
 import DirectorAnalytics from './pages/directoranalytics'
 import FinancialAnalytics from './pages/financialanalytics'
 import Centerheadanalytics from './pages/chprojectanalytics'
+import Ghanalytics from './pages/ghanalytics'
+import Scientistanalytics from './pages/scientistanalytics'
 
 
 import './App.css'
@@ -73,23 +75,26 @@ function RoleProtectedLayout({ basePath }) {
 
   const isAdmin = normalizedRole === 'admin'
 
-  // Select correct page components based on role
+  // Select correct page components based on the current route base path.
+  // This ensures /admin uses the admin Analytics page instead of GH analytics.
   let ProposalsComponent = GHProposals
   let ProjectsComponent = GHProjects
-  let AnalyticsComponent = Analytics
+  let AnalyticsComponent = Ghanalytics
 
-  if (normalizedRole === 'admin') {
+  if (basePath === 'admin') {
     ProposalsComponent = Proposals
     ProjectsComponent = Projects
-  } else if (normalizedRole === 'ch') {
+    AnalyticsComponent = Analytics
+  } else if (basePath === 'ch') {
     ProposalsComponent = CHProposals
     ProjectsComponent = CHProjects
     AnalyticsComponent = Centerheadanalytics
-  } else if (normalizedRole === 'scientist') {
+  } else if (basePath === 'scientist') {
     // Scientist now has its own dedicated component
     ProposalsComponent = ScientistProposals
     ProjectsComponent = GHProjects
-  } else if (normalizedRole === 'director') {
+    AnalyticsComponent = Scientistanalytics
+  } else if (basePath === 'director') {
     ProposalsComponent = DirectorProposals
     ProjectsComponent = Projects
     AnalyticsComponent = DirectorAnalytics

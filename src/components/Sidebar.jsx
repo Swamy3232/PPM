@@ -244,10 +244,10 @@ function Sidebar() {
                 ]
               : []),
 
-            ...((normalizedBasePath === 'admin' || isDirector || isCH) ? [{
+            ...((normalizedBasePath === 'admin' || isDirector || isCH || isGHOrScientist) ? [{
                     key: 'analytics',
                     icon: <BarChartOutlined />,
-                    label: isCH ? 'CH Analytics' : isDirector ? 'Project Analytics' : 'Analytics',
+                    label: isCH ? 'CH Analytics' : isDirector ? 'Project Analytics' : basePath === 'scientist' ? 'Scientist Analytics' : 'Analytics',
             }] : []),
 
             // ...(isDirector ? [{

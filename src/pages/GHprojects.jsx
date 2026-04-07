@@ -163,6 +163,13 @@ function GHprojects() {
   const [editingPayment, setEditingPayment] = useState(null)
   const [submittingPayment, setSubmittingPayment] = useState(false)
 
+  // Stage detail entry
+  const [stageDetailModalVisible, setStageDetailModalVisible] = useState(false)
+  const [selectedStageForDetail, setSelectedStageForDetail] = useState(null)
+  const [stageDetailForm] = Form.useForm()
+  const [submittingStageDetail, setSubmittingStageDetail] = useState(false)
+  const [projectPaymentStageRows, setProjectPaymentStageRows] = useState([])
+
   // Fetch projects on mount and read current user from localStorage
   useEffect(() => {
     try {
@@ -238,6 +245,22 @@ function GHprojects() {
     } catch (error) {
       console.error('Error fetching stage configuration:', error)
       return []
+    }
+  }
+
+  const fetchProjectPaymentStageRows = async () => {
+    try {
+      const res = await fetch(`${apiBase}/payment-stages/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage/payment details')
+      }
+      const data = await res.json()
+      setProjectPaymentStageRows(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Failed to fetch stage/payment details:', error)
+      setProjectPaymentStageRows([])
     }
   }
 
@@ -319,7 +342,16 @@ function GHprojects() {
   const handleBackToProjects = () => {
     setSelectedProject(null)
     setStageData([])
+    setProjectPaymentStageRows([])
   }
+
+  useEffect(() => {
+    if (selectedProject) {
+      fetchProjectPaymentStageRows()
+    } else {
+      setProjectPaymentStageRows([])
+    }
+  }, [selectedProject])
 
   const handleOpenAllotmentModal = (stage) => {
     const projectId = Number(safeId(selectedProject))
@@ -732,6 +764,54 @@ function GHprojects() {
     }
   }
 
+  const handleOpenStageDetailModal = (stage) => {
+    setSelectedStageForDetail(stage)
+    setStageDetailModalVisible(true)
+    stageDetailForm.setFieldsValue({
+      name: stage?.stage_name || '',
+      project_no: selectedProject?.project_number || '',
+      value: '',
+      status: 'Pending',
+    })
+  }
+
+  const handleSubmitStageDetail = async (values) => {
+    setSubmittingStageDetail(true)
+    try {
+      const payload = {
+        name: values.name?.trim() || selectedStageForDetail?.stage_name || '',
+        project_no: values.project_no?.trim() || selectedProject?.project_number || '',
+        value: values.value?.trim() || '',
+        status: values.status || 'Pending',
+      }
+
+      const res = await fetch(`${apiBase}/payment-stages/`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to add stage/payment details')
+      }
+
+      message.success('Stage/payment details saved successfully')
+      setStageDetailModalVisible(false)
+      setSelectedStageForDetail(null)
+      stageDetailForm.resetFields()
+      fetchProjectPaymentStageRows()
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to save details')
+    } finally {
+      setSubmittingStageDetail(false)
+    }
+  }
+
   const handleSubmitPayment = async (values) => {
     setSubmittingPayment(true)
     try {
@@ -1004,22 +1084,36 @@ function GHprojects() {
                 const canAddRemarks = accessList.includes('add remarks')
                 const canAddPayments = false
                 const canViewAllotment = accessList.includes('view allotment sheet')
+                // Show Add Details button only for Payment stages (position 10) and Project Stages (position 11)
+                const config = stageConfig.find((s) => s.id === stage.stage_id)
+                const stagePosition = config?.position ?? stage.position ?? 0
+                const canAddStageDetails = stagePosition === 11
+                const stageDetails = projectPaymentStageRows.filter((detail) =>
+                  String(detail.project_no || '').trim() === String(selectedProject?.project_number || '').trim() &&
+                  String(detail.name || '').trim().toLowerCase() === stageNameLower,
+                )
 
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
                     <div className="flex justify-between items-center mb-5">
                       <Title level={4} className="!mb-0">
                         {(() => {
-                          const config = stageConfig.find((s) => s.id === stage.stage_id)
                           const position = config?.position ?? stage.position ?? '-'
                           return <Tag color="blue">{position}</Tag>
                         })()} {stageName || 'Stage'}
                       </Title>
-                      {canUpload && (
-                        <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
-                          Upload
-                        </Button>
-                      )}
+                      <Space>
+                        {canUpload && (
+                          <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
+                            Upload
+                          </Button>
+                        )}
+                        {canAddStageDetails && (
+                          <Button size="small" icon={<PlusOutlined />} onClick={() => handleOpenStageDetailModal(stage)}>
+                            Add Details
+                          </Button>
+                        )}
+                      </Space>
                     </div>
 
                     {stageNameLower === 'enquiry' && (
@@ -1082,6 +1176,32 @@ function GHprojects() {
                             </Space>
                           </div>
                         </Card>
+                      </div>
+                    )}
+
+                    {stageDetails.length > 0 && (
+                      <div className="mb-6">
+                        <Text strong>Stage / Payment Details</Text>
+                        <div className="space-y-3 mt-3">
+                          {stageDetails.map((detail) => (
+                            <Card key={detail.id} size="small" className="border-l-4 border-l-yellow-500">
+                              <div className="flex justify-between items-start gap-4">
+                                <div>
+                                  <Text strong>{detail.name || 'Detail'}</Text>
+                                  <Text type="secondary" className="block text-sm mt-1">
+                                    Project No: {detail.project_no || 'N/A'}
+                                  </Text>
+                                </div>
+                                <div className="text-right">
+                                  <Text>{detail.value || 'No value'}</Text>
+                                  <Text type="secondary" className="block text-xs">
+                                    Status: {detail.status || 'Pending'}
+                                  </Text>
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -1186,8 +1306,11 @@ function GHprojects() {
               <Form.Item label="Balance" name="bal">
                 <Input />
               </Form.Item>
-              <Form.Item label="Follow-up Status" name="follow_up_status">
-                <Input />
+              <Form.Item label="Status" name="follow_up_status" rules={[{ required: true, message: 'Please select payment status' }]}>
+                <Select options={[
+                  { label: 'Completed', value: 'Completed' },
+                  { label: 'Pending', value: 'Pending' },
+                ]} />
               </Form.Item>
             </div>
 
@@ -1199,6 +1322,67 @@ function GHprojects() {
               }}>Cancel</Button>
               <Button type="primary" htmlType="submit" loading={submittingPayment}>
                 {editingPayment ? 'Update' : 'Add'} Payment
+              </Button>
+            </div>
+          </Form>
+        </Modal>
+
+        <Modal
+          title={<>{selectedStageForDetail ? `Add Details for ${selectedStageForDetail.stage_name}` : 'Add Stage / Payment Details'}</>}
+          open={stageDetailModalVisible}
+          onCancel={() => {
+            setStageDetailModalVisible(false)
+            setSelectedStageForDetail(null)
+            stageDetailForm.resetFields()
+          }}
+          footer={null}
+          width={600}
+        >
+          <Form form={stageDetailForm} layout="vertical" onFinish={handleSubmitStageDetail}>
+            <Form.Item
+              label="Stage / Payment Name"
+              name="name"
+              rules={[{ required: true, message: 'Please enter stage or payment name' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label="Project Number"
+              name="project_no"
+              rules={[{ required: true, message: 'Please enter project number' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label="Value"
+              name="value"
+              rules={[{ required: true, message: 'Please enter value' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label="Status"
+              name="status"
+              rules={[{ required: true, message: 'Please select status' }]}
+            >
+              <Select options={[
+                { label: 'Pending', value: 'Pending' },
+                { label: 'In Progress', value: 'In Progress' },
+                { label: 'Completed', value: 'Completed' }
+              ]} />
+            </Form.Item>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button
+                onClick={() => {
+                  setStageDetailModalVisible(false)
+                  setSelectedStageForDetail(null)
+                  stageDetailForm.resetFields()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="primary" htmlType="submit" loading={submittingStageDetail}>
+                Save Details
               </Button>
             </div>
           </Form>

@@ -8,6 +8,9 @@ import {
 } from '@ant-design/icons'
 import {
   Button,
+  Descriptions,
+  Divider,
+  Dropdown,
   Form,
   Input,
   Modal,
@@ -15,7 +18,6 @@ import {
   Table,
   Tabs,
   Tag,
-  Descriptions,
   Typography,
   message,
   DatePicker,
@@ -62,6 +64,26 @@ const REQUEST_TYPE_OPTIONS = [
   'WhatsApp',
   'Visit',
 ]
+
+const normalizeValue = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+
+const getProjectCode = (projectNumber) => {
+  if (!projectNumber || typeof projectNumber !== 'string') return ''
+  const trimmed = projectNumber.trim()
+  const match = trimmed.match(/^([A-Z]+)(?:-|\d|$)/i)
+  return match ? match[1].toUpperCase() : trimmed
+}
+
+// Helper function to get first two words of a project name
+const getFirstTwoWords = (text) => {
+  if (!text || typeof text !== 'string') return text || ''
+  const words = text.trim().split(/\s+/)
+  return words.slice(0, 2).join(' ')
+}
 
 // Slim columns for CH (matching GH restricted view)
 const TABLE_FIELDS = [
@@ -210,11 +232,12 @@ function Centerheadanalytics() {
     ongoingProjects: 0
   })
   const [customerOptions, setCustomerOptions] = useState([])
-
-  // Unacknowledged proposals state
   const [unacknowledgedCount, setUnacknowledgedCount] = useState(0)
-  const [showUnacknowledgedOnly, setShowUnacknowledgedOnly] = useState(false)
   const [originalTableData, setOriginalTableData] = useState([])
+  const [trendCategory, setTrendCategory] = useState(null)
+  const [chartType, setChartType] = useState('bar')
+  const [chartMetric, setChartMetric] = useState('count')
+  const [selectedFinancialYear, setSelectedFinancialYear] = useState(null)
 
   // Document modal state
   const [stageConfig, setStageConfig] = useState([])
@@ -227,12 +250,12 @@ function Centerheadanalytics() {
   const chartInstanceRef = useRef(null)
   const graphCardRef = useRef(null)
   const [isGraphFullscreen, setIsGraphFullscreen] = useState(false)
-  const [chartType, setChartType] = useState('bar')
-  const [chartMetric, setChartMetric] = useState('count')
   const [drillLevel, setDrillLevel] = useState('top')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedCenter, setSelectedCenter] = useState('')
   const [selectedGroup, setSelectedGroup] = useState('')
+  const [selectedProjectName, setSelectedProjectName] = useState('')
+  const [selectedProjectCode, setSelectedProjectCode] = useState('')
 
   const CATEGORIES = useMemo(
     () => [
@@ -294,15 +317,21 @@ function Centerheadanalytics() {
     (items) =>
       items.filter((item) => {
         if (!matchCategory(item, selectedCategory)) return false
-        if (drillLevel === 'group' || drillLevel === 'coordinator') {
+        if (drillLevel === 'group' || drillLevel === 'coordinator' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedCenter && item.center !== selectedCenter) return false
         }
-        if (drillLevel === 'coordinator') {
+        if (drillLevel === 'coordinator' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedGroup && item.group !== selectedGroup) return false
+        }
+        if (drillLevel === 'project_code' || drillLevel === 'project_name') {
+          if (selectedProjectName && normalizeValue(item.project_co_ordinator) !== normalizeValue(selectedProjectName)) return false
+        }
+        if (drillLevel === 'project_name') {
+          if (selectedProjectCode && getProjectCode(item.project_number) !== getProjectCode(selectedProjectCode)) return false
         }
         return true
       }),
-    [drillLevel, matchCategory, selectedCategory, selectedCenter, selectedGroup],
+    [drillLevel, matchCategory, selectedCategory, selectedCenter, selectedGroup, selectedProjectName, selectedProjectCode],
   )
 
   const buildBreakdown = useCallback(
@@ -323,6 +352,73 @@ function Centerheadanalytics() {
 
   const chartData = useMemo(() => {
     const items = filterForDrill(filteredData)
+
+    // Handle trend mode
+    if (trendCategory) {
+      const years = {}
+      const currentYear = dayjs().year()
+      
+      // Get all years from 2010 to current year + 1
+      for (let year = 2010; year <= currentYear + 1; year++) {
+        years[year] = 0
+      }
+      
+      // Filter data based on trend category
+      const trendItems = filteredData.filter((item) => matchCategory(item, trendCategory))
+      
+      // Aggregate by year
+      trendItems.forEach((item) => {
+        let year = null
+
+        if (trendCategory === 'all') {
+          if (item.order_date) {
+            year = dayjs(item.order_date).year()
+          } else if (item.enquiry_date) {
+            year = dayjs(item.enquiry_date).year()
+          }
+        } else if (trendCategory === 'projects') {
+          if (item.order_date) {
+            year = dayjs(item.order_date).year()
+          }
+        } else if (trendCategory === 'proposals') {
+          if (item.enquiry_date) {
+            year = dayjs(item.enquiry_date).year()
+          }
+        } else if (trendCategory === 'technicallyCompleted') {
+          if (item.technical_completed_year) {
+            year = parseInt(item.technical_completed_year)
+          }
+        } else if (trendCategory === 'financiallyCompleted' || trendCategory === 'financiallyNotCompleted') {
+          if (item.financial_completed_year) {
+            year = parseInt(item.financial_completed_year)
+          } else if (trendCategory === 'financiallyNotCompleted' && item.technical_completed_year) {
+            year = parseInt(item.technical_completed_year)
+          }
+        } else if (trendCategory === 'pendingProjects') {
+          if (item.order_date) {
+            year = dayjs(item.order_date).year()
+          }
+        }
+
+        if (year && years.hasOwnProperty(year)) {
+          years[year] += chartMetric === 'amount' ? getFinancialValue(item) : 1
+        }
+      })
+      
+      const sortedYears = Object.keys(years).sort((a, b) => parseInt(a) - parseInt(b))
+      const labels = sortedYears
+      const values = sortedYears.map(year => years[year])
+      
+      const categoryLabel = CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory
+      const metricLabel = chartMetric === 'amount' ? 'Amount' : 'Count'
+      
+      return {
+        labels,
+        values,
+        title: `${categoryLabel} Trend by Year (${metricLabel})`,
+        dimension: 'trend',
+      }
+    }
 
     if (drillLevel === 'top') {
       if (chartMetric === 'amount') {
@@ -365,14 +461,105 @@ function Centerheadanalytics() {
       }
     }
 
+    if (drillLevel === 'project_code') {
+      const filteredItems = items.filter(
+        (item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName),
+      )
+      const projectCodeTotals = {}
+      filteredItems.forEach((item) => {
+        const code = getProjectCode(item.project_number) || 'Unknown'
+        projectCodeTotals[code] = (projectCodeTotals[code] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+      })
+      const entries = Object.entries(projectCodeTotals).sort((a, b) => b[1] - a[1])
+      return {
+        labels: entries.map(([key]) => key),
+        values: entries.map(([, value]) => value),
+        title: `${selectedProjectName} by Project Code`,
+        dimension: 'project_code',
+      }
+    }
+
+    if (drillLevel === 'project_name') {
+      const filteredItems = items.filter(
+        (item) =>
+          normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName) &&
+          getProjectCode(item.project_number) === getProjectCode(selectedProjectCode),
+      )
+      return {
+        ...buildBreakdown(filteredItems, 'activity'),
+        title: `${selectedProjectCode} Projects by Activity`,
+        dimension: 'activity',
+      }
+    }
+
     return {
       ...buildBreakdown(items, 'project_co_ordinator'),
       title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
       dimension: 'project_co_ordinator',
     }
-  }, [buildBreakdown, CATEGORIES, chartMetric, drillLevel, filterForDrill, filteredData, getFinancialValue, matchCategory, selectedCategory, selectedCenter, selectedGroup])
+  }, [buildBreakdown, CATEGORIES, chartMetric, drillLevel, filterForDrill, filteredData, getFinancialValue, matchCategory, selectedCategory, selectedCenter, selectedGroup, selectedProjectName, selectedProjectCode, trendCategory])
+
+  // Generate available financial years from data
+  const availableFinancialYears = useMemo(() => {
+    const years = new Set()
+    const currentYear = dayjs().year()
+    
+    // Always use tableData to show all available years, regardless of filters
+    tableData.forEach((item) => {
+      // Use order_date for financial year calculation
+      if (item.order_date) {
+        const date = dayjs(item.order_date)
+        if (date.isValid()) {
+          // Financial year: April 1 to March 31
+          const month = date.month() + 1 // dayjs months are 0-based
+          const year = date.year()
+          const financialYear = month >= 4 ? year : year - 1
+          years.add(financialYear)
+        }
+      }
+      // Also check financial_completed_year (only if it's a valid 4-digit year)
+      if (item.financial_completed_year) {
+        const year = parseInt(item.financial_completed_year)
+        if (!isNaN(year) && year >= 1900 && year <= currentYear + 10) {
+          years.add(year)
+        }
+      }
+    })
+    return Array.from(years).sort((a, b) => b - a) // Most recent first
+  }, [tableData])
+
+  // Set date range when financial year is selected for both amount and count charts
+  useEffect(() => {
+    if (selectedFinancialYear) {
+      // Financial year: April 1 to March 31
+      const startDate = dayjs(`${selectedFinancialYear}-04-01`)
+      const endDate = dayjs(`${selectedFinancialYear + 1}-03-31`)
+      setOrderDateRange([startDate, endDate])
+    } else {
+      // Clear date range when financial year is cleared to show all data
+      setOrderDateRange(null)
+    }
+  }, [selectedFinancialYear])
+
+  useEffect(() => {
+    if (trendCategory) {
+      setSelectedFinancialYear(null)
+      setOrderDateRange(null)
+    }
+  }, [trendCategory])
 
   const handleDrillBack = useCallback(() => {
+    if (drillLevel === 'project_name') {
+      setDrillLevel('project_code')
+      setSelectedProjectCode('')
+      return
+    }
+    if (drillLevel === 'project_code') {
+      setDrillLevel('coordinator')
+      setSelectedProjectName('')
+      setSelectedProjectCode('')
+      return
+    }
     if (drillLevel === 'coordinator') {
       setDrillLevel('group')
       setSelectedGroup('')
@@ -388,6 +575,9 @@ function Centerheadanalytics() {
       setSelectedCategory('all')
       setSelectedCenter('')
       setSelectedGroup('')
+      setSelectedProjectName('')
+      setSelectedProjectCode('')
+      setTrendCategory(null)
     }
   }, [drillLevel])
 
@@ -402,13 +592,17 @@ function Centerheadanalytics() {
   const handleChartClick = useCallback(
     (label) => {
       const dimension = chartData.dimension
+      if (dimension === 'trend') {
+        // No drilling for trend charts
+        return
+      }
       if (dimension === 'category') {
         const categoryKey = categoryKeyFromLabel(label)
         const categoryItems = filteredData.filter((item) => matchCategory(item, categoryKey))
         const centers = getUniqueCenters(categoryItems)
         setSelectedCategory(categoryKey)
-        if (centers.length <= 1) {
-          setSelectedCenter(centers[0] || '')
+        if (categoryKey === 'all' || categoryKey === 'proposals' || centers.length <= 1) {
+          setSelectedCenter('')
           setDrillLevel('group')
           setSelectedGroup('')
           return
@@ -429,8 +623,19 @@ function Centerheadanalytics() {
         setDrillLevel('coordinator')
         return
       }
+      if (dimension === 'project_co_ordinator') {
+        setSelectedProjectName(label)
+        setSelectedProjectCode('')
+        setDrillLevel('project_code')
+        return
+      }
+      if (dimension === 'project_code') {
+        setSelectedProjectCode(label)
+        setDrillLevel('project_name')
+        return
+      }
     },
-    [categoryKeyFromLabel, chartData.dimension, filteredData, getUniqueCenters, matchCategory],
+    [chartData, filteredData, getUniqueCenters, matchCategory, setSelectedCategory, setSelectedCenter, setSelectedGroup, setDrillLevel],
   )
 
   const chartOptions = useMemo(() => {
@@ -442,11 +647,32 @@ function Centerheadanalytics() {
         legend: { display: chartType === 'pie' },
         tooltip: {
           callbacks: {
+            title: (tooltipItems) => {
+              if (chartType !== 'treemap' || !tooltipItems?.length) return undefined
+              const idx = tooltipItems[0].dataIndex ?? 0
+              return chartData.labels?.[idx] ?? ''
+            },
             label: (context) => {
-              const value = context.parsed?.y ?? context.parsed ?? 0
-              return chartMetric === 'amount'
-                ? `₹ ${formatInCrore(value)}`
-                : `${value} count`
+              if (chartType === 'treemap') {
+                // chartjs-chart-treemap does not expose our tree leaf `label` on context.raw reliably.
+                const idx = context.dataIndex ?? 0
+                const name = chartData.labels?.[idx] ?? 'Unknown'
+                const value = Number(
+                  chartData.values?.[idx] ?? context.raw?.v ?? context.raw?.value ?? 0,
+                )
+                const totalValue = chartData.values.reduce((sum, x) => sum + Number(x || 0), 0)
+                const percent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(1) : '0.0'
+                // Title callback already shows `name`; body is value + share only.
+                return chartMetric === 'amount'
+                  ? `₹ ${formatInCrore(value)} (${percent}%)`
+                  : `${value} (${percent}%)`
+              } else {
+                // Handle other chart types
+                const value = context.parsed?.y ?? context.parsed ?? 0
+                return chartMetric === 'amount'
+                  ? `₹ ${formatInCrore(value)}`
+                  : `${value} count`
+              }
             },
           },
         },
@@ -455,6 +681,12 @@ function Centerheadanalytics() {
         x: {
           display: !isPie,
           title: { display: !isPie, text: 'Category' },
+          ticks: {
+            callback: function(value, index) {
+              const label = this.getLabelForValue(value)
+              return getFirstTwoWords(label)
+            }
+          }
         },
         y: {
           display: !isPie,
@@ -465,7 +697,7 @@ function Centerheadanalytics() {
         },
       },
     }
-  }, [chartMetric, chartType, formatInCrore])
+  }, [chartMetric, chartType, formatInCrore, chartData])
 
   useEffect(() => {
     if (!chartRef.current) return
@@ -577,7 +809,9 @@ function Centerheadanalytics() {
               const v = Number(ctx.raw?.v ?? ctx.raw?.value ?? 0)
               const totalValue = chartData.values.reduce((sum, x) => sum + Number(x || 0), 0)
               const percent = totalValue > 0 ? ((v / totalValue) * 100).toFixed(1) : '0.0'
-              return [String(ctx.raw?.label || '').slice(0, 18), `${chartMetric === 'amount' ? formatInCrore(v) : v} (${percent}%)`]
+              const name = truncate(chartData.labels?.[ctx.dataIndex] ?? ctx.label)
+              const valueStr = chartMetric === 'amount' ? formatInCrore(v) : String(v)
+              return [name, `${valueStr} (${percent}%)`]
             },
           },
         }
@@ -594,7 +828,7 @@ function Centerheadanalytics() {
     chartInstanceRef.current = new Chart(ctx, {
       type: chartTypeToRender,
       data: {
-        labels: chartData.labels,
+        labels: chartData.labels.map(label => getFirstTwoWords(label)),
         datasets: [dataset],
       },
       options: {
@@ -602,12 +836,22 @@ function Centerheadanalytics() {
         onClick: (evt, elements) => {
           if (!elements || elements.length === 0) return
           const activeElement = elements[0]
-          const label = chartInstanceRef.current.data.labels[activeElement.index]
+          const label = chartData.labels[activeElement.index]
           handleChartClick(label)
         },
       },
       plugins: [valuePctLabelsPlugin],
     })
+
+    // Match directoranalytics: remeasure after mount / layout (helps after fullscreen exit).
+    requestAnimationFrame(() => {
+      chartInstanceRef.current?.resize?.()
+      chartInstanceRef.current?.update?.()
+    })
+    setTimeout(() => {
+      chartInstanceRef.current?.resize?.()
+      chartInstanceRef.current?.update?.()
+    }, 200)
 
     return () => {
       if (chartInstanceRef.current) {
@@ -615,7 +859,43 @@ function Centerheadanalytics() {
         chartInstanceRef.current = null
       }
     }
-  }, [chartData, chartOptions, chartType])
+  }, [chartData, chartOptions, chartType, handleChartClick, isGraphFullscreen])
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement
+      const wasFullscreen = isGraphFullscreen
+      const nowFullscreen = Boolean(graphCardRef.current && fsEl === graphCardRef.current)
+      setIsGraphFullscreen(nowFullscreen)
+
+      const chart = chartInstanceRef.current
+      if (!chart) return
+
+      // Chart.js needs a few resize attempts because fullscreen/layout changes are async.
+      const resizeAttempts = [0, 100, 250, 400, 650]
+      resizeAttempts.forEach((delay) => {
+        setTimeout(() => {
+          chart.resize()
+          chart.update()
+        }, delay)
+      })
+
+      // Also do one RAF pass right after event.
+      requestAnimationFrame(() => {
+        chart.resize()
+        chart.update()
+      })
+
+      if (wasFullscreen !== nowFullscreen) {
+        setTimeout(() => {
+          // Trigger a re-render by updating state
+          setIsGraphFullscreen(nowFullscreen)
+        }, 50)
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [isGraphFullscreen])
 
   const handleToggleGraphFullscreen = async () => {
     try {
@@ -933,7 +1213,7 @@ function Centerheadanalytics() {
     fetchStats()
     fetchStageConfig()
     fetchUnacknowledgedCount()
-  }, [fetchProposals, fetchStats, fetchStageConfig])
+  }, [fetchStats, fetchStageConfig])
 
   // Fetch all queries for the table
   useEffect(() => {
@@ -1291,12 +1571,12 @@ function Centerheadanalytics() {
         const searchLower = s.toLowerCase()
         filtered = filtered.filter((item) =>
           Object.values(item).some((val) =>
-            String(val).toLowerCase().includes(searchLower),
-          ),
+            String(val).toLowerCase().includes(searchLower)
+          )
         )
       }
     }
-
+    
     if (centerFilter) {
       filtered = filtered.filter((item) => item.center === centerFilter)
     }
@@ -1378,10 +1658,6 @@ function Centerheadanalytics() {
           return status === statusFilter
         })
       }
-    } else if (statusFilter === 'totalProjects') {
-      filtered = filtered.filter(
-        (item) => item.project_number && item.project_number.trim() !== '',
-      )
     }
 
     setFilteredData(filtered)
@@ -1820,6 +2096,7 @@ function Centerheadanalytics() {
                             setEnquiryDateRange(null)
                             setStatusFilter(null)
                             setProjectNumberFilter(null)
+                            setTrendCategory(null)
                           }}
                           size="large"
                           style={{ width: '100%' }}
@@ -1900,7 +2177,7 @@ function Centerheadanalytics() {
                             Showing {filteredData.length} records in chart view
                           </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2" style={isGraphFullscreen ? { zIndex: 100 } : {}}>
                           {drillLevel !== 'top' && (
                             <Button size="small" onClick={handleDrillBack}>
                               Back
@@ -1931,6 +2208,64 @@ function Centerheadanalytics() {
                           </div>
                           <Select
                             size="small"
+                            placeholder="Financial Year"
+                            value={selectedFinancialYear}
+                            onChange={setSelectedFinancialYear}
+                            allowClear
+                            disabled={Boolean(trendCategory)}
+                            style={{ minWidth: 120 }}
+                            popupMatchSelectWidth={false}
+                            options={availableFinancialYears.map(year => ({
+                              value: year,
+                              label: `${year}-${year + 1}`,
+                            }))}
+                          />
+                          <Dropdown
+                            menu={{
+                              items: [
+                                { key: 'all', label: 'All (Projects + Proposals)' },
+                                { key: 'proposals', label: 'Proposed Projects' },
+                                { key: 'projects', label: 'Projects' },
+                                { key: 'technicallyCompleted', label: 'Technically Completed' },
+                                { key: 'financiallyCompleted', label: 'Financially Completed' },
+                                { key: 'financiallyNotCompleted', label: 'Financially Not Completed' },
+                                { key: 'pendingProjects', label: 'Ongoing Projects' },
+                              ],
+                              onClick: ({ key }) => {
+                                setTrendCategory(key)
+                                if (key) {
+                                  setChartType('bar')
+                                  setDrillLevel('top')
+                                  setSelectedCategory('all')
+                                  setSelectedCenter('')
+                                  setSelectedGroup('')
+                                  setSelectedProjectName('')
+                                  setSelectedProjectCode('')
+                                  setSelectedFinancialYear(null)
+                                  setOrderDateRange(null)
+                                }
+                              },
+                            }}
+                            trigger={['click']}
+                          >
+                            <Button size="small">
+                              Trend {trendCategory ? `: ${CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
+                            </Button>
+                          </Dropdown>
+                          {trendCategory && (
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                setTrendCategory(null)
+                                setSelectedFinancialYear(null)
+                                setOrderDateRange(null)
+                              }}
+                            >
+                              Clear Trend
+                            </Button>
+                          )}
+                          <Select
+                            size="small"
                             value={chartType}
                             onChange={setChartType}
                             options={[
@@ -1947,6 +2282,7 @@ function Centerheadanalytics() {
                       <div
                         style={{
                           minHeight: isGraphFullscreen ? '90vh' : 420,
+                          height: isGraphFullscreen ? '90vh' : undefined,
                           position: 'relative',
                         }}
                       >

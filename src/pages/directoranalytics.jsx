@@ -12,6 +12,7 @@ import {
   Button,
   Descriptions,
   Divider,
+  Dropdown,
   Form,
   Input,
   Modal,
@@ -44,6 +45,22 @@ import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/d
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
 Chart.register(...registerables, TreemapController, TreemapElement)
+
+// Function to extract project code from project number
+const getProjectCode = (projectNumber) => {
+  if (!projectNumber || typeof projectNumber !== 'string') return ''
+  const trimmed = projectNumber.trim()
+  // Extract prefix before the first digit or dash, case-insensitive
+  const match = trimmed.match(/^([A-Z]+)(?:-|\d|$)/i)
+  return match ? match[1].toUpperCase() : trimmed
+}
+
+// Helper function to get first two words of a project name
+const getFirstTwoWords = (text) => {
+  if (!text || typeof text !== 'string') return text || ''
+  const words = text.trim().split(/\s+/)
+  return words.slice(0, 2).join(' ')
+}
 
 const { Title } = Typography
 const { TextArea } = Input
@@ -281,8 +298,12 @@ function directoranalytics() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedCenter, setSelectedCenter] = useState('')
   const [selectedGroup, setSelectedGroup] = useState('')
+  const [selectedProjectCode, setSelectedProjectCode] = useState('')
+  const [selectedProjectName, setSelectedProjectName] = useState('')
   const [chartType, setChartType] = useState('bar')
   const [chartMetric, setChartMetric] = useState('count')
+  const [selectedFinancialYear, setSelectedFinancialYear] = useState(null)
+  const [trendCategory, setTrendCategory] = useState(null)
   const [currentUserName, setCurrentUserName] = useState('')
   const [allCustomerSuggestions, setAllCustomerSuggestions] = useState([])
   const [customerOptions, setCustomerOptions] = useState([])
@@ -586,11 +607,7 @@ function directoranalytics() {
         params.append('end_date', dateRange[1].format('YYYY-MM-DD'))
       }
 
-      // Add parameter to fetch by "Quotation Given By Name" instead of coordinator
-      if (currentUserName) {
-        console.log('Current User Name:', currentUserName)
-        params.append('quotation_given_by', currentUserName)
-      }
+      // Director Analytics should show all proposals, not filtered by current user
 
       const queryString = params.toString()
       const url = `${API_BASE_URL}/proposals/${queryString ? '?' + queryString : ''}`
@@ -702,7 +719,7 @@ function directoranalytics() {
     } finally {
       setTableLoading(false)
     }
-  }, [selectedDateField, dateRange])
+  }, []) // Fetch all data once, let client-side filtering handle date ranges
 
   const fetchProposalCount = useCallback(async () => {
     try {
@@ -1039,7 +1056,7 @@ function directoranalytics() {
     fetchGroups()
     fetchUsers()
     fetchStageConfig()
-  }, [fetchProposals, fetchProposalCount, fetchCentres, fetchGroups, fetchUsers, fetchStageConfig])
+  }, [fetchProposalCount, fetchCentres, fetchGroups, fetchUsers, fetchStageConfig])
 
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
@@ -1151,6 +1168,22 @@ function directoranalytics() {
           return value !== undefined && value !== null && String(value).toLowerCase().includes(lowerSearch)
         })
       )
+    }
+
+    // Apply date range filtering for financial year
+    if (selectedDateField && dateRange && dateRange.length === 2) {
+      filtered = filtered.filter((item) => {
+        const dateValue = item[selectedDateField]
+        if (!dateValue) return false
+        
+        const itemDate = dayjs(dateValue)
+        if (!itemDate.isValid()) return false
+        
+        const start = dateRange[0].startOf('day')
+        const end = dateRange[1].endOf('day')
+        
+        return itemDate.isSameOrAfter(start) && itemDate.isSameOrBefore(end)
+      })
     }
 
     if (projectNumberFilter && projectNumberFilter.length > 0) {
@@ -1272,15 +1305,21 @@ function directoranalytics() {
     (items) =>
       items.filter((item) => {
         if (!matchCategory(item, selectedCategory)) return false
-        if (drillLevel === 'group' || drillLevel === 'coordinator') {
+        if (drillLevel === 'group' || drillLevel === 'coordinator' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedCenter && item.center !== selectedCenter) return false
         }
-        if (drillLevel === 'coordinator') {
+        if (drillLevel === 'coordinator' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedGroup && item.group !== selectedGroup) return false
+        }
+        if (drillLevel === 'project_code' || drillLevel === 'project_name') {
+          if (selectedProjectName && normalizeValue(item.project_co_ordinator) !== normalizeValue(selectedProjectName)) return false
+        }
+        if (drillLevel === 'project_name') {
+          if (selectedProjectCode && getProjectCode(item.project_number) !== getProjectCode(selectedProjectCode)) return false
         }
         return true
       }),
-    [drillLevel, matchCategory, selectedCategory, selectedCenter, selectedGroup],
+    [drillLevel, matchCategory, selectedCategory, selectedCenter, selectedGroup, selectedProjectName, selectedProjectCode],
   )
 
   const getFinancialValue = useCallback((item) => {
@@ -1314,6 +1353,79 @@ function directoranalytics() {
 
   const chartData = useMemo(() => {
     const items = filterForDrill(filteredData)
+
+    // Handle trend mode
+    if (trendCategory) {
+      const years = {}
+      const currentYear = dayjs().year()
+      
+      // Get all years from 2010 to current year + 1
+      for (let year = 2010; year <= currentYear + 1; year++) {
+        years[year] = 0
+      }
+      
+      // Filter data based on trend category
+      const trendItems = filteredData.filter((item) => matchCategory(item, trendCategory))
+      
+      // Aggregate by year
+      trendItems.forEach((item) => {
+        let year = null
+
+        if (trendCategory === 'all') {
+          if (item.order_date) {
+            year = dayjs(item.order_date).year()
+          } else if (item.enquiry_date) {
+            year = dayjs(item.enquiry_date).year()
+          }
+        } else if (trendCategory === 'projects') {
+          if (item.order_date) {
+            year = dayjs(item.order_date).year()
+          }
+        } else if (trendCategory === 'proposals') {
+          if (item.enquiry_date) {
+            year = dayjs(item.enquiry_date).year()
+          }
+        } else if (trendCategory === 'technicallyCompleted') {
+          if (item.technical_completed_year) {
+            year = parseInt(item.technical_completed_year)
+          }
+        } else if (trendCategory === 'financiallyCompleted' || trendCategory === 'financiallyNotCompleted') {
+          if (item.financial_completed_year) {
+            year = parseInt(item.financial_completed_year)
+          } else if (trendCategory === 'financiallyNotCompleted' && item.technical_completed_year) {
+            year = parseInt(item.technical_completed_year)
+          }
+        }
+
+        if (year && years.hasOwnProperty(year)) {
+          years[year] += chartMetric === 'amount' ? getFinancialValue(item) : 1
+        }
+      })
+      
+      const sortedYears = Object.keys(years).sort((a, b) => parseInt(a) - parseInt(b))
+      const labels = sortedYears
+      const values = sortedYears.map(year => years[year])
+      
+      const categoryLabel = CATEGORIES.find(c => c.key === trendCategory)?.label || trendCategory
+      const metricLabel = chartMetric === 'amount' ? 'Amount' : 'Count'
+      
+      console.log('Trend calculation:', {
+        trendCategory,
+        chartMetric,
+        filteredDataLength: filteredData.length,
+        trendItemsLength: trendItems.length,
+        yearCounts: years,
+        labels,
+        values,
+      })
+      
+      return {
+        labels,
+        values,
+        title: `${categoryLabel} Trend by Year (${metricLabel})`,
+        dimension: 'trend',
+      }
+    }
 
     if (drillLevel === 'top') {
       if (chartMetric === 'amount') {
@@ -1356,15 +1468,108 @@ function directoranalytics() {
       }
     }
 
+    if (drillLevel === 'coordinator') {
+      return {
+        ...buildBreakdown(items, 'project_co_ordinator'),
+        title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
+        dimension: 'project_co_ordinator',
+      }
+    }
+
+    if (drillLevel === 'project_code') {
+      const filteredItems = items.filter((item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName))
+      const projectCodes = {}
+      filteredItems.forEach((item) => {
+        const code = getProjectCode(item.project_number)
+        const key = code || 'Unknown'
+        projectCodes[key] = (projectCodes[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+      })
+      const entries = Object.entries(projectCodes).sort((a, b) => b[1] - a[1])
+      return {
+        labels: entries.map(([key]) => key),
+        values: entries.map(([, value]) => value),
+        title: `${selectedProjectName} by Project Code`,
+        dimension: 'project_code',
+      }
+    }
+
+    if (drillLevel === 'project_name') {
+      const filteredItems = items.filter((item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName) && getProjectCode(item.project_number) === getProjectCode(selectedProjectCode))
+      return {
+        ...buildBreakdown(filteredItems, 'activity'),
+        title: `${selectedProjectCode} Projects by Activity`,
+        dimension: 'activity',
+      }
+    }
+
     return {
       ...buildBreakdown(items, 'project_co_ordinator'),
       title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
       dimension: 'project_co_ordinator',
     }
-  }, [buildBreakdown, CATEGORIES, chartMetric, drillLevel, filterForDrill, filteredData, getFinancialValue, matchCategory, selectedCategory, selectedCenter, selectedGroup])
+  }, [buildBreakdown, CATEGORIES, chartMetric, drillLevel, filterForDrill, filteredData, getFinancialValue, matchCategory, selectedCategory, selectedCenter, selectedGroup, selectedProjectCode, selectedProjectName, trendCategory])
+
+  // Generate available financial years from data
+  const availableFinancialYears = useMemo(() => {
+    const years = new Set()
+    const currentYear = dayjs().year()
+    
+    // Always use tableData to show all available years, regardless of filters
+    tableData.forEach((item) => {
+      // Use order_date for financial year calculation
+      if (item.order_date) {
+        const date = dayjs(item.order_date)
+        if (date.isValid()) {
+          // Financial year: April 1 to March 31
+          const month = date.month() + 1 // dayjs months are 0-based
+          const year = date.year()
+          const financialYear = month >= 4 ? year : year - 1
+          years.add(financialYear)
+        }
+      }
+      // Also check financial_completed_year (only if it's a valid 4-digit year)
+      if (item.financial_completed_year) {
+        const year = parseInt(item.financial_completed_year)
+        if (!isNaN(year) && year >= 1900 && year <= currentYear + 10) {
+          years.add(year)
+        }
+      }
+    })
+    return Array.from(years).sort((a, b) => b - a) // Most recent first
+  }, [tableData])
+
+  // Set date range when financial year is selected for both amount and count charts
+  useEffect(() => {
+    if (selectedFinancialYear) {
+      // Financial year: April 1 to March 31
+      const startDate = dayjs(`${selectedFinancialYear}-04-01`)
+      const endDate = dayjs(`${selectedFinancialYear + 1}-03-31`)
+      setDateRange([startDate, endDate])
+      setSelectedDateField('order_date') // Use order_date for financial filtering
+    } else {
+      // Clear date range when financial year is cleared to show all data
+      setDateRange(null)
+      setSelectedDateField(null)
+    }
+  }, [selectedFinancialYear])
+
+  useEffect(() => {
+    if (trendCategory) {
+      setSelectedFinancialYear(null)
+      setDateRange(null)
+      setSelectedDateField(null)
+    }
+  }, [trendCategory])
 
   const handleDrillBack = useCallback(() => {
-    if (drillLevel === 'coordinator') {
+    if (drillLevel === 'project_name') {
+      setDrillLevel('project_code')
+      setSelectedProjectCode('')
+    } else if (drillLevel === 'project_code') {
+      setDrillLevel('coordinator')
+      setSelectedProjectName('')
+      setSelectedProjectCode('')
+    } else if (drillLevel === 'coordinator') {
       setDrillLevel('group')
       setSelectedGroup('')
     } else if (drillLevel === 'group') {
@@ -1389,6 +1594,10 @@ function directoranalytics() {
   const handleChartClick = useCallback(
     (label) => {
       const dimension = chartData.dimension
+      if (dimension === 'trend') {
+        // No drilling for trend charts
+        return
+      }
       if (dimension === 'category') {
         const categoryKey = categoryKeyFromLabel(label)
         setSelectedCategory(categoryKey)
@@ -1406,6 +1615,17 @@ function directoranalytics() {
       if (dimension === 'group') {
         setSelectedGroup(label)
         setDrillLevel('coordinator')
+        return
+      }
+      if (dimension === 'project_co_ordinator') {
+        setSelectedProjectName(label)
+        setDrillLevel('project_code')
+        setSelectedProjectCode('')
+        return
+      }
+      if (dimension === 'project_code') {
+        setSelectedProjectCode(label)
+        setDrillLevel('project_name')
         return
       }
     },
@@ -1564,7 +1784,7 @@ function directoranalytics() {
     chartInstanceRef.current = new Chart(ctx, {
       type: chartTypeToRender,
       data: {
-        labels: chartData.labels,
+        labels: chartData.labels.map(label => getFirstTwoWords(label)),
         datasets: [dataset],
       },
       options: {
@@ -1573,7 +1793,7 @@ function directoranalytics() {
         onClick: (evt, elements) => {
           if (!elements || elements.length === 0) return
           const activeElement = elements[0]
-          const label = chartInstanceRef.current.data.labels[activeElement.index]
+          const label = chartData.labels[activeElement.index]
           handleChartClick(label)
         },
         scales: chartTypeToRender === 'pie' || chartTypeToRender === 'treemap'
@@ -1585,7 +1805,14 @@ function directoranalytics() {
                 title: { display: true, text: isAmountChart ? 'Amount (cr)' : 'Count', color: '#374151' },
               },
               x: {
-                ticks: { color: '#374151', font: { size: 12 } },
+                ticks: { 
+                  color: '#374151', 
+                  font: { size: 12 },
+                  callback: function(value, index) {
+                    const label = this.getLabelForValue(value)
+                    return getFirstTwoWords(label)
+                  }
+                },
                 title: { display: true, text: 'Category', color: '#374151' },
               },
             },
@@ -2641,8 +2868,8 @@ function directoranalytics() {
                           Showing {filteredData.length} records in graph form
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {drillLevel !== 'top' && (
+                      <div className="flex flex-wrap items-center gap-2" style={isGraphFullscreen ? { zIndex: 100 } : {}}>
+                        {drillLevel !== 'top' && !trendCategory && (
                           <Button size="small" onClick={handleDrillBack}>
                             Back
                           </Button>
@@ -2654,6 +2881,9 @@ function directoranalytics() {
                             setSelectedCategory('all')
                             setSelectedCenter('')
                             setSelectedGroup('')
+                            setSelectedProjectName('')
+                            setSelectedProjectCode('')
+                            setTrendCategory(null)
                           }}
                         >
                           Reset
@@ -2681,6 +2911,65 @@ function directoranalytics() {
                           />
                           <span style={{ fontSize: '12px', color: '#666' }}>Amount</span>
                         </div>
+                        <Select
+                          size="small"
+                          placeholder="Financial Year"
+                          value={selectedFinancialYear}
+                          onChange={setSelectedFinancialYear}
+                          allowClear
+                          disabled={Boolean(trendCategory)}
+                          style={{ minWidth: 120 }}
+                          popupMatchSelectWidth={false}
+                          options={availableFinancialYears.map(year => ({
+                            value: year,
+                            label: `${year}-${year + 1}`,
+                          }))}
+                        />
+                        <Dropdown
+                          menu={{
+                            items: [
+                              { key: 'all', label: 'All (Projects + Proposals)' },
+                              { key: 'proposals', label: 'Proposed Projects' },
+                              { key: 'projects', label: 'Projects' },
+                              { key: 'technicallyCompleted', label: 'Technically Completed' },
+                              { key: 'financiallyCompleted', label: 'Financially Completed' },
+                              { key: 'financiallyNotCompleted', label: 'Financially Not Completed' },
+                            ],
+                            onClick: ({ key }) => {
+                              setTrendCategory(key)
+                              if (key) {
+                                setChartType('bar')
+                                setDrillLevel('top')
+                                setSelectedCategory('all')
+                                setSelectedCenter('')
+                                setSelectedGroup('')
+                                setSelectedProjectName('')
+                                setSelectedProjectCode('')
+                                setSelectedFinancialYear(null)
+                                setDateRange(null)
+                                setSelectedDateField(null)
+                              }
+                            },
+                          }}
+                          trigger={['click']}
+                        >
+                          <Button size="small">
+                            Trend {trendCategory ? `: ${CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
+                          </Button>
+                        </Dropdown>
+                        {trendCategory && (
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setTrendCategory(null)
+                              setSelectedFinancialYear(null)
+                              setDateRange(null)
+                              setSelectedDateField(null)
+                            }}
+                          >
+                            Clear Trend
+                          </Button>
+                        )}
                         <Select
                           size="small"
                           value={chartType}
