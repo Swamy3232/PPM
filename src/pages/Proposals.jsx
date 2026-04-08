@@ -171,6 +171,21 @@ const mapUiToApi = (values) => {
   return payload
 }
 
+// Helper functions to format center and group names with prefixes
+const formatCenterName = (center) => {
+  if (!center || typeof center !== 'string') return center
+  const trimmed = center.trim()
+  // Don't add prefix if it already has one
+  return trimmed.startsWith('C-') ? trimmed : `C-${trimmed}`
+}
+
+const formatGroupName = (group) => {
+  if (!group || typeof group !== 'string') return group
+  const trimmed = group.trim()
+  // Don't add prefix if it already has one
+  return trimmed.startsWith('G-') ? trimmed : `G-${trimmed}`
+}
+
 const ActionButtons = ({ label, onAdd }) => (
   <Space wrap>
     <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
@@ -1834,7 +1849,7 @@ function Proposals() {
   const projectColumns = [
     { title: 'Project Number', dataIndex: 'project_number', key: 'project_number' },
     { title: 'Party Name', dataIndex: 'party_name', key: 'party_name' },
-    { title: 'Centre', dataIndex: 'center', key: 'center' },
+    { title: 'Centre', dataIndex: 'center', key: 'center', render: (value) => formatCenterName(value) },
     { title: 'Order Date', dataIndex: 'order_date', key: 'order_date', render: (value) => formatDate(value) },
     {
       title: 'Technical Year',
@@ -2098,7 +2113,7 @@ function Proposals() {
                         >
                           {uniqueCentres.map((center) => (
                             <Select.Option key={center} value={center}>
-                              {center}
+                              {formatCenterName(center)}
                             </Select.Option>
                           ))}
                         </Select>
@@ -2308,10 +2323,10 @@ function Proposals() {
                               )}
                             </Descriptions.Item>
                             <Descriptions.Item label="Centre">
-                              {renderDetailValue('center', selectedRecord.center)}
+                              {renderDetailValue('center', formatCenterName(selectedRecord.center))}
                             </Descriptions.Item>
                             <Descriptions.Item label="Group">
-                              {renderDetailValue('group', selectedRecord.group)}
+                              {renderDetailValue('group', formatGroupName(selectedRecord.group))}
                             </Descriptions.Item>
                             <Descriptions.Item label="Project Co-ordinator">
                               {renderDetailValue(
@@ -3257,7 +3272,7 @@ function Proposals() {
                     >
                       {centreCodeOptions.map((code) => (
                         <Select.Option key={code} value={code}>
-                          {code}
+                          {formatCenterName(code)}
                         </Select.Option>
                       ))}
                     </Select>
@@ -3319,7 +3334,7 @@ function Proposals() {
                     >
                       {filteredGroups.map((group) => (
                         <Select.Option key={group.id} value={group.code}>
-                          {group.code}
+                          {formatGroupName(group.code)}
                         </Select.Option>
                       ))}
                     </Select>

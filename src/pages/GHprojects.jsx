@@ -19,6 +19,8 @@ import {
   DatePicker,
   Select
 } from 'antd'
+import { ExcelRenderer } from 'react-excel-renderer'
+import mammoth from 'mammoth'
 import {
   EyeOutlined,
   FileTextOutlined,
@@ -31,6 +33,8 @@ import {
   EditOutlined,
   DeleteOutlined,
   ArrowLeftOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
@@ -133,6 +137,14 @@ function GHprojects() {
   const [stageData, setStageData] = useState([])
   const [loadingStages, setLoadingStages] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+  const [excelRendererData, setExcelRendererData] = useState(null)
+  const [excelRendererLoading, setExcelRendererLoading] = useState(false)
+  const [excelRendererError, setExcelRendererError] = useState(null)
+  const [activeSheetIndex, setActiveSheetIndex] = useState(0)
+  const [wordDocumentContent, setWordDocumentContent] = useState(null)
+  const [wordDocumentLoading, setWordDocumentLoading] = useState(false)
+  const [wordDocumentError, setWordDocumentError] = useState(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [allotmentModalVisible, setAllotmentModalVisible] = useState(false)
   const [selectedStageForAllotment, setSelectedStageForAllotment] = useState(null)
   const [allotmentData, setAllotmentData] = useState(null)
@@ -147,6 +159,15 @@ function GHprojects() {
   const [documentVersion, setDocumentVersion] = useState('')
   const [uploadedBy, setUploadedBy] = useState('')
   const [description, setDescription] = useState('')
+  const [existingDocuments, setExistingDocuments] = useState([])
+  const [suggestedVersion, setSuggestedVersion] = useState('1')
+
+  // Edit Document
+  const [editDocumentModalVisible, setEditDocumentModalVisible] = useState(false)
+  const [selectedDocumentForEdit, setSelectedDocumentForEdit] = useState(null)
+  const [editingDocumentVersion, setEditingDocumentVersion] = useState('')
+  const [editingDocumentDescription, setEditingDocumentDescription] = useState('')
+  const [updatingDocument, setUpdatingDocument] = useState(false)
 
   // Remarks
   const [remarksModalVisible, setRemarksModalVisible] = useState(false)
@@ -168,7 +189,9 @@ function GHprojects() {
   const [selectedStageForDetail, setSelectedStageForDetail] = useState(null)
   const [stageDetailForm] = Form.useForm()
   const [submittingStageDetail, setSubmittingStageDetail] = useState(false)
+  const [editingStageDetail, setEditingStageDetail] = useState(null)
   const [projectPaymentStageRows, setProjectPaymentStageRows] = useState([])
+  const [projectStageTitle, setProjectStageTitle] = useState('')
 
   // Fetch projects on mount and read current user from localStorage
   useEffect(() => {
@@ -289,6 +312,21 @@ function GHprojects() {
       .filter(Boolean)
   }
 
+  const getStatusColor = (status) => {
+    if (!status) return 'default'
+    const statusLower = status.toLowerCase()
+    switch (statusLower) {
+      case 'completed':
+        return 'green'
+      case 'in progress':
+        return 'blue'
+      case 'pending':
+        return 'orange'
+      default:
+        return 'default'
+    }
+  }
+
   const fetchStageData = async (projectId) => {
     setLoadingStages(true)
     try {
@@ -343,6 +381,95 @@ function GHprojects() {
     setSelectedProject(null)
     setStageData([])
     setProjectPaymentStageRows([])
+  }
+
+  const loadExcelWithRenderer = async (url) => {
+    setExcelRendererLoading(true)
+    setExcelRendererError(null)
+    setExcelRendererData(null)
+
+    try {
+      console.log('Loading Excel file with react-excel-renderer:', url)
+      
+      // Fetch the Excel file
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Excel file: ${response.status}`)
+      }
+      
+      const blob = await response.blob()
+      
+      // Use react-excel-renderer to parse the file
+      const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      
+      ExcelRenderer(file, (err, resp) => {
+        if (err) {
+          console.error('ExcelRenderer error:', err)
+          setExcelRendererError(`Failed to parse Excel file: ${err.message || err}`)
+          setExcelRendererLoading(false)
+        } else {
+          console.log('ExcelRenderer success:', resp)
+          console.log('Rows structure:', resp.rows?.[0])
+          console.log('Cols structure:', resp.cols)
+          
+          // Check if multiple sheets are available
+          if (resp.sheets && resp.sheets.length > 1) {
+            console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
+          }
+          
+          setExcelRendererData(resp)
+          setActiveSheetIndex(0)
+          setExcelRendererLoading(false)
+        }
+      })
+      
+    } catch (error) {
+      console.error('Error loading Excel file:', error)
+      setExcelRendererError(`Error loading Excel file: ${error.message}`)
+      setExcelRendererLoading(false)
+    }
+  }
+
+  const loadWordDocument = async (url) => {
+    setWordDocumentLoading(true)
+    setWordDocumentError(null)
+    setWordDocumentContent(null)
+
+    try {
+      console.log('Loading Word document with mammoth.js:', url)
+      
+      // Fetch the Word document
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Word document: ${response.status}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      
+      // Use mammoth.js to convert Word document to HTML
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer: arrayBuffer },
+        {
+          styleMap: [
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "p[style-name='Title'] => h1.title:fresh",
+            "b => strong",
+            "i => em"
+          ]
+        }
+      )
+      
+      console.log('Mammoth.js conversion success:', result)
+      setWordDocumentContent(result.value)
+      setWordDocumentLoading(false)
+      
+    } catch (error) {
+      console.error('Error loading Word document:', error)
+      setWordDocumentError(`Error loading Word document: ${error.message}`)
+      setWordDocumentLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -608,20 +735,114 @@ function GHprojects() {
   }
 
   // Upload Document handlers
-  const handleOpenUploadModal = (stage) => {
+  const handleOpenUploadModal = async (stage) => {
     setSelectedStageForUpload(stage)
     setUploadModalVisible(true)
     setFileToUpload(null)
     setDocumentName((stage.stage_name || 'Document').toString())
-    setDocumentVersion('')
     setUploadedBy(currentUserName || '')
     setDescription('')
+
+    // Fetch existing documents for this stage and project
+    try {
+      const res = await fetch(`${apiBase}/documents/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (res.ok) {
+        const allDocuments = await res.json()
+        const filteredDocs = allDocuments.filter(doc =>
+          doc.project_id === safeId(selectedProject) &&
+          doc.stage_id === stage.stage_id &&
+          doc.name === (stage.stage_name || 'Document')
+        )
+        setExistingDocuments(filteredDocs)
+
+        // Calculate suggested version
+        if (filteredDocs.length > 0) {
+          const versions = filteredDocs.map(doc => parseInt(doc.version) || 0)
+          const maxVersion = Math.max(...versions)
+          setSuggestedVersion((maxVersion + 1).toString())
+        } else {
+          setSuggestedVersion('1')
+        }
+      } else {
+        setExistingDocuments([])
+        setSuggestedVersion('1')
+      }
+    } catch (error) {
+      console.error('Failed to fetch existing documents:', error)
+      setExistingDocuments([])
+      setSuggestedVersion('1')
+    }
+
+    setDocumentVersion('')
   }
 
   const handleCloseUploadModal = () => {
     setUploadModalVisible(false)
     setSelectedStageForUpload(null)
     setFileToUpload(null)
+    setExistingDocuments([])
+    setSuggestedVersion('1')
+  }
+
+  const handleOpenEditDocumentModal = (doc) => {
+    setSelectedDocumentForEdit(doc)
+    setEditingDocumentVersion(doc.version || '')
+    setEditingDocumentDescription(doc.description || '')
+    setEditDocumentModalVisible(true)
+  }
+
+  const handleCloseEditDocumentModal = () => {
+    setEditDocumentModalVisible(false)
+    setSelectedDocumentForEdit(null)
+    setEditingDocumentVersion('')
+    setEditingDocumentDescription('')
+  }
+
+  const handleUpdateDocument = async () => {
+    if (!selectedDocumentForEdit) return
+
+    setUpdatingDocument(true)
+    const formData = new FormData()
+    formData.append('version', editingDocumentVersion.trim())
+    formData.append('description', editingDocumentDescription.trim())
+
+    try {
+      const res = await fetch(`${apiBase}/documents/${selectedDocumentForEdit.id}`, {
+        method: 'PUT',
+        body: formData,
+      })
+      if (!res.ok) {
+        const err = await res.text().catch(() => 'Update failed')
+        throw new Error(err || 'Update failed')
+      }
+      message.success('Document updated!')
+      handleCloseEditDocumentModal()
+      fetchStageData(safeId(selectedProject))
+    } catch (err) {
+      console.error('Update error:', err)
+      message.error('Failed to update document')
+    } finally {
+      setUpdatingDocument(false)
+    }
+  }
+
+  const handleDeleteDocument = async (documentId) => {
+    try {
+      const res = await fetch(`${apiBase}/documents/${documentId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.text().catch(() => 'Delete failed')
+        throw new Error(err || 'Delete failed')
+      }
+      message.success('Document deleted!')
+      fetchStageData(safeId(selectedProject))
+    } catch (err) {
+      console.error('Delete error:', err)
+      message.error('Failed to delete document')
+    }
   }
 
   const handleUpload = async () => {
@@ -636,7 +857,7 @@ function GHprojects() {
     formData.append('project_id', safeId(selectedProject))
     formData.append('stage_id', selectedStageForUpload.stage_id)
     formData.append('uploaded_by', uploader)
-    formData.append('version', documentVersion || '')
+    formData.append('version', documentVersion || suggestedVersion)
     formData.append('file', fileToUpload)
 
     try {
@@ -766,13 +987,37 @@ function GHprojects() {
 
   const handleOpenStageDetailModal = (stage) => {
     setSelectedStageForDetail(stage)
+    setEditingStageDetail(null)
     setStageDetailModalVisible(true)
     stageDetailForm.setFieldsValue({
-      name: stage?.stage_name || '',
+      name: '',
       project_no: selectedProject?.project_number || '',
       value: '',
       status: 'Pending',
     })
+  }
+
+  const handleEditStageDetail = (detail) => {
+    setEditingStageDetail(detail)
+    setStageDetailModalVisible(true)
+    stageDetailForm.setFieldsValue({
+      name: detail.name || '',
+      project_no: detail.project_no || '',
+      value: detail.value || '',
+      status: detail.status || 'Pending',
+    })
+  }
+
+  const handleDeleteStageDetail = async (detailId) => {
+    try {
+      const res = await fetch(`${apiBase}/payment-stages/${detailId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      message.success('Stage detail deleted')
+      fetchProjectPaymentStageRows()
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to delete stage detail')
+    }
   }
 
   const handleSubmitStageDetail = async (values) => {
@@ -785,8 +1030,16 @@ function GHprojects() {
         status: values.status || 'Pending',
       }
 
-      const res = await fetch(`${apiBase}/payment-stages/`, {
-        method: 'POST',
+      let url = `${apiBase}/payment-stages/`
+      let method = 'POST'
+
+      if (editingStageDetail) {
+        url = `${apiBase}/payment-stages/${editingStageDetail.id}`
+        method = 'PUT'
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: {
           accept: 'application/json',
           'Content-Type': 'application/json',
@@ -796,12 +1049,13 @@ function GHprojects() {
 
       if (!res.ok) {
         const errorBody = await res.json().catch(() => ({}))
-        throw new Error(errorBody.detail || 'Failed to add stage/payment details')
+        throw new Error(errorBody.detail || `Failed to ${editingStageDetail ? 'update' : 'add'} stage details`)
       }
 
-      message.success('Stage/payment details saved successfully')
+      message.success(`Stage details ${editingStageDetail ? 'updated' : 'saved'} successfully`)
       setStageDetailModalVisible(false)
       setSelectedStageForDetail(null)
+      setEditingStageDetail(null)
       stageDetailForm.resetFields()
       fetchProjectPaymentStageRows()
     } catch (error) {
@@ -1072,6 +1326,11 @@ function GHprojects() {
                 const posB = configB?.position ?? b.position ?? Infinity
                 return posA - posB
               })
+              .filter(stage => {
+                const config = stageConfig.find((s) => s.id === stage.stage_id)
+                const stagePosition = config?.position ?? stage.position ?? 0
+                return stagePosition !== 10
+              })
               .map((stage) => {
                 const rawName = (stage.stage_name || '').trim()
                 const stageName = rawName
@@ -1089,8 +1348,7 @@ function GHprojects() {
                 const stagePosition = config?.position ?? stage.position ?? 0
                 const canAddStageDetails = stagePosition === 11
                 const stageDetails = projectPaymentStageRows.filter((detail) =>
-                  String(detail.project_no || '').trim() === String(selectedProject?.project_number || '').trim() &&
-                  String(detail.name || '').trim().toLowerCase() === stageNameLower,
+                  String(detail.project_no || '').trim() === String(selectedProject?.project_number || '').trim()
                 )
 
                 return (
@@ -1130,14 +1388,55 @@ function GHprojects() {
                         <Text strong>Documents:</Text>
                         <div className="grid gap-3 mt-3 md:grid-cols-2">
                           {stage.documents.map((doc) => (
-                            <Card key={doc.id} size="small" className="border-l-4 border-l-blue-600">
-                              <Text strong>{doc.version || doc.name || 'Document'}</Text>
-                              {doc.description && <Text type="secondary" className="block text-xs">{doc.description}</Text>}
-                              <div className="text-xs text-gray-500 mt-1">
-                                <UserOutlined /> {doc.uploaded_by || 'Unknown'} • <CalendarOutlined /> {formatDate(doc.updated_at)}
+                            <Card key={doc.id} size="small" className="border-l-4 border-l-blue-600 relative">
+                              <div className="pr-8">
+                                <Text strong>
+                                  {doc.name ? `${doc.name.substring(0, 30)}${doc.name.length > 30 ? '...' : ''}` : 'Document'} - Version {doc.version || 'N/A'}
+                                </Text>
+                                {doc.description && (
+  <Text className="block text-xs mt-1 font-bold text-black">
+    {doc.description}
+  </Text>
+)}
+                                <div className="text-xs text-gray-500 mt-1">
+                                  <UserOutlined /> {doc.uploaded_by || 'Unknown'} • <CalendarOutlined /> {formatDate(doc.updated_at)}
+                                </div>
+                              </div>
+                              <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                                <Text type="secondary" className="text-xs">v{doc.version || 'N/A'}</Text>
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<EditOutlined />}
+                                  onClick={() => handleOpenEditDocumentModal(doc)}
+                                  className="text-blue-600 hover:text-blue-800"
+                                />
+                                <Popconfirm
+                                  title="Delete document?"
+                                  description="This action cannot be undone."
+                                  onConfirm={() => handleDeleteDocument(doc.id)}
+                                  okText="Delete"
+                                  cancelText="Cancel"
+                                >
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<DeleteOutlined />}
+                                    className="text-red-600 hover:text-red-800"
+                                  />
+                                </Popconfirm>
                               </div>
                               {doc.url ? (
-                                <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => setViewDocumentUrl(doc.url)}>
+                                <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => {
+                                  const urlNoQuery = doc.url.split('#')[0].split('?')[0]
+                                  const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+                                  if (ext === 'xlsx' || ext === 'xls') {
+                                    loadExcelWithRenderer(doc.url)
+                                  } else if (ext === 'docx' || ext === 'doc') {
+                                    loadWordDocument(doc.url)
+                                  }
+                                  setViewDocumentUrl(doc.url)
+                                }}>
                                   View
                                 </Button>
                               ) : null}
@@ -1179,32 +1478,7 @@ function GHprojects() {
                       </div>
                     )}
 
-                    {stageDetails.length > 0 && (
-                      <div className="mb-6">
-                        <Text strong>Stage / Payment Details</Text>
-                        <div className="space-y-3 mt-3">
-                          {stageDetails.map((detail) => (
-                            <Card key={detail.id} size="small" className="border-l-4 border-l-yellow-500">
-                              <div className="flex justify-between items-start gap-4">
-                                <div>
-                                  <Text strong>{detail.name || 'Detail'}</Text>
-                                  <Text type="secondary" className="block text-sm mt-1">
-                                    Project No: {detail.project_no || 'N/A'}
-                                  </Text>
-                                </div>
-                                <div className="text-right">
-                                  <Text>{detail.value || 'No value'}</Text>
-                                  <Text type="secondary" className="block text-xs">
-                                    Status: {detail.status || 'Pending'}
-                                  </Text>
-                                </div>
-                              </div>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
+                    
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
                         {canAddRemarks && (
@@ -1234,6 +1508,144 @@ function GHprojects() {
                         </Card>
                       ))}
                     </div>
+
+                    {/* Progress Stages Table for Position 7 */}
+                    {stagePosition === 7 && (
+                      <div className="mb-6">
+                        <Text strong>Progress Stages</Text>
+                        <div className="mt-3">
+                          <table className="min-w-full bg-white border border-gray-200">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  SL No
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Stages
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Remarks
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Status
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Invoice Details
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Invoice Status
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {stageDetails.map((detail, index) => (
+                                <tr key={detail.id} className="hover:bg-gray-50">
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {index + 1}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    Payment stages
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {detail.value || 'No remarks'}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Tag color={getStatusColor(detail.status)}>
+                                      {detail.status || 'Pending'}
+                                    </Tag>
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <div className="max-w-xs truncate" title={detail.invoice_details}>
+                                      {detail.invoice_details || 'No invoice details'}
+                                    </div>
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Tag color={detail.invoice_status === 'Paid' ? 'green' : 
+                                           detail.invoice_status === 'Pending' ? 'orange' : 
+                                           detail.invoice_status === 'Generated' ? 'blue' : 'default'}>
+                                      {detail.invoice_status || 'Pending'}
+                                    </Tag>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Project Stages Table for Position 11 */}
+                    {stagePosition === 11 && (
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-4">
+                          {/* <Input 
+                            placeholder="Enter project stage title..."
+                            style={{ width: '300px' }}
+                            value={projectStageTitle}
+                            onChange={(e) => setProjectStageTitle(e.target.value)}
+                          /> */}
+                          <Button 
+                            type="primary" 
+                            size="small" 
+                            icon={<PlusOutlined />}
+                            onClick={() => handleOpenStageDetailModal(stage)}
+                          >
+                            Add Stage
+                          </Button>
+                        </div>
+                        <div className="mt-3">
+                          <table className="min-w-full bg-white border border-gray-200">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  SL No
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Stages
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Remarks
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Status
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {stageDetails.map((detail, index) => (
+                                <tr key={detail.id} className="hover:bg-gray-50">
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {index + 1}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    Payment stages
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {detail.value || 'No remarks'}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Tag color={getStatusColor(detail.status)}>
+                                      {detail.status || 'Pending'}
+                                    </Tag>
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Space>
+                                      <Button size="small" icon={<EditOutlined />} onClick={() => handleEditStageDetail(detail)}>Edit</Button>
+                                      <Popconfirm title="Delete stage?" onConfirm={() => handleDeleteStageDetail(detail.id)}>
+                                        <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
+                                      </Popconfirm>
+                                    </Space>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     <div>
                       <div className="flex justify-between items-center mb-3">
@@ -1328,11 +1740,12 @@ function GHprojects() {
         </Modal>
 
         <Modal
-          title={<>{selectedStageForDetail ? `Add Details for ${selectedStageForDetail.stage_name}` : 'Add Stage / Payment Details'}</>}
+          title={<>{editingStageDetail ? 'Edit Stage Details' : (selectedStageForDetail ? `Add Details for ${selectedStageForDetail.stage_name}` : 'Add Stage / Payment Details')}</>}
           open={stageDetailModalVisible}
           onCancel={() => {
             setStageDetailModalVisible(false)
             setSelectedStageForDetail(null)
+            setEditingStageDetail(null)
             stageDetailForm.resetFields()
           }}
           footer={null}
@@ -1340,7 +1753,7 @@ function GHprojects() {
         >
           <Form form={stageDetailForm} layout="vertical" onFinish={handleSubmitStageDetail}>
             <Form.Item
-              label="Stage / Payment Name"
+              label="Project Stage"
               name="name"
               rules={[{ required: true, message: 'Please enter stage or payment name' }]}
             >
@@ -1354,7 +1767,7 @@ function GHprojects() {
               <Input />
             </Form.Item>
             <Form.Item
-              label="Value"
+              label="Remarks"
               name="value"
               rules={[{ required: true, message: 'Please enter value' }]}
             >
@@ -1365,24 +1778,30 @@ function GHprojects() {
               name="status"
               rules={[{ required: true, message: 'Please select status' }]}
             >
-              <Select options={[
-                { label: 'Pending', value: 'Pending' },
-                { label: 'In Progress', value: 'In Progress' },
-                { label: 'Completed', value: 'Completed' }
-              ]} />
+              <Select 
+                showSearch
+                allowClear
+                placeholder="Select or type status..."
+                options={[
+                  { label: 'Pending', value: 'Pending' },
+                  { label: 'In Progress', value: 'In Progress' },
+                  { label: 'Completed', value: 'Completed' }
+                ]}
+              />
             </Form.Item>
             <div className="flex justify-end gap-3 mt-4">
               <Button
                 onClick={() => {
                   setStageDetailModalVisible(false)
                   setSelectedStageForDetail(null)
+                  setEditingStageDetail(null)
                   stageDetailForm.resetFields()
                 }}
               >
                 Cancel
               </Button>
               <Button type="primary" htmlType="submit" loading={submittingStageDetail}>
-                Save Details
+                {editingStageDetail ? 'Update' : 'Save'} Details
               </Button>
             </div>
           </Form>
@@ -1404,9 +1823,48 @@ function GHprojects() {
               <p className="ant-upload-text">Click or drag file to this area</p>
             </Dragger>
             <Input placeholder="Document Name *" value={documentName} disabled />
-            <Input placeholder="Version" value={documentVersion} onChange={(e) => setDocumentVersion(e.target.value)} />
+            <div>
+              <Input
+                placeholder="Version"
+                value={documentVersion || suggestedVersion}
+                onChange={(e) => setDocumentVersion(e.target.value)}
+                addonBefore="Auto Version"
+                addonAfter={suggestedVersion}
+              />
+              {existingDocuments.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+                  Existing versions: {existingDocuments.map(doc => `v${doc.version}`).join(', ')}
+                </div>
+              )}
+            </div>
             <TextArea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
             <Input placeholder="Your Name *" value={uploadedBy} disabled />
+          </Space>
+        </Modal>
+
+        <Modal
+          title={`Edit Document - ${selectedDocumentForEdit?.name || 'Document'}`}
+          open={editDocumentModalVisible}
+          onCancel={handleCloseEditDocumentModal}
+          footer={[
+            <Button key="cancel" onClick={handleCloseEditDocumentModal}>Cancel</Button>,
+            <Button key="update" type="primary" loading={updatingDocument} onClick={handleUpdateDocument}>Update</Button>
+          ]}
+          width={500}
+        >
+          <Space direction="vertical" size="large" className="w-full">
+            <Input
+              placeholder="Version"
+              value={editingDocumentVersion}
+              onChange={(e) => setEditingDocumentVersion(e.target.value)}
+              addonBefore="Version:"
+            />
+            <TextArea
+              placeholder="Description"
+              value={editingDocumentDescription}
+              onChange={(e) => setEditingDocumentDescription(e.target.value)}
+              rows={3}
+            />
           </Space>
         </Modal>
 
@@ -1439,13 +1897,367 @@ function GHprojects() {
         </Modal>
 
         <Modal
-          title="Document Viewer"
+          title={
+            <div className="flex justify-between items-center w-full">
+              <span>Document Viewer</span>
+              <div className="space-x-2">
+                <Button 
+                  size="small" 
+                  onClick={() => setIsFullscreen(!isFullscreen)} 
+                  icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                >
+                  {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                </Button>
+                <Button 
+                  size="small" 
+                  onClick={() => {
+                    setViewDocumentUrl(null)
+                    setExcelRendererData(null)
+                    setExcelRendererError(null)
+                    setExcelRendererLoading(false)
+                    setActiveSheetIndex(0)
+                    setWordDocumentContent(null)
+                    setWordDocumentError(null)
+                    setWordDocumentLoading(false)
+                    setIsFullscreen(false)
+                  }}
+                >
+                  Close Viewer
+                </Button>
+              </div>
+            </div>
+          }
           open={!!viewDocumentUrl}
-          onCancel={() => setViewDocumentUrl(null)}
+          closable={false}
+          maskClosable={false}
+          keyboard={false}
           footer={null}
-          width={1100}
+          width={isFullscreen ? '100vw' : 1100}
+          style={{ 
+            top: isFullscreen ? 0 : undefined,
+            maxWidth: isFullscreen ? '100vw' : undefined,
+            margin: isFullscreen ? 0 : undefined,
+            paddingBottom: isFullscreen ? 0 : undefined
+          }}
+          bodyStyle={{ 
+            height: isFullscreen ? 'calc(100vh - 120px)' : 'auto',
+            padding: isFullscreen ? 0 : '24px'
+          }}
         >
-          <iframe src={viewDocumentUrl} className="w-full h-[80vh]" title="Document" />
+          {(() => {
+            const currentUrl = viewDocumentUrl || ''
+            const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
+            const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+            const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+            const isOffice = officeTypes.includes(ext)
+            const directPreviewable = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt'].includes(ext)
+
+            if (!currentUrl) return null
+
+            // Office files (including Excel) - show viewer or download option
+            if (isOffice) {
+              // For Excel files, use react-excel-renderer
+              if (ext === 'xlsx' || ext === 'xls') {
+                if (excelRendererLoading) {
+                  return (
+                    <div className="flex items-center justify-center h-[60vh]">
+                      <Spin size="large" tip="Loading Excel file..." />
+                    </div>
+                  )
+                }
+
+                if (excelRendererError) {
+                  return (
+                    <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                      <div className="text-6xl mb-4"> spreadsheet</div>
+                      <h3 className="text-xl font-semibold">Excel Viewer Error</h3>
+                      <p className="text-gray-500 text-center max-w-md">{excelRendererError}</p>
+                      <div className="space-x-2">
+                        <Button
+                          type="primary"
+                          icon={<LinkOutlined />}
+                          onClick={() => window.open(currentUrl, '_blank')}
+                        >
+                          Download File
+                        </Button>
+                        <Button
+                          onClick={() => loadExcelWithRenderer(currentUrl)}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                }
+
+                if (excelRendererData) {
+                  return (
+                    <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'}`}>
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold">Excel Viewer</h3>
+                          {/* Sheet tabs */}
+                          {excelRendererData.sheets && excelRendererData.sheets.length > 1 && (
+                            <div className="flex space-x-1 mt-2 border-b">
+                              {excelRendererData.sheets.map((sheet, index) => (
+                                <button
+                                  key={index}
+                                  className={`px-3 py-1 text-sm border-b-2 transition-colors ${
+                                    activeSheetIndex === index
+                                      ? 'border-blue-500 text-blue-600 bg-blue-50'
+                                      : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                  }`}
+                                  onClick={() => setActiveSheetIndex(index)}
+                                >
+                                  {sheet.name || `Sheet ${index + 1}`}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-x-2">
+                          <Button 
+                            size="small" 
+                            onClick={() => window.open(currentUrl, '_blank')}
+                            icon={<LinkOutlined />}
+                          >
+                            Download
+                          </Button>
+                          <Button 
+                            size="small" 
+                            onClick={() => loadExcelWithRenderer(currentUrl)}
+                          >
+                            Refresh
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className={`${isFullscreen ? 'h-[calc(100vh-140px)]' : 'h-[70vh]'} border rounded p-4`}>
+                        <style jsx>{`
+                          .excel-scroll-container::-webkit-scrollbar {
+                            width: 12px;
+                            height: 12px;
+                          }
+                          .excel-scroll-container::-webkit-scrollbar-track {
+                            background: #f1f1f1;
+                            border-radius: 4px;
+                          }
+                          .excel-scroll-container::-webkit-scrollbar-thumb {
+                            background: #c1c1c1;
+                            border-radius: 4px;
+                          }
+                          .excel-scroll-container::-webkit-scrollbar-thumb:hover {
+                            background: #a8a8a8;
+                          }
+                          .excel-scroll-container {
+                            scrollbar-width: thin;
+                            scrollbar-color: #c1c1c1 #f1f1f1;
+                            overflow: scroll !important;
+                          }
+                        `}</style>
+                        {(() => {
+                          // Get current sheet data
+                          const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
+                          const currentRows = currentSheet?.rows || excelRendererData.rows || []
+                          const currentCols = currentSheet?.cols || excelRendererData.cols || []
+                          
+                          return currentRows.length > 0 ? (
+                            <div className="excel-scroll-container h-full">
+                              <Table
+                                dataSource={currentRows.map((row, index) => {
+                                  const transformedRow = { key: index }
+                                  Object.keys(row).forEach(key => {
+                                    const value = row[key]
+                                    // Convert objects to strings, handle null/undefined
+                                    if (value && typeof value === 'object') {
+                                      transformedRow[key] = value.name || value.value || JSON.stringify(value)
+                                    } else {
+                                      transformedRow[key] = value !== null && value !== undefined ? String(value) : ''
+                                    }
+                                  })
+                                  return transformedRow
+                                })}
+                                columns={currentCols.map((col, index) => ({
+                                  title: typeof col === 'object' ? (col.name || col.value || `Column ${index + 1}`) : String(col),
+                                  dataIndex: index.toString(),
+                                  key: index.toString(),
+                                  ellipsis: true,
+                                  width: 180,
+                                  render: (text) => {
+                                    // Ensure we always render a string or valid React child
+                                    if (text === null || text === undefined) return ''
+                                    if (typeof text === 'object') return String(text.name || text.value || JSON.stringify(text))
+                                    return String(text)
+                                  }
+                                }))}
+                                pagination={false}
+                                scroll={{ 
+                                  x: 'max-content', 
+                                  y: isFullscreen ? 'calc(100vh - 180px)' : 'calc(70vh - 120px)'
+                                }}
+                                size="small"
+                                bordered
+                                tableLayout="fixed"
+                                className="excel-table"
+                              />
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <p className="text-gray-500">No data found in Excel file</p>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Initial state - show loading
+                return (
+                  <div className="flex items-center justify-center h-[60vh]">
+                    <Spin size="large" tip="Loading Excel file..." />
+                  </div>
+                )
+              }
+              
+              // For Word documents, use mammoth.js
+              if (ext === 'docx' || ext === 'doc') {
+                if (wordDocumentLoading) {
+                  return (
+                    <div className="flex items-center justify-center h-[60vh]">
+                      <Spin size="large" tip="Loading Word document..." />
+                    </div>
+                  )
+                }
+
+                if (wordDocumentError) {
+                  return (
+                    <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                      <div className="text-6xl mb-4"> document</div>
+                      <h3 className="text-xl font-semibold">Word Document Error</h3>
+                      <p className="text-gray-500 text-center max-w-md">{wordDocumentError}</p>
+                      <div className="space-x-2">
+                        <Button
+                          type="primary"
+                          icon={<LinkOutlined />}
+                          onClick={() => window.open(currentUrl, '_blank')}
+                        >
+                          Download Document
+                        </Button>
+                        <Button
+                          onClick={() => loadWordDocument(currentUrl)}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                }
+
+                if (wordDocumentContent) {
+                  return (
+                    <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'}`}>
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
+                        <div className="space-x-2">
+                          <Button 
+                            size="small" 
+                            onClick={() => window.open(currentUrl, '_blank')}
+                            icon={<LinkOutlined />}
+                          >
+                            Download
+                          </Button>
+                          <Button 
+                            size="small" 
+                            onClick={() => loadWordDocument(currentUrl)}
+                          >
+                            Refresh
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className={`${isFullscreen ? 'h-[calc(100vh-140px)]' : 'h-[70vh]'} overflow-auto border rounded p-6 bg-white`}>
+                        <div 
+                          className="word-document-content"
+                          dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
+                          style={{
+                            fontFamily: 'Arial, sans-serif',
+                            lineHeight: '1.6',
+                            color: '#333'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Initial state - show loading
+                return (
+                  <div className="flex items-center justify-center h-[60vh]">
+                    <Spin size="large" tip="Loading Word document..." />
+                  </div>
+                )
+              }
+              
+              // For other Office files, show download option
+              return (
+                <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                  <div className="text-6xl mb-4">{
+                    ext === 'pptx' || ext === 'ppt' ? ' presentation' :
+                    ' document'
+                  }</div>
+                  <h3 className="text-xl font-semibold">
+                    {ext ? ext.toUpperCase() : 'Document'}
+                  </h3>
+                  <p className="text-gray-500 text-center max-w-md">
+                    This document type cannot be previewed directly. Please download to view.
+                  </p>
+                  <Button
+                    type="primary"
+                    size="large"
+                    icon={<LinkOutlined />}
+                    onClick={() => window.open(currentUrl, '_blank')}
+                    className="mt-4"
+                  >
+                    Download Document
+                  </Button>
+                </div>
+              )
+            }
+
+            // Files that can be previewed directly (PDF, images, text)
+            if (directPreviewable) {
+              if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+                return (
+                  <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'} flex items-center justify-center bg-white`}>
+                    <img
+                      src={currentUrl}
+                      alt="Document"
+                      className={`max-w-full ${isFullscreen ? 'max-h-[calc(100vh-120px)]' : 'max-h-[80vh]'} object-contain`}
+                    />
+                  </div>
+                )
+              }
+              return <iframe src={currentUrl} className={`w-full ${isFullscreen ? 'h-[calc(100vh-120px)]' : 'h-[80vh]'}`} title="Document" />
+            }
+
+            // Unknown file types - offer download
+            return (
+              <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                <div className="text-6xl mb-4"> attachment</div>
+                <h3 className="text-xl font-semibold">Document Preview</h3>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<LinkOutlined />}
+                  onClick={() => window.open(currentUrl, '_blank')}
+                  className="mt-4"
+                >
+                  Open / Download
+                </Button>
+              </div>
+            )
+          })()}
         </Modal>
 
         <Modal

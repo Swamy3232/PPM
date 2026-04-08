@@ -195,6 +195,21 @@ const mapUiToApi = (values) => {
   return payload
 }
 
+// Helper functions to format center and group names with prefixes
+const formatCenterName = (center) => {
+  if (!center || typeof center !== 'string') return center
+  const trimmed = center.trim()
+  // Don't add prefix if it already has one
+  return trimmed.startsWith('C-') ? trimmed : `C-${trimmed}`
+}
+
+const formatGroupName = (group) => {
+  if (!group || typeof group !== 'string') return group
+  const trimmed = group.trim()
+  // Don't add prefix if it already has one
+  return trimmed.startsWith('G-') ? trimmed : `G-${trimmed}`
+}
+
 function directoranalytics() {
   const [form] = Form.useForm()
   const [tableData, setTableData] = useState([])
@@ -1463,7 +1478,7 @@ function directoranalytics() {
     if (drillLevel === 'group') {
       return {
         ...buildBreakdown(items, 'group'),
-        title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedCenter} by Group`,
+        title: `${formatCenterName(selectedCenter)} - ${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} by Group`,
         dimension: 'group',
       }
     }
@@ -1471,7 +1486,7 @@ function directoranalytics() {
     if (drillLevel === 'coordinator') {
       return {
         ...buildBreakdown(items, 'project_co_ordinator'),
-        title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
+        title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${formatGroupName(selectedGroup)} in ${formatCenterName(selectedCenter)} by Coordinator`,
         dimension: 'project_co_ordinator',
       }
     }
@@ -1504,7 +1519,7 @@ function directoranalytics() {
 
     return {
       ...buildBreakdown(items, 'project_co_ordinator'),
-      title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
+      title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${'Group: ' + formatGroupName(selectedGroup)} in ${'Center: ' + formatCenterName(selectedCenter)} by Coordinator`,
       dimension: 'project_co_ordinator',
     }
   }, [buildBreakdown, CATEGORIES, chartMetric, drillLevel, filterForDrill, filteredData, getFinancialValue, matchCategory, selectedCategory, selectedCenter, selectedGroup, selectedProjectCode, selectedProjectName, trendCategory])
@@ -2375,7 +2390,7 @@ function directoranalytics() {
                         >
                           {uniqueCentres.map((center) => (
                             <Select.Option key={center} value={center}>
-                              {center}
+                              {formatCenterName(center)}
                             </Select.Option>
                           ))}
                         </Select>
@@ -2392,7 +2407,7 @@ function directoranalytics() {
                         >
                           {departmentOptions.map((name) => (
                             <Select.Option key={name} value={name}>
-                              {name}
+                              {formatGroupName(name)}
                             </Select.Option>
                           ))}
                         </Select>

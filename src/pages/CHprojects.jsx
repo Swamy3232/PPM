@@ -162,6 +162,15 @@ function Projects() {
   const [editingPayment, setEditingPayment] = useState(null)
   const [submittingPayment, setSubmittingPayment] = useState(false)
 
+  // Stage detail entry
+  const [stageDetailModalVisible, setStageDetailModalVisible] = useState(false)
+  const [selectedStageForDetail, setSelectedStageForDetail] = useState(null)
+  const [stageDetailForm] = Form.useForm()
+  const [submittingStageDetail, setSubmittingStageDetail] = useState(false)
+  const [editingStageDetail, setEditingStageDetail] = useState(null)
+  const [projectPaymentStageRows, setProjectPaymentStageRows] = useState([])
+  const [projectStageTitle, setProjectStageTitle] = useState('')
+
   // Fetch projects on mount and read current user from localStorage
   useEffect(() => {
     try {
@@ -179,6 +188,14 @@ function Projects() {
     fetchProjects()
     fetchStageConfig()
   }, [])
+
+  useEffect(() => {
+    if (selectedProject) {
+      fetchProjectPaymentStageRows()
+    } else {
+      setProjectPaymentStageRows([])
+    }
+  }, [selectedProject])
 
   const fetchProjects = async () => {
     setLoading(true)
@@ -251,6 +268,22 @@ function Projects() {
     }
   }
 
+  const fetchProjectPaymentStageRows = async () => {
+    try {
+      const res = await fetch(`${apiBase}/payment-stages/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage/payment details')
+      }
+      const data = await res.json()
+      setProjectPaymentStageRows(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Failed to fetch stage/payment details:', error)
+      setProjectPaymentStageRows([])
+    }
+  }
+
   const cards = useMemo(() => projectRows || [], [projectRows])
 
   const getStageAccessList = (stage) => {
@@ -274,6 +307,21 @@ function Projects() {
       .split(',')
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean)
+  }
+
+  const getStatusColor = (status) => {
+    if (!status) return 'default'
+    const statusLower = status.toLowerCase()
+    switch (statusLower) {
+      case 'completed':
+        return 'green'
+      case 'in progress':
+        return 'blue'
+      case 'pending':
+        return 'orange'
+      default:
+        return 'default'
+    }
   }
 
   const fetchStageData = async (projectId) => {
@@ -329,6 +377,7 @@ function Projects() {
   const handleBackToProjects = () => {
     setSelectedProject(null)
     setStageData([])
+    setProjectPaymentStageRows([])
   }
 
   const handleOpenAllotmentModal = (stage) => {
@@ -770,6 +819,87 @@ function Projects() {
     }
   }
 
+  const handleOpenStageDetailModal = (stage) => {
+    setSelectedStageForDetail(stage)
+    setEditingStageDetail(null)
+    setStageDetailModalVisible(true)
+    stageDetailForm.setFieldsValue({
+      name: '',
+      project_no: selectedProject?.project_number || '',
+      value: '',
+      status: 'Pending',
+    })
+  }
+
+  const handleEditStageDetail = (detail) => {
+    setEditingStageDetail(detail)
+    setStageDetailModalVisible(true)
+    stageDetailForm.setFieldsValue({
+      name: detail.name || '',
+      project_no: detail.project_no || '',
+      value: detail.value || '',
+      status: detail.status || 'Pending',
+    })
+  }
+
+  const handleDeleteStageDetail = async (detailId) => {
+    try {
+      const res = await fetch(`${apiBase}/payment-stages/${detailId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      message.success('Stage detail deleted')
+      fetchProjectPaymentStageRows()
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to delete stage detail')
+    }
+  }
+
+  const handleSubmitStageDetail = async (values) => {
+    setSubmittingStageDetail(true)
+    try {
+      const payload = {
+        name: values.name?.trim() || selectedStageForDetail?.stage_name || '',
+        project_no: values.project_no?.trim() || selectedProject?.project_number || '',
+        value: values.value?.trim() || '',
+        status: values.status || 'Pending',
+      }
+
+      let url = `${apiBase}/payment-stages/`
+      let method = 'POST'
+
+      if (editingStageDetail) {
+        url = `${apiBase}/payment-stages/${editingStageDetail.id}`
+        method = 'PUT'
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}))
+        throw new Error(errorBody.detail || `Failed to ${editingStageDetail ? 'update' : 'add'} stage details`)
+      }
+
+      message.success(`Stage details ${editingStageDetail ? 'updated' : 'saved'} successfully`)
+      setStageDetailModalVisible(false)
+      setSelectedStageForDetail(null)
+      setEditingStageDetail(null)
+      stageDetailForm.resetFields()
+      fetchProjectPaymentStageRows()
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to save details')
+    } finally {
+      setSubmittingStageDetail(false)
+    }
+  }
+
   const [searchText, setSearchText] = useState('')
   const [selectedGroup, setSelectedGroup] = useState(undefined)   // “group” field in your project objects
   const [selectedProjectType, setSelectedProjectType] = useState(undefined)   // “project type” filter (LSP, GSP, etc.)
@@ -973,6 +1103,13 @@ function Projects() {
                 const canAddRemarks = accessList.includes('add remarks')
                 const canAddPayments = false
                 const canViewAllotment = accessList.includes('view allotment sheet')
+                // Show Add Details button only for Payment stages (position 10) and Project Stages (position 11)
+                const config = stageConfig.find((s) => s.id === stage.stage_id)
+                const stagePosition = config?.position ?? stage.position ?? 0
+                const canAddStageDetails = stagePosition === 11
+                const stageDetails = projectPaymentStageRows.filter((detail) =>
+                  String(detail.project_no || '').trim() === String(selectedProject?.project_number || '').trim()
+                )
 
                 return (
                   <div key={stage.stage_id} className="bg-white rounded-lg border p-4 mb-4">
@@ -1075,6 +1212,144 @@ function Projects() {
                       ))}
                     </div>
 
+                    {/* Progress Stages Table for Position 7 */}
+                    {stagePosition === 7 && (
+                      <div className="mb-6">
+                        <Text strong>Progress Stages</Text>
+                        <div className="mt-3">
+                          <table className="min-w-full bg-white border border-gray-200">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  SL No
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Stages
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Remarks
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Status
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Invoice Details
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Invoice Status
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {stageDetails.map((detail, index) => (
+                                <tr key={detail.id} className="hover:bg-gray-50">
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {index + 1}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {detail.name || 'No stage name'}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {detail.value || 'No remarks'}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Tag color={getStatusColor(detail.status)}>
+                                      {detail.status || 'Pending'}
+                                    </Tag>
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <div className="max-w-xs truncate" title={detail.invoice_details}>
+                                      {detail.invoice_details || 'No invoice details'}
+                                    </div>
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Tag color={detail.invoice_status === 'Paid' ? 'green' : 
+                                           detail.invoice_status === 'Pending' ? 'orange' : 
+                                           detail.invoice_status === 'Generated' ? 'blue' : 'default'}>
+                                      {detail.invoice_status || 'Pending'}
+                                    </Tag>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Project Stages Table for Position 11 */}
+                    {stagePosition === 11 && (
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-4">
+                          {/* <Input 
+                            placeholder="Enter project stage title..."
+                            style={{ width: '300px' }}
+                            value={projectStageTitle}
+                            onChange={(e) => setProjectStageTitle(e.target.value)}
+                          /> */}
+                          <Button 
+                            type="primary" 
+                            size="small" 
+                            icon={<PlusOutlined />}
+                            onClick={() => handleOpenStageDetailModal(stage)}
+                          >
+                            Add Stage
+                          </Button>
+                        </div>
+                        <div className="mt-3">
+                          <table className="min-w-full bg-white border border-gray-200">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  SL No
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Stages
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Remarks
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Status
+                                </th>
+                                <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {stageDetails.map((detail, index) => (
+                                <tr key={detail.id} className="hover:bg-gray-50">
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {index + 1}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {detail.name || 'No stage name'}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    {detail.value || 'No remarks'}
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Tag color={getStatusColor(detail.status)}>
+                                      {detail.status || 'Pending'}
+                                    </Tag>
+                                  </td>
+                                  <td className="border border-gray-300 px-4 py-2 text-sm">
+                                    <Space>
+                                      <Button size="small" icon={<EditOutlined />} onClick={() => handleEditStageDetail(detail)}>Edit</Button>
+                                      <Popconfirm title="Delete stage?" onConfirm={() => handleDeleteStageDetail(detail.id)}>
+                                        <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
+                                      </Popconfirm>
+                                    </Space>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <div className="flex justify-between items-center mb-3">
                         {canAddPayments && (
@@ -1159,6 +1434,69 @@ function Projects() {
               }}>Cancel</Button>
               <Button type="primary" htmlType="submit" loading={submittingPayment}>
                 {editingPayment ? 'Update' : 'Add'} Payment
+              </Button>
+            </div>
+          </Form>
+        </Modal>
+
+        <Modal
+          title={<>{editingStageDetail ? 'Edit Stage Details' : (selectedStageForDetail ? `Add Details for ${selectedStageForDetail.stage_name}` : 'Add Stage / Payment Details')}</>}
+          open={stageDetailModalVisible}
+          onCancel={() => {
+            setStageDetailModalVisible(false)
+            setSelectedStageForDetail(null)
+            setEditingStageDetail(null)
+            stageDetailForm.resetFields()
+          }}
+          footer={null}
+          width={600}
+        >
+          <Form form={stageDetailForm} layout="vertical" onFinish={handleSubmitStageDetail}>
+            <Form.Item
+              label="Project Stage"
+              name="name"
+              rules={[{ required: true, message: 'Please enter stage or payment name' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label="Project Number"
+              name="project_no"
+              rules={[{ required: true, message: 'Please enter project number' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label="Remarks"
+              name="value"
+              rules={[{ required: true, message: 'Please enter remarks' }]}
+            >
+              <TextArea rows={3} />
+            </Form.Item>
+            <Form.Item
+              label="Status"
+              name="status"
+              rules={[{ required: true, message: 'Please select status' }]}
+            >
+              <Select options={[
+                { label: 'Pending', value: 'Pending' },
+                { label: 'In Progress', value: 'In Progress' },
+                { label: 'Completed', value: 'Completed' },
+              ]} />
+            </Form.Item>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button
+                onClick={() => {
+                  setStageDetailModalVisible(false)
+                  setSelectedStageForDetail(null)
+                  setEditingStageDetail(null)
+                  stageDetailForm.resetFields()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="primary" htmlType="submit" loading={submittingStageDetail}>
+                {editingStageDetail ? 'Update' : 'Save'} Details
               </Button>
             </div>
           </Form>

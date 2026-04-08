@@ -542,7 +542,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       return {
         labels: CHART_CATEGORIES.map((category) => category.label),
         values: counts,
-        title: 'GH Analytics — Counts',
+        title: 'Scientist Analytics — Counts',
         dimension: 'category',
       }
     }

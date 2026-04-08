@@ -96,7 +96,7 @@ function RoleProtectedLayout({ basePath }) {
     AnalyticsComponent = Scientistanalytics
   } else if (basePath === 'director') {
     ProposalsComponent = DirectorProposals
-    ProjectsComponent = Projects
+    // ProjectsComponent = Projects
     AnalyticsComponent = DirectorAnalytics
   }
   // 'gh' already set as default above
@@ -121,7 +121,9 @@ function RoleProtectedLayout({ basePath }) {
             {normalizedRole === 'director' && (
               <Route path="financial-analytics" element={<FinancialAnalytics />} />
             )}
-            <Route path="projects" element={<ProjectsComponent />} />
+            {normalizedRole !== 'director' && (
+              <Route path="projects" element={<ProjectsComponent />} />
+            )}
 
             <Route path='gh-master-proposals' element={<GhMasterProposals/>}/>
             <Route path='gh-notification' element={<GhNotification/>}/>
@@ -129,6 +131,7 @@ function RoleProtectedLayout({ basePath }) {
             {/* Only admins can access configuration */}
             {isAdmin && (
               <>
+              <Route path="overall-analytics" element={<DirectorAnalytics />} />
               <Route path="configuration" element={<Configuration />} />
               <Route path="notification" element={<AdminNotification />} />
               <Route path="access-control" element={<UserAccess/>}/>

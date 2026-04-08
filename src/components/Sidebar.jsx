@@ -189,12 +189,13 @@ function Sidebar() {
             else if (info.key === 'gh-notification') navigate(`${prefix}/gh-notification`)
             else if (info.key === 'access-control') navigate(`${prefix}/access-control`)
             else if (info.key === 'customers') navigate(`${prefix}/customers`)
+            else if (info.key === 'overall-analytics') navigate(`${prefix}/overall-analytics`)
             
             else navigate(`${prefix}/proposals`)
           }}
           items={[
             { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals / Projects' },
-            { key: 'projects', icon: <ProjectOutlined />, label: 'Projects Documents' },
+            ...(!isDirector ? [{ key: 'projects', icon: <ProjectOutlined />, label: 'Projects Documents' }] : []),
 
             ...(isGHOrScientist
               ? [
@@ -258,6 +259,11 @@ function Sidebar() {
 
             ...(normalizedBasePath === 'admin'
               ? [
+                  {
+                    key: 'overall-analytics',
+                    icon: <BarChartOutlined />,
+                    label: 'Overall Analytics',
+                  },
                   {
                     key: 'configuration',
                     icon: <SettingOutlined />,
