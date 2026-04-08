@@ -195,13 +195,15 @@ async def update_document(
     db.commit()
     db.refresh(doc)
 
-    create_notification(
-        db=db,
-        user_name=uploaded_by,
-        message=f"Document updated: {doc.name}",
-        proposal_id=doc.project_id,
-        document_id=doc.id
-    )
+    # Create notification only if uploaded_by is provided
+    if uploaded_by:
+        create_notification(
+            db=db,
+            user_name=uploaded_by,
+            message=f"Document updated: {doc.name}",
+            proposal_id=doc.project_id,
+            document_id=doc.id
+        )
 
     stage_docs = db.query(Document).filter(Document.stage_id == doc.stage_id).first()
     closure_report = "Uploaded" if stage_docs else "Not Uploaded"

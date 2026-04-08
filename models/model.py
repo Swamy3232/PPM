@@ -88,6 +88,8 @@ class ProjectPaymentStages(Base):
     project_no = Column(String, nullable=True)
     value = Column(String, nullable=True)
     status = Column(String, nullable=True)
+    invoice_details = Column(String, nullable=True)
+    invoice_status = Column(String, nullable=True)
 # -------------------------------------------------
 # STAGE TABLE
 # -------------------------------------------------
