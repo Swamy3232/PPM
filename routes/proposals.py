@@ -458,7 +458,10 @@ def get_proposals_by_name(
         proposals_query = (
             db.query(Proposal)
             .filter(
-                func.lower(Proposal.project_co_ordinator).contains(name_lower),
+                or_(
+                    func.lower(Proposal.project_co_ordinator).contains(name_lower),
+                    func.lower(Proposal.quotation_given_by_name).contains(name_lower),
+                ),
                 Proposal.is_acknowledged == True,
             )
             .distinct(Proposal.id)
