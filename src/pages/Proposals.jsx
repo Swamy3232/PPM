@@ -110,11 +110,12 @@ const PROPOSAL_FIELDS = [
   { name: 'revised_negotiated', label: 'Revised / Negotiated', width: 190, apiName: 'revised/negotiated' },
   { name: 'revised_negotiated_quote_date', label: 'Revised Quote Date', width: 190, apiName: 'revised/negotiated_quote_date' },
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
+    { name: 'center', label: 'Centre', width: 150 },
+  { name: 'group', label: 'Group', width: 150 },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
   { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
   { name: 'project_number', label: 'Project Number', width: 140 },
-  { name: 'center', label: 'Centre', width: 150 },
-  { name: 'group', label: 'Group', width: 150 },
+
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -981,10 +982,11 @@ function Proposals() {
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
     form.resetFields()
+    setSelectedCentreId(null)
+    setAvailableCoordinators([])
     if (currentUserName) {
       form.setFieldsValue({ updated_by: currentUserName })
     }
-    setSelectedCentreId(null)
     setModalOpen(true)
   }, [form, currentUserName])
 
@@ -1003,14 +1005,27 @@ function Proposals() {
         setSelectedCentreId(null)
       }
 
+      // Initialize available coordinators based on center and group
+      const groupCodeFromRecord = (record.group || '').trim()
+      if (centerCodeFromRecord && groupCodeFromRecord) {
+        const matchingUsers = users.filter(user => 
+          user.center === centerCodeFromRecord && user.group === groupCodeFromRecord
+        )
+        setAvailableCoordinators(matchingUsers)
+      } else {
+        setAvailableCoordinators([])
+      }
+
       setModalOpen(true)
     },
-    [form, currentUserName, centres],
+    [form, currentUserName, centres, users],
   )
 
   const closeModal = useCallback(() => {
     setModalOpen(false)
     setEditingRecord(null)
+    setSelectedCentreId(null)
+    setAvailableCoordinators([])
     form.resetFields()
   }, [form])
 
@@ -3186,6 +3201,46 @@ function Proposals() {
                 )
               }
 
+              if (field.name === 'quotation_given_by_name') {
+                // Get unique coordinator names for Quotation Given By dropdown
+                const uniqueCoordinators = availableCoordinators.filter((user, index, self) =>
+                  index === self.findIndex((u) => u.name === user.name)
+                )
+                
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                          {
+                            required: true,
+                            message: `Please select ${field.label}`,
+                          },
+                        ]
+                        : []
+                    }
+                  >
+                    <Select
+                      showSearch
+                      allowClear
+                      placeholder="Select Quotation Given By"
+                      filterOption={(input, option) =>
+                        option?.children?.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                      }
+                    >
+                      {uniqueCoordinators.map((user) => (
+                        <Select.Option key={user.id} value={user.name}>
+                          {user.name}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
               if (field.name === 'quotation_given_by_department') {
                 return (
                   <Form.Item
@@ -3263,11 +3318,22 @@ function Proposals() {
                         const value = Array.isArray(val)
                           ? val[val.length - 1] || ''
                           : val || ''
-                        form.setFieldsValue({ center: value, group: undefined })
-                        const matchedCentre = centres.find(
-                          (c) => (c.code || '').trim() === (value || '').trim(),
-                        )
-                        setSelectedCentreId(matchedCentre ? matchedCentre.id : null)
+                        
+                        // Reset group when center changes
+                        form.setFieldsValue({ center: value, group: undefined, project_co_ordinator: undefined })
+                        
+                        // Update selected center ID
+                        if (value) {
+                          const matchedCentre = centres.find(
+                            (c) => (c.code || '').trim() === (value || '').trim(),
+                          )
+                          setSelectedCentreId(matchedCentre ? matchedCentre.id : null)
+                          setAvailableCoordinators([])
+                        } else {
+                          // Center was cleared
+                          setSelectedCentreId(null)
+                          setAvailableCoordinators([])
+                        }
                       }}
                     >
                       {centreCodeOptions.map((code) => (
@@ -3281,6 +3347,12 @@ function Proposals() {
               }
 
               if (field.name === 'group') {
+                const currentCenterValue = form.getFieldValue('center')
+                // Get groups for currently selected center, or all groups if no center selected
+                const availableGroups = currentCenterValue 
+                  ? filteredGroups 
+                  : groups
+                
                 return (
                   <Form.Item
                     key={field.name}
@@ -3298,13 +3370,14 @@ function Proposals() {
                     }
                   >
                     <Select 
-                      allowClear 
-                      disabled={!selectedCentreId}
+                      allowClear
+                      showSearch
+                      placeholder="Select Group"
                       onChange={(groupValue) => {
                         // Find the selected center and group
                         const selectedCenterCode = form.getFieldValue('center')
                         const selectedCenter = centres.find(c => c.code === selectedCenterCode)
-                        const selectedGroup = filteredGroups.find(g => g.code === groupValue)
+                        const selectedGroup = groups.find(g => g.code === groupValue)
                         
                         if (selectedCenter && selectedGroup) {
                           // Find all users matching the center and group
@@ -3322,6 +3395,10 @@ function Proposals() {
                             // Clear if multiple coordinators or none
                             form.setFieldsValue({ project_co_ordinator: '' })
                           }
+                        } else if (groupValue && !selectedCenterCode) {
+                          // If group is selected but center is not, show warning
+                          message.warning('Please select a center first')
+                          form.setFieldsValue({ group: undefined })
                         } else {
                           // Clear if center or group not selected
                           setAvailableCoordinators([])
@@ -3332,7 +3409,7 @@ function Proposals() {
                         setTimeout(() => fetchUsers(), 100) // Small delay to ensure form is updated first
                       }}
                     >
-                      {filteredGroups.map((group) => (
+                      {availableGroups.map((group) => (
                         <Select.Option key={group.id} value={group.code}>
                           {formatGroupName(group.code)}
                         </Select.Option>
