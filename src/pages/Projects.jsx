@@ -1042,8 +1042,8 @@ function Projects() {
         ld: payment.ld?.toString() || '',
         bal: payment.bal?.toString() || '',
         follow_up_status: payment.follow_up_status || '',
-        invoice_date: payment.invoice_date ? dayjs(payment.invoice_date, ['DD/M/YY', 'DD/MM/YY', 'YYYY-MM-DD', dayjs.ISO_8601]) : null,
-        recieved_date: payment.recieved_date ? dayjs(payment.recieved_date, ['DD/M/YY', 'DD/MM/YY', 'YYYY-MM-DD', dayjs.ISO_8601]) : null,
+        invoice_date: payment.invoice_date ? dayjs(payment.invoice_date, ['DD/MM/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD', dayjs.ISO_8601]) : null,
+        recieved_date: payment.recieved_date ? dayjs(payment.recieved_date, ['DD/MM/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD', dayjs.ISO_8601]) : null,
       })
     } else {
       paymentForm.resetFields()
@@ -1072,8 +1072,8 @@ function Projects() {
         ld: values.ld || '',
         bal: values.bal || '',
         follow_up_status: values.follow_up_status || '',
-        invoice_date: values.invoice_date ? values.invoice_date.format('DD/M/YY') : null,
-        recieved_date: values.recieved_date ? values.recieved_date.format('DD/M/YY') : null,
+        invoice_date: values.invoice_date ? values.invoice_date.format('DD/MM/YYYY') : null,
+        recieved_date: values.recieved_date ? values.recieved_date.format('DD/MM/YYYY') : null,
         project_id: Number(safeId(selectedProject)),
         stage_id: Number(selectedStageForPayment.stage_id),
         updated_by: username,
@@ -1216,7 +1216,7 @@ function Projects() {
         if (!record?.updated_by) return '-'
         if (!record?.updated_at) return '-'
         const d = dayjs(record.updated_at)
-        return d.isValid() ? d.format('DD-MM-YYYY HH:mm') : String(record.updated_at)
+        return d.isValid() ? d.format('DD-MM-YYYY') : String(record.updated_at)
       },
     },
     {

@@ -225,7 +225,10 @@ function GHprojects() {
             coordinatorName = parsedUser.name
             setCurrentUserName(parsedUser.name)
             const encodedName = encodeURIComponent(parsedUser.name)
-            url = `${apiBase}/proposals/by-name/${encodedName}`
+            const roleQuery = parsedUser.role
+              ? `?user_role=${encodeURIComponent(parsedUser.role.toLowerCase())}`
+              : ''
+            url = `${apiBase}/proposals/by-name/${encodedName}${roleQuery}`
           }
         }
       } catch (storageError) {
