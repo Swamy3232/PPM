@@ -49,6 +49,9 @@ class Proposal(Base):
     technical_completed_year = Column(String, nullable=True)
     financial_completed_year = Column(String, nullable=True)
     dispatch_date = Column(String, nullable=True)
+    project_allotment_date = Column(String, nullable=True)
+    review_meeting_date = Column(String, nullable=True)
+    small_value_project = Column(String, nullable=True)
     ppm_remarks = Column(String, nullable=True)
     updated_by = Column(String, nullable=True)
 
