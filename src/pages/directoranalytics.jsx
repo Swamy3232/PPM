@@ -1499,10 +1499,21 @@ function directoranalytics() {
     }
 
     if (drillLevel === 'coordinator') {
+      const totals = {}
+      items.forEach((item) => {
+        // For proposals (no project_number), use quotation_given_by_name
+        // For projects (has project_number), use project_co_ordinator
+        const isProject = item.project_number && String(item.project_number).trim() !== ''
+        const coordinatorField = isProject ? 'project_co_ordinator' : 'quotation_given_by_name'
+        const key = String(item[coordinatorField] || 'Unknown').trim() || 'Unknown'
+        totals[key] = (totals[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+      })
+      const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
       return {
-        ...buildBreakdown(items, 'project_co_ordinator'),
+        labels: entries.map(([key]) => key),
+        values: entries.map(([, value]) => value),
         title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${formatGroupName(selectedGroup)} in ${formatCenterName(selectedCenter)} by Coordinator`,
-        dimension: 'project_co_ordinator',
+        dimension: 'coordinator',
       }
     }
 

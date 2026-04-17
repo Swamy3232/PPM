@@ -35,6 +35,8 @@ import {
   Statistic,
 } from 'antd'
 import * as XLSX from 'xlsx'
+import { ExcelRenderer } from 'react-excel-renderer'
+import mammoth from 'mammoth'
 import dayjs from 'dayjs'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
@@ -259,6 +261,14 @@ function Proposals() {
   const [viewDocumentBlobUrl, setViewDocumentBlobUrl] = useState(null)
   const [viewDocumentMime, setViewDocumentMime] = useState('')
   const [viewDocumentPreviewLoading, setViewDocumentPreviewLoading] = useState(false)
+  const [excelRendererData, setExcelRendererData] = useState(null)
+  const [excelRendererLoading, setExcelRendererLoading] = useState(false)
+  const [excelRendererError, setExcelRendererError] = useState(null)
+  const [activeSheetIndex, setActiveSheetIndex] = useState(0)
+  const [wordDocumentContent, setWordDocumentContent] = useState(null)
+  const [wordDocumentLoading, setWordDocumentLoading] = useState(false)
+  const [wordDocumentError, setWordDocumentError] = useState(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewDocumentPreviewError, setViewDocumentPreviewError] = useState('')
 
   // Queries state for admin users
@@ -741,6 +751,95 @@ function Proposals() {
     [viewDocumentBlobUrl],
   )
 
+  const loadExcelWithRenderer = async (url) => {
+    setExcelRendererLoading(true)
+    setExcelRendererError(null)
+    setExcelRendererData(null)
+
+    try {
+      console.log('Loading Excel file with react-excel-renderer:', url)
+      
+      // Fetch the Excel file
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Excel file: ${response.status}`)
+      }
+      
+      const blob = await response.blob()
+      
+      // Use react-excel-renderer to parse the file
+      const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      
+      ExcelRenderer(file, (err, resp) => {
+        if (err) {
+          console.error('ExcelRenderer error:', err)
+          setExcelRendererError(`Failed to parse Excel file: ${err.message || err}`)
+          setExcelRendererLoading(false)
+        } else {
+          console.log('ExcelRenderer success:', resp)
+          console.log('Rows structure:', resp.rows?.[0])
+          console.log('Cols structure:', resp.cols)
+          
+          // Check if multiple sheets are available
+          if (resp.sheets && resp.sheets.length > 1) {
+            console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
+          }
+          
+          setExcelRendererData(resp)
+          setActiveSheetIndex(0)
+          setExcelRendererLoading(false)
+        }
+      })
+      
+    } catch (error) {
+      console.error('Error loading Excel file:', error)
+      setExcelRendererError(`Error loading Excel file: ${error.message}`)
+      setExcelRendererLoading(false)
+    }
+  }
+
+  const loadWordDocument = async (url) => {
+    setWordDocumentLoading(true)
+    setWordDocumentError(null)
+    setWordDocumentContent(null)
+
+    try {
+      console.log('Loading Word document with mammoth.js:', url)
+      
+      // Fetch the Word document
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Word document: ${response.status}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      
+      // Use mammoth.js to convert Word document to HTML
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer: arrayBuffer },
+        {
+          styleMap: [
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "p[style-name='Title'] => h1.title:fresh",
+            "b => strong",
+            "i => em"
+          ]
+        }
+      )
+      
+      console.log('Mammoth.js conversion success:', result)
+      setWordDocumentContent(result.value)
+      setWordDocumentLoading(false)
+      
+    } catch (error) {
+      console.error('Error loading Word document:', error)
+      setWordDocumentError(`Error loading Word document: ${error.message}`)
+      setWordDocumentLoading(false)
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (viewDocumentBlobUrl) {
@@ -748,6 +847,25 @@ function Proposals() {
       }
     }
   }, [viewDocumentBlobUrl])
+
+  // Load Excel/Word files when viewDocumentUrl changes
+  useEffect(() => {
+    const currentUrl = viewDocumentUrl || ''
+    if (!currentUrl) return
+    
+    const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
+    const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+    const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+    const isOffice = officeTypes.includes(ext)
+
+    if (isOffice) {
+      if (ext === 'xlsx' || ext === 'xls') {
+        loadExcelWithRenderer(currentUrl)
+      } else if (ext === 'docx' || ext === 'doc') {
+        loadWordDocument(currentUrl)
+      }
+    }
+  }, [viewDocumentUrl])
 
   const fetchCentres = useCallback(async () => {
     try {
@@ -2897,6 +3015,14 @@ function Proposals() {
           setViewDocumentPreviewError('')
           setViewDocumentMime('')
           setViewDocumentPreviewLoading(false)
+          setExcelRendererData(null)
+          setExcelRendererError(null)
+          setExcelRendererLoading(false)
+          setActiveSheetIndex(0)
+          setWordDocumentContent(null)
+          setWordDocumentError(null)
+          setWordDocumentLoading(false)
+          setIsFullscreen(false)
           if (viewDocumentBlobUrl) {
             URL.revokeObjectURL(viewDocumentBlobUrl)
           }
@@ -2940,21 +3066,6 @@ function Proposals() {
                 >
                   Open / Download
                 </Button>
-              </div>
-            )
-          }
-
-          // Office files - show download button
-          if (isOffice) {
-            return (
-              <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-                <div className="text-6xl mb-4">📄</div>
-                <h3 className="text-xl font-semibold">
-                  {ext ? ext.toUpperCase() : 'Document'}
-                </h3>
-                <p className="text-gray-500 text-center max-w-md">
-                  This document type cannot be previewed directly. Please download to view.
-                </p>
                 <Button
                   type="primary"
                   size="large"

@@ -15,6 +15,7 @@ import {
   Input,
   Modal,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -32,6 +33,8 @@ import {
   Tooltip,
 } from 'antd'
 import * as XLSX from 'xlsx'
+import { ExcelRenderer } from 'react-excel-renderer'
+import mammoth from 'mammoth'
 import dayjs from 'dayjs'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
@@ -372,6 +375,14 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [projectDocs, setProjectDocs] = useState([])
   const [docsLoading, setDocsLoading] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+  const [excelRendererData, setExcelRendererData] = useState(null)
+  const [excelRendererLoading, setExcelRendererLoading] = useState(false)
+  const [excelRendererError, setExcelRendererError] = useState(null)
+  const [activeSheetIndex, setActiveSheetIndex] = useState(0)
+  const [wordDocumentContent, setWordDocumentContent] = useState(null)
+  const [wordDocumentLoading, setWordDocumentLoading] = useState(false)
+  const [wordDocumentError, setWordDocumentError] = useState(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const openDetailModal = useCallback((record) => {
     setSelectedRecord(record)
@@ -914,6 +925,95 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     setViewDocumentUrl(doc.url)
   }
 
+  const loadExcelWithRenderer = async (url) => {
+    setExcelRendererLoading(true)
+    setExcelRendererError(null)
+    setExcelRendererData(null)
+
+    try {
+      console.log('Loading Excel file with react-excel-renderer:', url)
+      
+      // Fetch the Excel file
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Excel file: ${response.status}`)
+      }
+      
+      const blob = await response.blob()
+      
+      // Use react-excel-renderer to parse the file
+      const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      
+      ExcelRenderer(file, (err, resp) => {
+        if (err) {
+          console.error('ExcelRenderer error:', err)
+          setExcelRendererError(`Failed to parse Excel file: ${err.message || err}`)
+          setExcelRendererLoading(false)
+        } else {
+          console.log('ExcelRenderer success:', resp)
+          console.log('Rows structure:', resp.rows?.[0])
+          console.log('Cols structure:', resp.cols)
+          
+          // Check if multiple sheets are available
+          if (resp.sheets && resp.sheets.length > 1) {
+            console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
+          }
+          
+          setExcelRendererData(resp)
+          setActiveSheetIndex(0)
+          setExcelRendererLoading(false)
+        }
+      })
+      
+    } catch (error) {
+      console.error('Error loading Excel file:', error)
+      setExcelRendererError(`Error loading Excel file: ${error.message}`)
+      setExcelRendererLoading(false)
+    }
+  }
+
+  const loadWordDocument = async (url) => {
+    setWordDocumentLoading(true)
+    setWordDocumentError(null)
+    setWordDocumentContent(null)
+
+    try {
+      console.log('Loading Word document with mammoth.js:', url)
+      
+      // Fetch the Word document
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Word document: ${response.status}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      
+      // Use mammoth.js to convert Word document to HTML
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer: arrayBuffer },
+        {
+          styleMap: [
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "p[style-name='Title'] => h1.title:fresh",
+            "b => strong",
+            "i => em"
+          ]
+        }
+      )
+      
+      console.log('Mammoth.js conversion success:', result)
+      setWordDocumentContent(result.value)
+      setWordDocumentLoading(false)
+      
+    } catch (error) {
+      console.error('Error loading Word document:', error)
+      setWordDocumentError(`Error loading Word document: ${error.message}`)
+      setWordDocumentLoading(false)
+    }
+  }
+
   useEffect(() => {
     // Trigger delivery notification check on every page load
     fetch(`${API_BASE_URL}/proposals/check-delivery-notifications`, {
@@ -932,6 +1032,25 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     if (!selectedRecord?.id) return
     fetchProjectDocuments(selectedRecord.id)
   }, [detailModalOpen, selectedRecord])
+
+  // Load Excel/Word files when viewDocumentUrl changes
+  useEffect(() => {
+    const currentUrl = viewDocumentUrl || ''
+    if (!currentUrl) return
+    
+    const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
+    const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+    const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+    const isOffice = officeTypes.includes(ext)
+
+    if (isOffice) {
+      if (ext === 'xlsx' || ext === 'xls') {
+        loadExcelWithRenderer(currentUrl)
+      } else if (ext === 'docx' || ext === 'doc') {
+        loadWordDocument(currentUrl)
+      }
+    }
+  }, [viewDocumentUrl])
 
   // Statistics
   const statistics = useMemo(() => {
@@ -1787,11 +1906,292 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       <Modal
         title="Document Viewer"
         open={!!viewDocumentUrl}
-        onCancel={() => setViewDocumentUrl(null)}
+        onCancel={() => {
+          setViewDocumentUrl(null)
+          setExcelRendererData(null)
+          setExcelRendererError(null)
+          setExcelRendererLoading(false)
+          setActiveSheetIndex(0)
+          setWordDocumentContent(null)
+          setWordDocumentError(null)
+          setWordDocumentLoading(false)
+          setIsFullscreen(false)
+        }}
         footer={null}
         width={1100}
       >
-        <iframe src={viewDocumentUrl || ''} className="w-full h-[80vh]" title="Document" />
+        {(() => {
+          const currentUrl = viewDocumentUrl || ''
+          const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
+          const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+          const directPreviewable = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt'].includes(ext)
+          const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+          const isOffice = officeTypes.includes(ext)
+
+          if (!currentUrl) return null
+
+          // Office files (including Excel and Word) - show viewer or download option
+          if (isOffice) {
+            // For Excel files, use react-excel-renderer
+            if (ext === 'xlsx' || ext === 'xls') {
+              if (excelRendererLoading) {
+                return (
+                  <div className="flex items-center justify-center h-[60vh]">
+                    <Spin size="large" tip="Loading Excel file..." />
+                  </div>
+                )
+              }
+
+              if (excelRendererError) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                    <div className="text-6xl mb-4">??</div>
+                    <h3 className="text-xl font-semibold">Excel Viewer Error</h3>
+                    <p className="text-gray-500 text-center max-w-md">{excelRendererError}</p>
+                    <div className="space-x-2">
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        onClick={() => window.open(currentUrl, '_blank')}
+                      >
+                        Download Excel File
+                      </Button>
+                      <Button onClick={() => loadExcelWithRenderer(currentUrl)}>
+                        Retry
+                      </Button>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (excelRendererData) {
+                return (
+                  <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">Excel Viewer</h3>
+                        {/* Sheet tabs */}
+                        {excelRendererData.sheets && excelRendererData.sheets.length > 1 && (
+                          <div className="flex space-x-1 mt-2 border-b">
+                            {excelRendererData.sheets.map((sheet, index) => (
+                              <button
+                                key={index}
+                                className={`px-3 py-1 text-sm border-b-2 transition-colors ${
+                                  activeSheetIndex === index
+                                    ? 'border-blue-500 text-blue-600 font-medium'
+                                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                                }`}
+                                onClick={() => setActiveSheetIndex(index)}
+                              >
+                                {sheet.name || `Sheet ${index + 1}`}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-x-2">
+                        <Button 
+                          size="small" 
+                          onClick={() => setIsFullscreen(!isFullscreen)}
+                        >
+                          {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        </Button>
+                        <Button 
+                          size="small" 
+                          icon={<DownloadOutlined />}
+                          onClick={() => window.open(currentUrl, '_blank')}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <style>{`
+                      .excel-scroll-container {
+                        overflow: auto;
+                        max-height: 60vh;
+                        border: 1px solid #d9d9d9;
+                        border-radius: 6px;
+                      }
+                      .excel-table {
+                        border-collapse: collapse;
+                        font-size: 12px;
+                        min-width: 100%;
+                      }
+                      .excel-table th,
+                      .excel-table td {
+                        border: 1px solid #d9d9d9;
+                        padding: 4px 8px;
+                        text-align: left;
+                        white-space: nowrap;
+                        min-width: 80px;
+                        max-width: 200px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                      }
+                      .excel-table th {
+                        background-color: #f5f5f5;
+                        font-weight: 600;
+                        position: sticky;
+                        top: 0;
+                        z-index: 10;
+                      }
+                      .excel-table td:hover {
+                        background-color: #f0f8ff;
+                        white-space: normal;
+                        word-wrap: break-word;
+                      }
+                    `}</style>
+                    {(() => {
+                      // Get current sheet data
+                      const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
+                      const currentRows = currentSheet?.rows || excelRendererData.rows || []
+                      const currentCols = currentSheet?.cols || excelRendererData.cols || []
+                      
+                      return currentRows.length > 0 ? (
+                        <div className="excel-scroll-container h-full">
+                          <table className="excel-table">
+                            <thead>
+                              <tr>
+                                {currentCols.map((col, index) => (
+                                  <th key={index}>{col.name || `Column ${index + 1}`}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentRows.map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                  {row.map((cell, cellIndex) => (
+                                    <td 
+                                      key={cellIndex} 
+                                      title={cell}
+                                    >
+                                      {cell}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-[60vh] text-gray-500">
+                          No data available in this Excel file
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )
+              }
+            }
+            
+            // For Word documents, use mammoth.js
+            if (ext === 'docx' || ext === 'doc') {
+              if (wordDocumentLoading) {
+                return (
+                  <div className="flex items-center justify-center h-[60vh]">
+                    <Spin size="large" tip="Loading Word document..." />
+                  </div>
+                )
+              }
+
+              if (wordDocumentError) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                    <div className="text-6xl mb-4">??</div>
+                    <h3 className="text-xl font-semibold">Word Document Viewer Error</h3>
+                    <p className="text-gray-500 text-center max-w-md">{wordDocumentError}</p>
+                    <div className="space-x-2">
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        onClick={() => window.open(currentUrl, '_blank')}
+                      >
+                        Download Word Document
+                      </Button>
+                      <Button onClick={() => loadWordDocument(currentUrl)}>
+                        Retry
+                      </Button>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (wordDocumentContent) {
+                return (
+                  <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
+                      <div className="space-x-2">
+                        <Button 
+                          size="small" 
+                          onClick={() => setIsFullscreen(!isFullscreen)}
+                        >
+                          {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        </Button>
+                        <Button 
+                          size="small" 
+                          icon={<DownloadOutlined />}
+                          onClick={() => window.open(currentUrl, '_blank')}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                    <div 
+                      className={`overflow-auto border border-gray-300 rounded-lg p-4 ${isFullscreen ? 'h-[90vh]' : 'h-[70vh]'}`}
+                      dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
+                    />
+                  </div>
+                )
+              }
+            }
+            
+            // For other Office files (PowerPoint, etc.)
+            return (
+              <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                <div className="text-6xl mb-4">??</div>
+                <h3 className="text-xl font-semibold">
+                  {ext.toUpperCase()} Document
+                </h3>
+                <p className="text-gray-500 text-center max-w-md">
+                  This document type cannot be previewed directly. Please download to view.
+                </p>
+                <Button
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  onClick={() => window.open(currentUrl, '_blank')}
+                  className="mt-4"
+                >
+                  Download Document
+                </Button>
+              </div>
+            )
+          }
+
+          // PDF and images - use iframe preview
+          if (directPreviewable) {
+            return <iframe src={currentUrl} className="w-full h-[80vh]" title="Document" />
+          }
+
+          // Unknown file types - offer download
+          return (
+            <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+              <div className="text-6xl mb-4">??</div>
+              <h3 className="text-xl font-semibold">
+                Document Preview
+              </h3>
+              <Button
+                type="primary"
+                size="large"
+                onClick={() => window.open(currentUrl, '_blank')}
+                className="mt-4"
+              >
+                Open Document
+              </Button>
+            </div>
+          )
+        })()}
       </Modal>
 
       {/* Edit Proposal Modal */}
