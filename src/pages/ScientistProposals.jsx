@@ -124,6 +124,8 @@ const ALL_FIELDS = [
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
   { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
+  { name: 'proposals_converted', label: 'Proposals Converted', width: 180, input: 'select' },
+  { name: 'if_not_reason', label: 'If Not Reason', width: 200, input: 'textarea' },
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -176,6 +178,13 @@ const API_FIELD_MAP = {
   'revised/negotiated': 'revised_negotiated',
   'revised/negotiated_quote_date': 'revised_negotiated_quote_date',
   'revised/negotiated_quote_amount': 'revised_negotiated_quote_amount',
+}
+
+// Helper function to check if proposals_converted is Yes
+const isProposalConverted = (proposalsConverted) => {
+  if (!proposalsConverted) return false
+  const convertedValue = String(proposalsConverted).toLowerCase().trim()
+  return convertedValue === 'yes'
 }
 
 function ScientistProposals() {
@@ -1597,11 +1606,15 @@ function ScientistProposals() {
         (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
     ).length
     const pendingProjects = tableData.filter(
-      (item) => item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing' || item.status === 'On Hold',
+    ).length
+
+    const onHoldProjects = tableData.filter(
+      (item) => item.status === 'On Hold',
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number?.trim()) {
@@ -1624,6 +1637,7 @@ function ScientistProposals() {
       financiallyCompleted,
       financiallyNotCompleted,
       pendingProjects,
+      onHoldProjects,
       projectCodeBreakdown,
     }
   }, [tableData])
@@ -1703,7 +1717,7 @@ function ScientistProposals() {
       } else if (statusFilter === 'pendingProjects') {
         // Filter by ongoing status (same as statistics calculation)
         filtered = filtered.filter(
-          (item) => item.status === 'Ongoing',
+          (item) => item.status === 'Ongoing' || item.status === 'On Hold',
         )
         console.log('After pendingProjects filter:', filtered.length, 'items')
       } else {
@@ -2068,7 +2082,7 @@ function ScientistProposals() {
           items={[
             {
               key: 'proposals',
-              label: 'Proposals',
+              label: 'Total Proposals Submitted',
               children: (
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
@@ -2076,19 +2090,19 @@ function ScientistProposals() {
                       className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer"
                       onClick={() => setStatusFilter(null)}
                     >
-                      <Statistic title={<span className="text-white/90">All</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      <Statistic title={<span className="text-white/90">Total Proposals Submitted</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer"
                       onClick={() => setStatusFilter('proposals')}
                     >
-                      <Statistic title={<span className="text-white/90">Total Proposals</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      <Statistic title={<span className="text-white/90">Pending</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer"
                       onClick={() => setStatusFilter('totalProjects')}
                     >
-                      <Statistic title={<span className="text-white/90">Total Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      <Statistic title={<span className="text-white/90"> Converted to Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                       {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
                         <div className="mt-2 text-xs text-white/80">
                           {Object.entries(statistics.projectCodeBreakdown)
@@ -2125,6 +2139,11 @@ function ScientistProposals() {
                       onClick={() => setStatusFilter('pendingProjects')}
                     >
                       <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      {statistics.onHoldProjects > 0 && (
+                        <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
+                          On hold: {statistics.onHoldProjects}
+                        </div>
+                      )}
                     </Card>
                   </div>
 
@@ -2154,7 +2173,7 @@ function ScientistProposals() {
                             allowClear
                             style={{ width: '100%' }}
                           >
-                            {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
+                            {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
                               <Select.Option key={code} value={code}>
                                 {code}
                               </Select.Option>
@@ -2327,81 +2346,129 @@ function ScientistProposals() {
       >
         {selectedRecord && (
           <div style={{ maxHeight: '65vh', overflowY: 'auto' }} className="space-y-4">
-            <Card title="Customer / Enquiry" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Enquiry Date">{formatDate(selectedRecord?.enquiry_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Customer Type">{selectedRecord?.customer_type || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Customer Name">{selectedRecord?.customer_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Email">{selectedRecord?.email || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Phone No.">{selectedRecord?.phone_no || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Alternate Contact">{selectedRecord?.alternate_contact_details || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Request Type">{selectedRecord?.request_type || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Email Reference">{selectedRecord?.email_reference || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Address" span={2}>{selectedRecord?.address || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+            {isProposalConverted(selectedRecord.proposals_converted) ? (
+              // Show all details if proposals_converted is Yes
+              <>
+                <Card title="Customer / Enquiry" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Enquiry Date">{formatDate(selectedRecord?.enquiry_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Type">{selectedRecord?.customer_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Name">{selectedRecord?.customer_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email">{selectedRecord?.email || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Phone No.">{selectedRecord?.phone_no || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Alternate Contact">{selectedRecord?.alternate_contact_details || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Request Type">{selectedRecord?.request_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email Reference">{selectedRecord?.email_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Address" span={2}>{selectedRecord?.address || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="CMTI / Coordinator" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Proposal Given By">{selectedRecord?.quotation_given_by_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Department">{selectedRecord?.quotation_given_by_department || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Centre">{selectedRecord?.center || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Group">{selectedRecord?.group || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Proposal Status">{selectedRecord?.proposal_status || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="CMTI / Coordinator" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Proposal Given By">{selectedRecord?.quotation_given_by_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Department">{selectedRecord?.quotation_given_by_department || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Centre">{selectedRecord?.center || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Group">{selectedRecord?.group || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Proposal Status">{selectedRecord?.proposal_status || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Quotation" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Quote Reference">{selectedRecord?.quote_reference || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Quote Date">{formatDate(selectedRecord?.quote_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Quote Amount">{selectedRecord?.quote_amount || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Revised/Negotiated">{selectedRecord?.revised_negotiated || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Revised Quote Date">{formatDate(selectedRecord?.revised_negotiated_quote_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Revised Quote Amount">{selectedRecord?.revised_negotiated_quote_amount || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Quotation" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Quote Reference">{selectedRecord?.quote_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Date">{formatDate(selectedRecord?.quote_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Amount">{selectedRecord?.quote_amount || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Revised/Negotiated">{selectedRecord?.revised_negotiated || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Revised Quote Date">{formatDate(selectedRecord?.revised_negotiated_quote_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Revised Quote Amount">{selectedRecord?.revised_negotiated_quote_amount || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Project Details" size="small" className="bg-green-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Project Number">{selectedRecord?.project_number || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Party Name">{selectedRecord?.party_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Activity">{selectedRecord?.activity || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Project Co-ordinator">{selectedRecord?.project_co_ordinator || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Key Deliverables" span={2}>{selectedRecord?.key_deliverables || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Project Details" size="small" className="bg-green-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Project Number">{selectedRecord?.project_number || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Party Name">{selectedRecord?.party_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Activity">{selectedRecord?.activity || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Project Co-ordinator">{selectedRecord?.project_co_ordinator || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Key Deliverables" span={2}>{selectedRecord?.key_deliverables || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Order Information" size="small" className="bg-orange-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Order Number">{selectedRecord?.order_number || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Order Date">{formatDate(selectedRecord?.order_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Order Value">{selectedRecord?.order_value || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Delivery Date">{formatDate(selectedRecord?.delivery_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Extended Delivery">{formatDate(selectedRecord?.extended_delivery_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Actual Commencement">{formatDate(selectedRecord?.date_of_actual_commencement) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Dispatch Date">{formatDate(selectedRecord?.dispatch_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Technical Completion Year">{selectedRecord?.technical_completed_year || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Financial Completion Year">{selectedRecord?.financial_completed_year || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Status">{selectedRecord?.status || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Order Information" size="small" className="bg-orange-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Order Number">{selectedRecord?.order_number || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Order Date">{formatDate(selectedRecord?.order_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Order Value">{selectedRecord?.order_value || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Delivery Date">{formatDate(selectedRecord?.delivery_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Extended Delivery">{formatDate(selectedRecord?.extended_delivery_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Actual Commencement">{formatDate(selectedRecord?.date_of_actual_commencement) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Dispatch Date">{formatDate(selectedRecord?.dispatch_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Technical Completion Year">{selectedRecord?.technical_completed_year || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Financial Completion Year">{selectedRecord?.financial_completed_year || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Status">{selectedRecord?.status || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Meeting & Remarks" size="small" className="bg-purple-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Review Meeting Details" span={2}>{selectedRecord?.details_of_external_internal_review_meeting || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Co-ordinator Remarks" span={2}>{selectedRecord?.co_ordinator_remarks || '-'}</Descriptions.Item>
-                <Descriptions.Item label="PPM Remarks" span={2}>{selectedRecord?.ppm_remarks || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Closure Report" span={2}>{selectedRecord?.closer_report || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Meeting & Remarks" size="small" className="bg-purple-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Review Meeting Details" span={2}>{selectedRecord?.details_of_external_internal_review_meeting || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Co-ordinator Remarks" span={2}>{selectedRecord?.co_ordinator_remarks || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="PPM Remarks" span={2}>{selectedRecord?.ppm_remarks || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Closure Report" span={2}>{selectedRecord?.closer_report || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Acknowledgement" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Is Acknowledged">{selectedRecord?.is_acknowledged === true ? 'Yes' : selectedRecord?.is_acknowledged === false ? 'No' : '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Acknowledgement" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Is Acknowledged">{selectedRecord?.is_acknowledged === true ? 'Yes' : selectedRecord?.is_acknowledged === false ? 'No' : '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+              </>
+            ) : (
+              // Show limited details from enquiry date to if_not_reason if proposals_converted is No/null/empty
+              <>
+                <Card title="Customer / Enquiry" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Enquiry Date">{formatDate(selectedRecord?.enquiry_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Type">{selectedRecord?.customer_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Name">{selectedRecord?.customer_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email">{selectedRecord?.email || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Phone No.">{selectedRecord?.phone_no || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Alternate Contact">{selectedRecord?.alternate_contact_details || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Request Type">{selectedRecord?.request_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email Reference">{selectedRecord?.email_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Address" span={2}>{selectedRecord?.address || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                <Card title="CMTI / Coordinator" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Proposal Given By">{selectedRecord?.quotation_given_by_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Department">{selectedRecord?.quotation_given_by_department || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Centre">{selectedRecord?.center || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Group">{selectedRecord?.group || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Proposal Status">{selectedRecord?.proposal_status || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                <Card title="Quotation" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Quote Reference">{selectedRecord?.quote_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Date">{formatDate(selectedRecord?.quote_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Amount">{selectedRecord?.quote_amount || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                <Card title="Conversion Status" size="small" className="bg-yellow-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Proposals Converted">{selectedRecord?.proposals_converted || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="If Not Reason" span={2}>{selectedRecord?.if_not_reason || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+              </>
+            )}
 
             <Card title="Documents" size="small" className="bg-gray-50">
               <Table

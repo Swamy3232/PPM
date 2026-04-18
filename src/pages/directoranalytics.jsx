@@ -1297,9 +1297,9 @@ function directoranalytics() {
 
   const CATEGORIES = useMemo(
     () => [
-      { key: 'all', label: 'All' },
-      { key: 'proposals', label: 'Proposals' },
-      { key: 'projects', label: 'Projects' },
+      { key: 'all', label: 'Total Proposals Submitted' },
+      { key: 'proposals', label: 'Pending' },
+      { key: 'projects', label: 'Converted to Projects' },
       { key: 'technicallyCompleted', label: 'Technically Completed' },
       { key: 'financiallyNotCompleted', label: 'Financially Not Completed' },
       { key: 'financiallyCompleted', label: 'Financially Completed' },
@@ -1513,7 +1513,7 @@ function directoranalytics() {
         labels: entries.map(([key]) => key),
         values: entries.map(([, value]) => value),
         title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${formatGroupName(selectedGroup)} in ${formatCenterName(selectedCenter)} by Coordinator`,
-        dimension: 'coordinator',
+        dimension: 'project_co_ordinator',
       }
     }
 
@@ -2165,7 +2165,7 @@ function directoranalytics() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2212,7 +2212,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            All
+                            Total Proposals Submitted
                           </span>
                         }
                         value={statistics.allCount}
@@ -2233,7 +2233,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Proposed Projects
+                             Pending
                           </span>
                         }
                         value={statistics.totalProposals}
@@ -2251,7 +2251,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Total Projects
+                            Converted to Projects
                           </span>
                         }
                         value={statistics.totalProjects}
@@ -2398,7 +2398,7 @@ function directoranalytics() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>
                               {code}
                             </Select.Option>

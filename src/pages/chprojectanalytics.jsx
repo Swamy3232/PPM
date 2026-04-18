@@ -1543,11 +1543,11 @@ function Centerheadanalytics() {
         (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
     ).length
     const pendingProjects = dataSource.filter(
-      (item) => item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing' || item.status === 'On Hold',
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     dataSource.forEach((item) => {
       if (item.project_number) {
@@ -1661,7 +1661,7 @@ function Centerheadanalytics() {
         )
       } else if (statusFilter === 'pendingProjects') {
         filtered = filtered.filter(
-          (item) => item.status === 'Ongoing',
+          (item) => item.status === 'Ongoing' || item.status === 'On Hold',
         )
       } else {
         // For other status filters, filter by status
@@ -2071,7 +2071,7 @@ function Centerheadanalytics() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'SVP', 'TOT'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>{code}</Select.Option>
                           ))}
                         </Select>

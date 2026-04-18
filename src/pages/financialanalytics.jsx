@@ -1880,11 +1880,11 @@ function FinancialAnalytics() {
     ).length
 
     const pendingProjects = tableData.filter(
-      (item) => item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing' || item.status === 'On Hold',
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2116,7 +2116,7 @@ function FinancialAnalytics() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>
                               {code}
                             </Select.Option>

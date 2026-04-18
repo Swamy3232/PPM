@@ -791,8 +791,8 @@ function Projects() {
         ld: values.ld || '',
         bal: values.bal || '',
         follow_up_status: values.follow_up_status || '',
-        invoice_date: values.invoice_date ? values.invoice_date.format('DD/M/YY') : null,
-        recieved_date: values.recieved_date ? values.recieved_date.format('DD/M/YY') : null,
+        invoice_date: values.invoice_date ? values.invoice_date.format('DD-MM-YYYY') : null,
+        recieved_date: values.recieved_date ? values.recieved_date.format('DD-MM-YYYY') : null,
         project_id: Number(safeId(selectedProject)),
         stage_id: Number(selectedStageForPayment.stage_id),
       }
@@ -1006,7 +1006,7 @@ function Projects() {
   }, [filteredCards])
 
   // Project type order and labels
-  const projectTypeOrder = ['ISP', 'GSP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'Other']
+  const projectTypeOrder = ['ISP', 'GSP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'Other']
   
   const projectTypeConfig = {
     ISP: { color: 'blue', label: 'ISP Projects' },
@@ -1412,7 +1412,7 @@ function Projects() {
                 <Input />
               </Form.Item>
               <Form.Item label="Invoice Date" name="invoice_date">
-                <DatePicker format="DD/M/YY" className="w-full" />
+                <DatePicker format="DD-MM-YYYY" className="w-full" />
               </Form.Item>
               <Form.Item label="Gross Amount" name="gross_amount">
                 <Input />
@@ -1427,7 +1427,7 @@ function Projects() {
                 <Input />
               </Form.Item>
               <Form.Item label="Received Date" name="recieved_date">
-                <DatePicker format="DD/M/YY" className="w-full" />
+                <DatePicker format="DD-MM-YYYY" className="w-full" />
               </Form.Item>
               <Form.Item label="TDS" name="tds">
                 <Input />
