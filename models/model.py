@@ -61,6 +61,8 @@ class Proposal(Base):
     group = Column(String, nullable=True)
     is_acknowledged = Column(Boolean , nullable= True)
     status = Column(String, nullable=True)
+    proposals_converted = Column(String, nullable=True)
+    if_not_reason = Column(String, nullable=True)
 
 
     # Child relationships
