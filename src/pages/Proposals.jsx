@@ -1325,7 +1325,7 @@ function Proposals() {
     } else if (statusFilter === 'pendingProjects') {
       filtered = filtered.filter(
         (item) =>
-          item.status === 'Ongoing',
+          item.status === 'Ongoing' || item.status === 'On Hold',
       )
     } else if (statusFilter === 'proposals') {
       filtered = filtered.filter(
