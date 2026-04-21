@@ -705,12 +705,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       return
     }
     if (drillLevel === 'project_code') {
-      setDrillLevel('coordinator')
+      setDrillLevel('project_co_ordinator')
       setSelectedProjectName('')
       setSelectedProjectCode('')
       return
     }
-    if (drillLevel === 'coordinator') {
+    if (drillLevel === 'project_co_ordinator') {
       setDrillLevel('top')
       setSelectedCategory('all')
       setSelectedCenter('')
@@ -720,6 +720,19 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       setTrendCategory(null)
     }
   }, [drillLevel])
+
+  const handleResetChart = useCallback(() => {
+    setDrillLevel('top')
+    setSelectedCategory('all')
+    setSelectedCenter('')
+    setSelectedGroup('')
+    setSelectedProjectName('')
+    setSelectedProjectCode('')
+    setTrendCategory(null)
+    setSelectedFinancialYear(null)
+    setChartType('bar')
+    setChartMetric('count')
+  }, [])
 
   const categoryKeyFromLabel = useCallback(
     (label) => {
@@ -2229,6 +2242,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         Back
                       </Button>
                     )}
+                    <Button size="small" onClick={handleResetChart}>
+                      Reset
+                    </Button>
                     <Button
                       size="small"
                       icon={<FullscreenOutlined />}
@@ -2261,6 +2277,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         disabled={Boolean(trendCategory)}
                         style={{ minWidth: 120 }}
                         popupMatchSelectWidth={false}
+                        getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                        dropdownStyle={{ zIndex: 9999 }}
                         options={availableFinancialYears.map(year => ({
                           value: year,
                           label: `${year}-${year + 1}`,
@@ -2293,6 +2311,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                           },
                         }}
                         trigger={['click']}
+                        getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                        overlayStyle={{ zIndex: 9999 }}
                       >
                         <Button size="small">
                           Trend {trendCategory ? `: ${CHART_CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
@@ -2314,6 +2334,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                       size="small"
                       value={chartType}
                       onChange={setChartType}
+                      getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                      dropdownStyle={{ zIndex: 9999 }}
                       options={[
                         { value: 'bar', label: 'Bar' },
                         { value: 'line', label: 'Line' },

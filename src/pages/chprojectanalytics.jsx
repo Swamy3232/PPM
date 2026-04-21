@@ -2198,6 +2198,21 @@ function Centerheadanalytics() {
                               Back
                             </Button>
                           )}
+                          <Button size="small" onClick={() => {
+                            setDrillLevel('top')
+                            setSelectedCategory('all')
+                            setSelectedCenter('')
+                            setSelectedGroup('')
+                            setSelectedProjectName('')
+                            setSelectedProjectCode('')
+                            setTrendCategory(null)
+                            setSelectedFinancialYear(null)
+                            setOrderDateRange(null)
+                            setChartType('bar')
+                            setChartMetric('count')
+                          }}>
+                            Reset
+                          </Button>
                           <Button
                             size="small"
                             icon={<FullscreenOutlined />}
@@ -2230,6 +2245,8 @@ function Centerheadanalytics() {
                             disabled={Boolean(trendCategory)}
                             style={{ minWidth: 120 }}
                             popupMatchSelectWidth={false}
+                            getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                            dropdownStyle={{ zIndex: 9999 }}
                             options={availableFinancialYears.map(year => ({
                               value: year,
                               label: `${year}-${year + 1}`,
@@ -2262,6 +2279,8 @@ function Centerheadanalytics() {
                               },
                             }}
                             trigger={['click']}
+                            getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                            overlayStyle={{ zIndex: 9999 }}
                           >
                             <Button size="small">
                               Trend {trendCategory ? `: ${CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
@@ -2283,6 +2302,8 @@ function Centerheadanalytics() {
                             size="small"
                             value={chartType}
                             onChange={setChartType}
+                            getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                            dropdownStyle={{ zIndex: 9999 }}
                             options={[
                               { value: 'bar', label: 'Bar' },
                               { value: 'line', label: 'Line' },

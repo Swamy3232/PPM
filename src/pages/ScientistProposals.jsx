@@ -200,8 +200,6 @@ function ScientistProposals() {
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [editingRecord, setEditingRecord] = useState(null)
   const [searchText, setSearchText] = useState('')
-  const [centerFilter, setCenterFilter] = useState(null)
-  const [groupFilter, setGroupFilter] = useState(null)
   const [dateRange, setDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState('totalProjects')
   const [projectNumberFilter, setProjectNumberFilter] = useState(null)
@@ -1660,19 +1658,6 @@ function ScientistProposals() {
       )
     }
 
-    if (centerFilter) {
-      filtered = filtered.filter((item) => {
-        const center = (item.center || '').toString().trim()
-        return center === centerFilter
-      })
-    }
-
-    if (groupFilter) {
-      filtered = filtered.filter((item) => {
-        const group = (item.group || '').toString().trim()
-        return group === groupFilter
-      })
-    }
 
     if (dateRange && dateRange.length === 2) {
       const [start, end] = dateRange
@@ -1777,21 +1762,8 @@ function ScientistProposals() {
     })
 
     setFilteredData(filtered)
-  }, [searchText, centerFilter, groupFilter, dateRange, statusFilter, projectNumberFilter, tableData, unrespondedQueryCounts])
+  }, [searchText, dateRange, statusFilter, projectNumberFilter, tableData, unrespondedQueryCounts])
 
-  const uniqueCenters = useMemo(() => {
-    const centers = [
-      ...new Set(tableData.map((item) => item.center).filter(Boolean)),
-    ]
-    return centers.sort()
-  }, [tableData])
-
-  const uniqueGroups = useMemo(() => {
-    const groups = [
-      ...new Set(tableData.map((item) => item.group).filter(Boolean)),
-    ]
-    return groups.sort()
-  }, [tableData])
 
   const handleExportExcel = () => {
     if (filteredData.length === 0) {
@@ -2181,38 +2153,6 @@ function ScientistProposals() {
                           </Select>
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                          <Select
-                            placeholder="Filter by Centre"
-                            value={centerFilter}
-                            onChange={setCenterFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            {uniqueCenters.map((center) => (
-                              <Select.Option key={center} value={center}>
-                                {center}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        </Col>
-                        <Col xs={24} sm={12} md={6}>
-                          <Select
-                            placeholder="Filter by Group"
-                            value={groupFilter}
-                            onChange={setGroupFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            {uniqueGroups.map((group) => (
-                              <Select.Option key={group} value={group}>
-                                {group}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        </Col>
-                        <Col xs={24} sm={12} md={6}>
                           <RangePicker
                             placeholder={['Start Date', 'End Date']}
                             value={dateRange}
@@ -2226,8 +2166,6 @@ function ScientistProposals() {
                           <Button
                             onClick={() => {
                               setSearchText('')
-                              setCenterFilter(null)
-                              setGroupFilter(null)
                               setDateRange(null)
                               setStatusFilter(null)
                               setProjectNumberFilter(null)
@@ -2569,7 +2507,7 @@ function ScientistProposals() {
                     getValueProps={(value) => ({ value: value ? dayjs(value).isValid() ? dayjs(value) : null : null })}
                     normalize={(value) => {
                       if (!value) return ''
-                      if (dayjs.isDayjs(value)) return value.format('YYYY-MM-DD')
+                      if (dayjs.isDayjs(value)) return value.format(DISPLAY_DATE_FORMAT)
                       return value
                     }}
                   >

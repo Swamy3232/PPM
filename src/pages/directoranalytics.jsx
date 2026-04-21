@@ -2962,6 +2962,8 @@ function directoranalytics() {
                           disabled={Boolean(trendCategory)}
                           style={{ minWidth: 120 }}
                           popupMatchSelectWidth={false}
+                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                          dropdownStyle={{ zIndex: 9999 }}
                           options={availableFinancialYears.map(year => ({
                             value: year,
                             label: `${year}-${year + 1}`,
@@ -2994,6 +2996,8 @@ function directoranalytics() {
                             },
                           }}
                           trigger={['click']}
+                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                          overlayStyle={{ zIndex: 9999 }}
                         >
                           <Button size="small">
                             Trend {trendCategory ? `: ${CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
@@ -3016,6 +3020,8 @@ function directoranalytics() {
                           size="small"
                           value={chartType}
                           onChange={setChartType}
+                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                          dropdownStyle={{ zIndex: 9999 }}
                           options={[
                             { value: 'bar', label: 'Bar Chart' },
                             { value: 'pie', label: 'Pie Chart' },
