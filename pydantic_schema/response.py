@@ -57,6 +57,9 @@ class ProposalResponse(BaseModel):
     technical_completed_year: Optional[str] = None
     financial_completed_year: Optional[str] = None
     dispatch_date: Optional[str] = None
+    project_allotment_date: Optional[str] = None
+    review_meeting_date: Optional[str] = None
+    small_value_project: Optional[str] = None
     ppm_remarks: Optional[str] = None
     updated_by: Optional[str] = None
 

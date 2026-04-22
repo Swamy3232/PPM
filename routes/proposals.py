@@ -362,13 +362,23 @@ def get_proposals_by_name(
     
     name_lower = name.lower()
     
-    # If user_role query param is provided, use it; otherwise look up from database
+    # Always look up the user from database for group/center info
+    user = db.query(User).filter(func.lower(User.name) == name_lower).first()
+    
+    # If user_role query param is provided, use it; otherwise use from database
     if user_role:
         effective_role = user_role.lower()
     else:
-        # Look up the user's role from database
-        user = db.query(User).filter(func.lower(User.name) == name_lower).first()
         effective_role = user.role.lower() if user and user.role else None
+
+    # Normalize role names from frontend to backend
+    role_mapping = {
+        'group head': 'gh',
+        'centre head': 'ch',
+        'scientist': 'scientist',
+        'director': 'director'
+    }
+    effective_role = role_mapping.get(effective_role, effective_role)
 
     # GH should only see proposals from SAME CENTER + SAME GROUP:
     #   1. Proposal's center matches GH's center
@@ -384,13 +394,10 @@ def get_proposals_by_name(
         group_user_names = [u.name.lower() for u in group_users if u.name]
         
         # Build conditions:
-        # 1. Proposal's center matches GH's center
-        center_match = func.lower(Proposal.center) == user_center_lower
-        
-        # 2. Proposal's group matches GH's group exactly
+        # 1. Proposal's group matches GH's group exactly
         group_match = func.lower(Proposal.group) == user_group_lower
         
-        # 3. Proposal has no group set, but is assigned to a group member
+        # 2. Proposal has no group set, but is assigned to a group member
         no_group = or_(Proposal.group == None, Proposal.group == '')
         assigned_to_member = or_(
             func.lower(Proposal.quotation_given_by_name).in_(group_user_names) if group_user_names else False,
@@ -400,7 +407,6 @@ def get_proposals_by_name(
         proposals = (
             db.query(Proposal)
             .filter(
-                center_match,  # Must be same center
                 or_(
                     group_match,
                     and_(no_group, assigned_to_member),
@@ -455,6 +461,7 @@ def get_proposals_by_name(
         return result
     
     if effective_role == 'scientist':
+        # Scientist users should only see proposals assigned to them as the project coordinator.
         proposals_query = (
             db.query(Proposal)
             .filter(
@@ -1250,6 +1257,14 @@ def bulk_create_proposals(
         if order_value is not None:
             data["order_value"] = str(order_value)
         
+        # Add new fields if present
+        if row.get("project_allotment_date") is not None:
+            data["project_allotment_date"] = str(row.get("project_allotment_date")).strip()
+        if row.get("review_meeting_date") is not None:
+            data["review_meeting_date"] = str(row.get("review_meeting_date")).strip()
+        if row.get("small_value_project") is not None:
+            data["small_value_project"] = str(row.get("small_value_project")).strip()
+        
         # Handle revised_negotiated fields if present
         if revised_flag is not None:
             data["revised_negotiated"] = revised_flag
@@ -1667,3 +1682,21 @@ def trigger_delivery_notifications(db: Session = Depends(get_db)):
 
     db.commit()
     return {"status": "ok"}
+@router.get("/unacknowledged/count")
+def get_unacknowledged_proposals_count(db: Session = Depends(get_db)) -> Dict[str, int]:
+    """
+    Get count of proposals where is_acknowledged is NULL or False.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        Dictionary with count of unacknowledged proposals
+    """
+    count = db.query(func.count(Proposal.id)).filter(
+        or_(
+            Proposal.is_acknowledged.is_(None),
+        )
+    ).scalar()
+    
+    return {"unacknowledged_count": count or 0}
