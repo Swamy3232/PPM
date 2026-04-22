@@ -149,6 +149,7 @@ const PROPOSAL_FIELDS = [
   { name: 'status', label: 'Status', width: 150, input: 'select' },
   { name: 'ppm_remarks', label: 'PPM Remarks', width: 200, input: 'textarea' },
   { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
+  { name: 'small_value_project', label: 'Small Value Project', width: 150 },
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
   { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
   { name: 'updated_by', label: 'Updated By', width: 150, required: true },
@@ -231,6 +232,7 @@ function directoranalytics() {
   const [groupFilter, setGroupFilter] = useState([])
   const [projectCoordinatorFilter, setProjectCoordinatorFilter] = useState([])
   const [isAcknowledgedFilter, setIsAcknowledgedFilter] = useState(null)
+  const [smallValueProjectFilter, setSmallValueProjectFilter] = useState(null)
   const [selectedDateField, setSelectedDateField] = useState('enquiry_date')
   const [dateRange, setDateRange] = useState(null)
   const chartRef = useRef(null)
@@ -1277,8 +1279,21 @@ function directoranalytics() {
       filtered = filtered.filter((item) => item.is_acknowledged === isAcknowledgedFilter)
     }
 
+    if (smallValueProjectFilter !== null) {
+      filtered = filtered.filter((item) => {
+        const svpValue = item.small_value_project
+        if (smallValueProjectFilter) {
+          // Show only records with 'true' or 'TRUE' (string values only)
+          return svpValue === 'true' || svpValue === 'TRUE'
+        } else {
+          // Show records that are null, empty, or anything except 'true' or 'TRUE'
+          return svpValue !== 'true' && svpValue !== 'TRUE'
+        }
+      })
+    }
+
     setFilteredData(filtered)
-  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, groupFilter, projectCoordinatorFilter, isAcknowledgedFilter, tableData, selectedDateField, dateRange])
+  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, groupFilter, projectCoordinatorFilter, isAcknowledgedFilter, smallValueProjectFilter, tableData, selectedDateField, dateRange])
 
   const CATEGORIES = useMemo(
     () => [
@@ -2139,7 +2154,7 @@ function directoranalytics() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2352,6 +2367,7 @@ function directoranalytics() {
                             setGroupFilter([])
                             setProjectCoordinatorFilter([])
                             setIsAcknowledgedFilter(null)
+                            setSmallValueProjectFilter(null)
                             setSelectedDateField('enquiry_date')
                             setDateRange(null)
                           }}
@@ -2371,7 +2387,7 @@ function directoranalytics() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>
                               {code}
                             </Select.Option>
@@ -2459,11 +2475,11 @@ function directoranalytics() {
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
-                        {/* <Form.Item label="Is Acknowledged:">
+                        <Form.Item label="Small Value Project:">
                           <Select
-                            placeholder="Filter by Is Acknowledged"
-                            value={isAcknowledgedFilter}
-                            onChange={setIsAcknowledgedFilter}
+                            placeholder="Filter by Small Value Project"
+                            value={smallValueProjectFilter}
+                            onChange={setSmallValueProjectFilter}
                             size="large"
                             allowClear
                             style={{ width: '100%' }}
@@ -2471,7 +2487,7 @@ function directoranalytics() {
                             <Select.Option value={true}>Yes</Select.Option>
                             <Select.Option value={false}>No</Select.Option>
                           </Select>
-                        </Form.Item> */}
+                        </Form.Item>
                       </Col>
                       <Col xs={24}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>

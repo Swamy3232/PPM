@@ -41,6 +41,7 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import '../App.css'
 import { API_BASE_URL } from '../config/api.js'
 import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/date.js'
+import { Checkbox } from 'antd';
 
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
@@ -70,6 +71,8 @@ const DATE_FIELD_OPTIONS = [
   { value: 'dispatch_date', label: 'Dispatch Date' },
   { value: 'technical_completed_year', label: 'Technical Completion Year' },
   { value: 'financial_completed_year', label: 'Financial Completion Year' },
+  { value: 'project_allotment_date', label: 'Project Allotment Date' },
+  { value: 'review_meeting_date', label: 'Review Meeting Date' },
   { value: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details' },
   { value: 'created_at', label: 'Created At' },
   { value: 'updated_at', label: 'Updated At' },
@@ -110,12 +113,14 @@ const PROPOSAL_FIELDS = [
   { name: 'revised_negotiated', label: 'Revised / Negotiated', width: 190, apiName: 'revised/negotiated' },
   { name: 'revised_negotiated_quote_date', label: 'Revised Quote Date', width: 190, apiName: 'revised/negotiated_quote_date' },
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
-    { name: 'center', label: 'Centre', width: 150 },
+  { name: 'center', label: 'Centre', width: 150 },
   { name: 'group', label: 'Group', width: 150 },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
   { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
+  { name: 'small_value_project', label: 'Small Value Project', width: 180, input: 'checkbox' },
   { name: 'project_number', label: 'Project Number', width: 140 },
-
+  { name: 'project_allotment_date', label: 'Project Allotment Date', width: 180 },
+  
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -127,6 +132,7 @@ const PROPOSAL_FIELDS = [
   { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 210 },
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
+  { name: 'review_meeting_date', label: 'Review Meeting Date', width: 180 },
   { name: 'closer_report', label: 'Closure Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
@@ -167,7 +173,14 @@ const mapUiToApi = (values) => {
   const payload = {}
   FORM_FIELDS.forEach((field) => {
     const apiName = getApiName(field.name)
-    payload[apiName] = values[field.name] ?? ''
+    let value = values[field.name] ?? ''
+    
+    // Ensure small_value_project is always sent as a string
+    if (field.name === 'small_value_project') {
+      value = value ? 'true' : 'false'
+    }
+    
+    payload[apiName] = value
   })
   return payload
 }
@@ -208,6 +221,7 @@ function Proposals() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [searchText, setSearchText] = useState('')
+  const [deliveryDateMutuallyAgreed, setDeliveryDateMutuallyAgreed] = useState(false)
   const [centreFilter, setCentreFilter] = useState([])
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
@@ -215,6 +229,7 @@ function Proposals() {
   const [projectNumberFilter, setProjectNumberFilter] = useState([])
   const [groupFilter, setGroupFilter] = useState([])
   const [isAcknowledgedFilter, setIsAcknowledgedFilter] = useState(null)
+  const [smallValueProjectFilter, setSmallValueProjectFilter] = useState(null)
   const [selectedDateField, setSelectedDateField] = useState('enquiry_date')
   const [dateRange, setDateRange] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
@@ -234,6 +249,7 @@ function Proposals() {
   const [selectedCentreId, setSelectedCentreId] = useState(null)
   const [users, setUsers] = useState([])
   const [availableCoordinators, setAvailableCoordinators] = useState([])
+  const [pageSize, setPageSize] = useState(10)
 
   // Document modal state
   const [stageConfig, setStageConfig] = useState([])
@@ -984,8 +1000,11 @@ function Proposals() {
     form.resetFields()
     setSelectedCentreId(null)
     setAvailableCoordinators([])
+    setDeliveryDateMutuallyAgreed(false)
     if (currentUserName) {
-      form.setFieldsValue({ updated_by: currentUserName })
+      form.setFieldsValue({ updated_by: currentUserName, delivery_date_mutually_agreed: false })
+    } else {
+      form.setFieldsValue({ delivery_date_mutually_agreed: false })
     }
     setModalOpen(true)
   }, [form, currentUserName])
@@ -993,7 +1012,13 @@ function Proposals() {
   const openEditModal = useCallback(
     (record) => {
       setEditingRecord(record)
-      form.setFieldsValue({ ...record, updated_by: currentUserName || record.updated_by })
+      const mutuallyAgreed = String(record.delivery_date).trim().toLowerCase() === 'mutually agreed'
+      setDeliveryDateMutuallyAgreed(mutuallyAgreed)
+      form.setFieldsValue({
+        ...record,
+        updated_by: currentUserName || record.updated_by,
+        delivery_date_mutually_agreed: mutuallyAgreed,
+      })
 
       const centerCodeFromRecord = (record.center || '').trim()
       if (centerCodeFromRecord) {
@@ -1008,10 +1033,29 @@ function Proposals() {
       // Initialize available coordinators based on center and group
       const groupCodeFromRecord = (record.group || '').trim()
       if (centerCodeFromRecord && groupCodeFromRecord) {
-        const matchingUsers = users.filter(user => 
-          user.center === centerCodeFromRecord && user.group === groupCodeFromRecord
-        )
-        setAvailableCoordinators(matchingUsers)
+        if (groupCodeFromRecord === 'Center Head') {
+          // Special case for Center Head
+          const center = centres.find(c => c.code === centerCodeFromRecord)
+          const centerHead = center?.head
+          if (centerHead) {
+            setAvailableCoordinators([{ name: centerHead, id: `head-${center.id}` }])
+          } else {
+            setAvailableCoordinators([])
+          }
+        } else {
+          const matchingUsers = users.filter(user => 
+            user.center === centerCodeFromRecord && user.group === groupCodeFromRecord
+          )
+          
+          // Include center head if not already in the list
+          const center = centres.find(c => c.code === centerCodeFromRecord)
+          const centerHead = center?.head
+          if (centerHead && !matchingUsers.some(u => u.name === centerHead)) {
+            matchingUsers.push({ name: centerHead, id: `head-${center.id}` })
+          }
+          
+          setAvailableCoordinators(matchingUsers)
+        }
       } else {
         setAvailableCoordinators([])
       }
@@ -1159,8 +1203,39 @@ function Proposals() {
       filtered = filtered.filter((item) => item.is_acknowledged === isAcknowledgedFilter)
     }
 
+    if (smallValueProjectFilter !== null) {
+      filtered = filtered.filter((item) => {
+        const svpValue = item.small_value_project
+        if (smallValueProjectFilter) {
+          // Show only records with 'true', 'TRUE', or true (boolean)
+          return svpValue === 'true' || svpValue === 'TRUE' || svpValue === true
+        } else {
+          // Show records that are null, empty, or anything except 'true', 'TRUE', or true
+          return svpValue !== 'true' && svpValue !== 'TRUE' && svpValue !== true
+        }
+      })
+    }
+
+    // Apply date range filtering
+    if (selectedDateField && dateRange && dateRange.length === 2) {
+      const startDate = dateRange[0].startOf('day')
+      const endDate = dateRange[1].endOf('day')
+      
+      filtered = filtered.filter((item) => {
+        const dateValue = item[selectedDateField]
+        if (!dateValue) return false
+        
+        try {
+          const itemDate = dayjs(dateValue)
+          return itemDate.isAfter(startDate) && itemDate.isBefore(endDate)
+        } catch (error) {
+          return false
+        }
+      })
+    }
+
     setFilteredData(filtered)
-  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, tableData, selectedDateField, dateRange])
+  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, smallValueProjectFilter, tableData, selectedDateField, dateRange])
 
   // Get unique centers for filter
   const uniqueCentres = useMemo(() => {
@@ -1455,6 +1530,8 @@ function Proposals() {
       'updated_at',
       'technical_completed_year',
       'financial_completed_year',
+      'project_allotment_date',
+      'review_meeting_date',
     ])
 
     const amountFields = new Set([
@@ -1484,8 +1561,8 @@ function Proposals() {
               'Delayed': { bg: '#fff3e0', color: '#e65100' },
               'On Hold': { bg: '#f3e5f5', color: '#6a1b9a' },
               'Technically completed': { bg: '#e0f7fa', color: '#00695c' },
-              'Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
-              'Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
+              'Completed and Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
+              'Completed and Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
             }
             const colors = statusColors[value] || { bg: '#f5f5f5', color: '#616161' }
             return (
@@ -1522,6 +1599,9 @@ function Proposals() {
       title: 'Overdue Days',
       width: 150,
       render: (_, record) => {
+        // Don't show overdue days if project is completed
+        if (record.status === 'Completed') return '-'
+
         const overdueDays = calculateOverdueDays(
           record.delivery_date,
           record.extended_delivery_date,
@@ -1919,7 +1999,7 @@ function Proposals() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2090,6 +2170,7 @@ function Proposals() {
                             setProjectNumberFilter([])
                             setGroupFilter([])
                             setIsAcknowledgedFilter(null)
+                            setSmallValueProjectFilter(null)
                             setSelectedDateField('enquiry_date')
                             setDateRange(null)
                           }}
@@ -2109,7 +2190,7 @@ function Proposals() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>
                               {code}
                             </Select.Option>
@@ -2168,6 +2249,21 @@ function Proposals() {
                             placeholder="Filter by Is Acknowledged"
                             value={isAcknowledgedFilter}
                             onChange={setIsAcknowledgedFilter}
+                            size="large"
+                            allowClear
+                            style={{ width: '100%' }}
+                          >
+                            <Select.Option value={true}>Yes</Select.Option>
+                            <Select.Option value={false}>No</Select.Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <Form.Item label="Small Value Project:">
+                          <Select
+                            placeholder="Filter by Small Value Project"
+                            value={smallValueProjectFilter}
+                            onChange={setSmallValueProjectFilter}
                             size="large"
                             allowClear
                             style={{ width: '100%' }}
@@ -2343,6 +2439,15 @@ function Proposals() {
                             <Descriptions.Item label="Group">
                               {renderDetailValue('group', formatGroupName(selectedRecord.group))}
                             </Descriptions.Item>
+                            <Descriptions.Item label="Small Value Project">
+                              {renderDetailValue(
+                                'small_value_project',
+                                selectedRecord.small_value_project,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Project Number">
+                              {renderDetailValue('project_number', selectedRecord.project_number)}
+                            </Descriptions.Item>
                             <Descriptions.Item label="Project Co-ordinator">
                               {renderDetailValue(
                                 'project_co_ordinator',
@@ -2392,6 +2497,18 @@ function Proposals() {
                             </Descriptions.Item>
                             <Descriptions.Item label="Dispatch Date">
                               {renderDetailValue('dispatch_date', selectedRecord.dispatch_date)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Project Allotment Date">
+                              {renderDetailValue(
+                                'project_allotment_date',
+                                selectedRecord.project_allotment_date,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Review Meeting Date">
+                              {renderDetailValue(
+                                'review_meeting_date',
+                                selectedRecord.review_meeting_date,
+                              )}
                             </Descriptions.Item>
                             <Descriptions.Item label="Technical Completion Year">
                               {renderDetailValue(
@@ -2485,24 +2602,24 @@ function Proposals() {
                               scroll={{ x: 'max-content' }}
                               columns={[
                                 {
-                                  title: 'Invoice No',
+                                  title: 'Inv #',
                                   dataIndex: 'invoice_no',
                                   key: 'invoice_no',
-                                  width: 140,
+                                  width: 120,
                                   render: (v) => v || '-',
                                 },
                                 {
-                                  title: 'Invoice Date',
+                                  title: 'Inv Date',
                                   dataIndex: 'invoice_date',
                                   key: 'invoice_date',
-                                  width: 130,
+                                  width: 110,
                                   render: (v) => formatDate(v) || '-',
                                 },
                                 {
-                                  title: 'Gross Amount',
+                                  title: 'Gross',
                                   dataIndex: 'gross_amount',
                                   key: 'gross_amount',
-                                  width: 140,
+                                  width: 110,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
@@ -2510,7 +2627,7 @@ function Proposals() {
                                   title: 'GST Amount',
                                   dataIndex: 'get_amount',
                                   key: 'get_amount',
-                                  width: 120,
+                                  width: 110,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
@@ -2518,7 +2635,7 @@ function Proposals() {
                                   title: 'Amount Claimed',
                                   dataIndex: 'amount_claimed',
                                   key: 'amount_claimed',
-                                  width: 150,
+                                  width: 130,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
@@ -2526,7 +2643,7 @@ function Proposals() {
                                   title: 'Amount Received',
                                   dataIndex: 'amount_recieved',
                                   key: 'amount_recieved',
-                                  width: 150,
+                                  width: 130,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
@@ -2534,14 +2651,14 @@ function Proposals() {
                                   title: 'Received Date',
                                   dataIndex: 'recieved_date',
                                   key: 'recieved_date',
-                                  width: 140,
+                                  width: 120,
                                   render: (v) => formatDate(v) || '-',
                                 },
                                 {
                                   title: 'TDS',
                                   dataIndex: 'tds',
                                   key: 'tds',
-                                  width: 100,
+                                  width: 90,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
@@ -2549,7 +2666,7 @@ function Proposals() {
                                   title: 'GST TDS',
                                   dataIndex: 'get_tds',
                                   key: 'get_tds',
-                                  width: 110,
+                                  width: 90,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
@@ -2565,16 +2682,47 @@ function Proposals() {
                                   title: 'Balance',
                                   dataIndex: 'bal',
                                   key: 'bal',
-                                  width: 120,
+                                  width: 90,
                                   align: 'right',
                                   render: (v) => (v !== undefined && v !== null && v !== '' ? formatIndianNumber(v) : '-'),
                                 },
                                 {
-                                  title: 'Follow Up Status',
+                                  title: 'Status',
                                   dataIndex: 'follow_up_status',
                                   key: 'follow_up_status',
-                                  width: 160,
+                                  width: 150,
                                   render: (v) => v || '-',
+                                },
+                                {
+                                  title: 'Updated At',
+                                  width: 150,
+                                  render: (_, record) => {
+                                    if (!record?.updated_by) return '-'
+                                    if (!record?.updated_at) return '-'
+                                    const d = dayjs(record.updated_at)
+                                    return d.isValid() ? d.format('DD-MM-YYYY') : String(record.updated_at)
+                                  },
+                                },
+                                {
+                                  title: 'Updated By',
+                                  width: 120,
+                                  render: (_, record) => {
+                                    if (!record.updated_by) return '-'
+                                    return record.updated_by
+                                  },
+                                },
+                                {
+                                  title: 'Actions',
+                                  width: 120,
+                                  fixed: 'right',
+                                  render: (_, record) => (
+                                    <Space>
+                                      <Button size="small" icon={<EditOutlined />}>Edit</Button>
+                                      <Popconfirm title="Delete payment?" onConfirm={() => console.log('Delete payment:', record.id)}>
+                                        <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
+                                      </Popconfirm>
+                                    </Space>
+                                  ),
                                 },
                               ]}
                               dataSource={selectedRecord.payments}
@@ -2721,7 +2869,15 @@ function Proposals() {
                       columns={columns}
                       dataSource={filteredData}
                       loading={tableLoading}
-                      pagination={{ pageSize: 10 }}
+                      pagination={{
+                        pageSize: pageSize,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '100'],
+                        onShowSizeChange: (current, size) => {
+                          setPageSize(size)
+                        },
+                        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`
+                      }}
                       scroll={{ x: 'max-content' }}
                       sticky
                       bordered
@@ -2943,10 +3099,82 @@ function Proposals() {
                 'extended_delivery_date',
                 'date_of_actual_commencement',
                 'dispatch_date',
+                'technical_completed_year',
+                'financial_completed_year',
+                'project_allotment_date',
+                'review_meeting_date',
               ]
               const isDateField = dateFields.includes(field.name)
 
               if (isDateField) {
+                if (field.name === 'delivery_date') {
+                  return (
+                    <Form.Item
+                      key={field.name}
+                      label={field.label}
+                      rules={
+                        field.required
+                          ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                          : []
+                      }
+                    >
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <Form.Item
+                          name={field.name}
+                          noStyle
+                          getValueProps={(value) => ({
+                            value: value
+                              ? dayjs(value).isValid()
+                                ? dayjs(value)
+                                : null
+                              : null,
+                          })}
+                          normalize={(value) => {
+                            if (!value) return ''
+                            if (dayjs.isDayjs(value)) {
+                              return value.format('YYYY-MM-DD')
+                            }
+                            return value
+                          }}
+                          style={{ flex: 1 }}
+                        >
+                          <DatePicker
+                            style={{ width: '100%' }}
+                            format={DISPLAY_DATE_FORMAT}
+                            placeholder={`Select ${field.label}`}
+                            disabled={deliveryDateMutuallyAgreed}
+                          />
+                        </Form.Item>
+
+                        <Form.Item
+                          name="delivery_date_mutually_agreed"
+                          valuePropName="checked"
+                          noStyle
+                        >
+                          <Checkbox
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setDeliveryDateMutuallyAgreed(checked)
+                              if (checked) {
+                                form.setFieldsValue({ delivery_date: 'Mutually Agreed' })
+                              } else if (form.getFieldValue('delivery_date') === 'Mutually Agreed') {
+                                form.setFieldsValue({ delivery_date: '' })
+                              }
+                            }}
+                          >
+                            Mutually Agreed
+                          </Checkbox>
+                        </Form.Item>
+                      </div>
+                    </Form.Item>
+                  )
+                }
+
                 return (
                   <Form.Item
                     key={field.name}
@@ -2989,6 +3217,28 @@ function Proposals() {
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
               const isCustomerName = field.name === 'customer_name'
+              const isSmallValueProjectField = field.name === 'small_value_project'
+
+              if (isSmallValueProjectField) {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    valuePropName="checked"
+                    getValueFromEvent={(e) => e.target.checked ? 'true' : 'false'}
+                    normalize={(value) => {
+                      // Convert string 'true'/'false' back to boolean for the checkbox
+                      if (typeof value === 'string') {
+                        return value === 'true'
+                      }
+                      return Boolean(value)
+                    }}
+                  >
+                    <Checkbox>Mark as Small Value Project</Checkbox>
+                  </Form.Item>
+                )
+              }
               const isAddressField = field.name === 'address'
               const isEmailField = field.name === 'email'
               const isPhoneField = field.name === 'phone_no'
@@ -3377,32 +3627,51 @@ function Proposals() {
                         // Find the selected center and group
                         const selectedCenterCode = form.getFieldValue('center')
                         const selectedCenter = centres.find(c => c.code === selectedCenterCode)
-                        const selectedGroup = groups.find(g => g.code === groupValue)
                         
-                        if (selectedCenter && selectedGroup) {
-                          // Find all users matching the center and group
-                          const matchingUsers = users.filter(user => 
-                            user.center === selectedCenterCode && user.group === groupValue
-                          )
-                          
-                          // Update available coordinators list
-                          setAvailableCoordinators(matchingUsers)
-                          
-                          // If there's only one coordinator, auto-select them
-                          if (matchingUsers.length === 1) {
-                            form.setFieldsValue({ project_co_ordinator: matchingUsers[0].name })
+                        if (groupValue === 'Center Head') {
+                          // Special case for Center Head
+                          const centerHead = selectedCenter?.head
+                          if (centerHead) {
+                            setAvailableCoordinators([{ name: centerHead, id: `head-${selectedCenter.id}` }])
+                            form.setFieldsValue({ project_co_ordinator: centerHead })
                           } else {
-                            // Clear if multiple coordinators or none
+                            setAvailableCoordinators([])
                             form.setFieldsValue({ project_co_ordinator: '' })
                           }
-                        } else if (groupValue && !selectedCenterCode) {
-                          // If group is selected but center is not, show warning
-                          message.warning('Please select a center first')
-                          form.setFieldsValue({ group: undefined })
                         } else {
-                          // Clear if center or group not selected
-                          setAvailableCoordinators([])
-                          form.setFieldsValue({ project_co_ordinator: '' })
+                          const selectedGroup = groups.find(g => g.code === groupValue)
+                          
+                          if (selectedCenter && selectedGroup) {
+                            // Find all users matching the center and group
+                            const matchingUsers = users.filter(user => 
+                              user.center === selectedCenterCode && user.group === groupValue
+                            )
+                            
+                            // Include center head if not already in the list
+                            const centerHead = selectedCenter.head
+                            if (centerHead && !matchingUsers.some(u => u.name === centerHead)) {
+                              matchingUsers.push({ name: centerHead, id: `head-${selectedCenter.id}` })
+                            }
+                            
+                            // Update available coordinators list
+                            setAvailableCoordinators(matchingUsers)
+                            
+                            // If there's only one coordinator, auto-select them
+                            if (matchingUsers.length === 1) {
+                              form.setFieldsValue({ project_co_ordinator: matchingUsers[0].name })
+                            } else {
+                              // Clear if multiple coordinators or none
+                              form.setFieldsValue({ project_co_ordinator: '' })
+                            }
+                          } else if (groupValue && !selectedCenterCode) {
+                            // If group is selected but center is not, show warning
+                            message.warning('Please select a center first')
+                            form.setFieldsValue({ group: undefined })
+                          } else {
+                            // Clear if center or group not selected
+                            setAvailableCoordinators([])
+                            form.setFieldsValue({ project_co_ordinator: '' })
+                          }
                         }
                         
                         // Re-fetch users to get the updated list for the new center/group
@@ -3414,6 +3683,11 @@ function Proposals() {
                           {formatGroupName(group.code)}
                         </Select.Option>
                       ))}
+                      {currentCenterValue && (
+                        <Select.Option key="center-head" value="Center Head">
+                          Center Head
+                        </Select.Option>
+                      )}
                     </Select>
                   </Form.Item>
                 )
@@ -3473,12 +3747,12 @@ function Proposals() {
                       <Select.Option value="On Hold">On Hold</Select.Option>
                       <Select.Option value="Delayed">Delayed</Select.Option>
                       <Select.Option value="Technically completed">Technically completed</Select.Option>
-                      <Select.Option value="Short closed by cutomer">Short closed by cutomer</Select.Option>
-                      <Select.Option value="Short closed by CMTI">Short closed by CMTI</Select.Option>
+                      <Select.Option value="Completed and Short closed by cutomer">Completed and Short closed by cutomer</Select.Option>
+                      <Select.Option value="Completed and Short closed by CMTI">Completed and Short closed by CMTI</Select.Option>
                     </Select>
                   </Form.Item>
                 )
-              }
+              } 
 
               if (field.name === 'project_co_ordinator') {
                 // Get unique coordinator names
@@ -3599,7 +3873,7 @@ function Proposals() {
                 } else if (queryDate.isSame(yesterday, 'day')) {
                   return 'Yesterday ' + queryDate.format('HH:mm')
                 } else {
-                  return queryDate.format('DD-MM-YYYY HH:mm')
+                  return queryDate.format('DD-MM-YYYY')
                 }
               },
             },

@@ -33,6 +33,8 @@ function Sidebar() {
       ? 'projects'
       : section === 'analytics'
       ? 'analytics'
+      : section === 'overall-analytics'
+      ? 'overall-analytics'
       // : section === 'financial-analytics'
       // ? 'financial-analytics'
       : section === 'master-proposals'
@@ -67,6 +69,7 @@ function Sidebar() {
   }
 
   const [notificationCount, setNotificationCount] = useState(0);
+  const [unacknowledgedCount, setUnacknowledgedCount] = useState(0);
   const [selectedRole, setSelectedRole] = useState('');
   const isDirector = basePath === 'director'
   const isCH = basePath === 'ch'
@@ -117,6 +120,15 @@ function Sidebar() {
         setNotificationCount(unreadCount)
       })
       .catch((error) => console.error('Error fetching notifications:', error));
+
+    // Fetch unacknowledged proposals count for admin users
+    if (normalizedBasePath === 'admin') {
+      axios.get(`${API_BASE_URL}/proposals/unacknowledged/count`)
+        .then((response) => {
+          setUnacknowledgedCount(response.data.unacknowledged_count || 0)
+        })
+        .catch((error) => console.error('Error fetching unacknowledged count:', error));
+    }
   }, [normalizedBasePath, userName, userRole]);
 
   const handleRoleSwitch = (newRole) => {
@@ -240,7 +252,25 @@ function Sidebar() {
                   {
                     key: 'master-proposals',
                     icon: <ProfileOutlined />,
-                    label: 'Master Proposals',
+                    label: (
+                      <span>
+                        Master Proposals
+                        {unacknowledgedCount > 0 && (
+                          <span
+                            style={{
+                              backgroundColor: '#ff4d4f',
+                              borderRadius: '50%',
+                              color: 'white',
+                              padding: '0 6px',
+                              marginLeft: '8px',
+                              fontSize: '12px',
+                            }}
+                          >
+                            {unacknowledgedCount}
+                          </span>
+                        )}
+                      </span>
+                    ),
                   },
                 ]
               : []),

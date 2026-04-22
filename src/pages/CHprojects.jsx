@@ -71,7 +71,7 @@ const getProjectTheme = (projectNumber) => {
       pillLabel: 'GAP',
     }
   }
-
+  
   if (num.includes('ILP')) {
     return {
       cardClass: 'border-l-4 border-amber-500 bg-amber-50',
@@ -109,6 +109,22 @@ const getProjectTheme = (projectNumber) => {
       cardClass: 'border-l-4 border-rose-500 bg-rose-50',
       pillClass: 'bg-rose-500/10 text-rose-700 border border-rose-500/30',
       pillLabel: 'SO',
+    }
+  }
+
+  if (num.includes('SVP')) {
+    return {
+      cardClass: 'border-l-4 border-pink-500 bg-pink-50',
+      pillClass: 'bg-pink-500/10 text-pink-700 border border-pink-500/30',
+      pillLabel: 'SVP',
+    }
+  }
+
+  if (num.includes('TOT')) {
+    return {
+      cardClass: 'border-l-4 border-orange-500 bg-orange-50',
+      pillClass: 'bg-orange-500/10 text-orange-700 border border-orange-500/30',
+      pillLabel: 'TOT',
     }
   }
 
@@ -973,6 +989,8 @@ function Projects() {
     if (num.includes('LSP')) return 'LSP'
     if (num.includes('CLP')) return 'CLP'
     if (num.includes('SO')) return 'SO'
+    if (num.includes('SVP')) return 'SVP'
+    if (num.includes('TOT')) return 'TOT'
     return 'Other'
   }
 
@@ -988,7 +1006,7 @@ function Projects() {
   }, [filteredCards])
 
   // Project type order and labels
-  const projectTypeOrder = ['ISP', 'GSP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'Other']
+  const projectTypeOrder = ['ISP', 'GSP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'Other']
   
   const projectTypeConfig = {
     ISP: { color: 'blue', label: 'ISP Projects' },
@@ -999,6 +1017,8 @@ function Projects() {
     LSP: { color: 'teal', label: 'LSP Projects' },
     CLP: { color: 'cyan', label: 'CLP Projects' },
     SO: { color: 'rose', label: 'SO Projects' },
+    SVP: { color: 'violet', label: 'SVP Projects' },
+    TOT: { color: 'fuchsia', label: 'TOT Projects' },
     Other: { color: 'slate', label: 'Other Projects' }
   }
 

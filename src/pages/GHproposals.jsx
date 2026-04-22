@@ -956,7 +956,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         item.status === 'Ongoing',
     ).length
 
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     dataSource.forEach((item) => {
       if (item.project_number) {
@@ -1230,6 +1230,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       title: 'Overdue Days',
       width: 140,
       render: (_, record) => {
+        // Don't show overdue days if project is completed
+        if (record.status === 'Completed') return '-'
+
         const overdueDays = calculateOverdueDays(
           record.delivery_date,
           record.extended_delivery_date,

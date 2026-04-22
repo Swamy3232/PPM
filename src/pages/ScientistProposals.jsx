@@ -1482,7 +1482,7 @@ function ScientistProposals() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number?.trim()) {
@@ -1859,6 +1859,9 @@ function ScientistProposals() {
       title: 'Overdue Days',
       width: 100,
       render: (_, record) => {
+        // Don't show overdue days if project is completed
+        if (record.status === 'Completed') return '-'
+
         const overdueDays = calculateOverdueDays(
           record.delivery_date,
           record.extended_delivery_date,
@@ -2032,7 +2035,7 @@ function ScientistProposals() {
                             allowClear
                             style={{ width: '100%' }}
                           >
-                            {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
+                            {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
                               <Select.Option key={code} value={code}>
                                 {code}
                               </Select.Option>
