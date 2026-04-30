@@ -275,13 +275,27 @@ function ScientistProposals() {
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
 
   // Slim columns for Scientist (matching GH restricted view) - now inside component
+  const getTableFields = (isProposal = false) => {
+    const baseFields = [
+      { name: 'id', label: 'SL NO', width: 50, render: (text, record, index) => index + 1 },
+      { name: 'project_number', label: 'Project Number', width: 100 },
+      { name: 'activity', label: 'Project Name', width: 140 },
+      { name: 'customer_name', label: 'Customer Name', width: 120 },
+      { name: 'dispatch_date', label: 'Dispatch Date', width: 100 },
+    ]
+    
+    // Add "Proposal Given By" column only for proposals (items without project number)
+    if (isProposal) {
+      baseFields.push({ name: 'quotation_given_by_name', label: 'Proposal Given By', width: 120 })
+    }
+    
+    baseFields.push({ name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 120 })
+    
+    return baseFields
+  }
+  
   const TABLE_FIELDS = [
-    { name: 'id', label: 'SL NO', width: 50, render: (text, record, index) => index + 1 },
-    { name: 'project_number', label: 'Project Number', width: 100 },
-    { name: 'activity', label: 'Project Name', width: 140 },
-    { name: 'customer_name', label: 'Customer Name', width: 120 },
-    { name: 'dispatch_date', label: 'Dispatch Date', width: 100 },
-    { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 120 },
+    ...getTableFields(false), // Default for projects
     { name: 'latest_query', label: 'Latest Query', width: 200, render: (text, record) => {
       const allQueries = record.queries || []
       const unrespondedQueries = allQueries.filter(q => !q.respond_to_remarks) || []
@@ -1837,6 +1851,20 @@ function ScientistProposals() {
           width: 120,
         },
         {
+          key: 'project_name',
+          dataIndex: 'project_name',
+          title: 'Project Name',
+          width: 140,
+          render: (_, record) => {
+            const projectName = record.activity && record.activity.trim() !== '' 
+              ? record.activity 
+              : (record.quote_description && record.quote_description.trim() !== '' 
+                ? record.quote_description 
+                : '-')
+            return wrapWithTooltip(projectName, 30)
+          },
+        },
+        {
           key: 'address',
           dataIndex: 'address',
           title: 'Address',
@@ -1844,11 +1872,26 @@ function ScientistProposals() {
           ellipsis: true,
         },
         {
-          key: 'email',
-          dataIndex: 'email',
-          title: 'Email',
+          key: 'quotation_given_by_name',
+          dataIndex: 'quotation_given_by_name',
+          title: 'Proposal Given By',
           width: 120,
           ellipsis: true,
+        },
+        {
+          key: 'project_coordinator',
+          dataIndex: 'project_coordinator',
+          title: 'Project Co-ordinator',
+          width: 120,
+          ellipsis: true,
+          render: (_, record) => {
+            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== '' 
+              ? record.project_co_ordinator 
+              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
+                ? record.quotation_given_by_name 
+                : '-')
+            return wrapWithTooltip(coordinator, 25)
+          },
         },
         {
           key: 'actions',
@@ -1942,6 +1985,46 @@ function ScientistProposals() {
                 </span>
               </Tooltip>
             )
+          }
+        }
+      }
+
+      if (field.name === 'activity') {
+        return {
+          ...baseColumn,
+          render: (_, record) => {
+            const projectName = record.activity && record.activity.trim() !== '' 
+              ? record.activity 
+              : (record.quote_description && record.quote_description.trim() !== '' 
+                ? record.quote_description 
+                : '-')
+            return wrapWithTooltip(projectName, 30)
+          }
+        }
+      }
+
+      if (field.name === 'project_co_ordinator') {
+        return {
+          ...baseColumn,
+          render: (_, record) => {
+            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== '' 
+              ? record.project_co_ordinator 
+              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
+                ? record.quotation_given_by_name 
+                : '-')
+            return wrapWithTooltip(coordinator, 25)
+          }
+        }
+      }
+
+      if (field.name === 'project_number') {
+        return {
+          ...baseColumn,
+          render: (value) => {
+            if (!value || value.trim() === '') {
+              return wrapWithTooltip('Not Converted to Projects', 25)
+            }
+            return wrapWithTooltip(value, 25)
           }
         }
       }

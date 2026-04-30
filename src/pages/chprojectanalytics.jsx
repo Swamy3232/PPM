@@ -213,6 +213,7 @@ function Centerheadanalytics() {
   const [queriesLoading, setQueriesLoading] = useState(false)
   const [selectedProjectForQueries, setSelectedProjectForQueries] = useState(null)
   const [allQueries, setAllQueries] = useState([])
+  const [notConvertedModalVisible, setNotConvertedModalVisible] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [centerFilter, setCenterFilter] = useState(null)
   const [groupFilter, setGroupFilter] = useState(null)
@@ -461,6 +462,28 @@ function Centerheadanalytics() {
       }
     }
 
+    if (drillLevel === 'category') {
+      const coordinatorItems = filteredData.filter((item) =>
+        normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName) ||
+        normalizeValue(item.quotation_given_by_name) === normalizeValue(selectedProjectName),
+      )
+      const totals = CATEGORIES.map((category) =>
+        coordinatorItems.reduce(
+          (sum, item) =>
+            matchCategory(item, category.key)
+              ? sum + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+              : sum,
+          0,
+        ),
+      )
+      return {
+        labels: CATEGORIES.map((category) => category.label),
+        values: totals,
+        title: `${selectedProjectName} — Breakdown by Category`,
+        dimension: 'category',
+      }
+    }
+
     if (drillLevel === 'project_code') {
       const filteredItems = items.filter(
         (item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName),
@@ -568,8 +591,13 @@ function Centerheadanalytics() {
     }
     if (drillLevel === 'project_code') {
       setDrillLevel('coordinator')
-      setSelectedProjectName('')
       setSelectedProjectCode('')
+      return
+    }
+    if (drillLevel === 'category') {
+      setDrillLevel('coordinator')
+      setSelectedCategory('all')
+      setSelectedProjectName('')
       return
     }
     if (drillLevel === 'coordinator') {
@@ -610,6 +638,17 @@ function Centerheadanalytics() {
       }
       if (dimension === 'category') {
         const categoryKey = categoryKeyFromLabel(label)
+        if (selectedProjectName && drillLevel === 'category') {
+          if (categoryKey === 'proposals') {
+            setNotConvertedModalVisible(true)
+            return
+          }
+          setSelectedCategory(categoryKey)
+          setDrillLevel('project_code')
+          setSelectedProjectCode('')
+          return
+        }
+
         const categoryItems = filteredData.filter((item) => matchCategory(item, categoryKey))
         const centers = getUniqueCenters(categoryItems)
         setSelectedCategory(categoryKey)
@@ -636,6 +675,17 @@ function Centerheadanalytics() {
         return
       }
       if (dimension === 'project_co_ordinator') {
+        if (selectedCategory === 'all' || !selectedCategory) {
+          setSelectedProjectName(label)
+          setSelectedProjectCode('')
+          setDrillLevel('category')
+          return
+        }
+        if (selectedCategory === 'proposals') {
+          setSelectedProjectName(label)
+          setNotConvertedModalVisible(true)
+          return
+        }
         setSelectedProjectName(label)
         setSelectedProjectCode('')
         setDrillLevel('project_code')
@@ -647,7 +697,7 @@ function Centerheadanalytics() {
         return
       }
     },
-    [chartData, filteredData, getUniqueCenters, matchCategory, setSelectedCategory, setSelectedCenter, setSelectedGroup, setDrillLevel],
+    [chartData, filteredData, getUniqueCenters, matchCategory, categoryKeyFromLabel, selectedCategory, selectedProjectName, drillLevel],
   )
 
   const chartOptions = useMemo(() => {
@@ -841,7 +891,10 @@ function Centerheadanalytics() {
       type: chartTypeToRender,
       data: {
         labels: chartData.labels.map(label => getFirstTwoWords(label)),
-        datasets: [dataset],
+        datasets: [{
+          ...dataset,
+          fullLabels: chartData.labels, // Store full labels for tooltips
+        }],
       },
       options: {
         ...chartOptions,
@@ -850,6 +903,50 @@ function Centerheadanalytics() {
           const activeElement = elements[0]
           const label = chartData.labels[activeElement.index]
           handleChartClick(label)
+        },
+        plugins: {
+          ...chartOptions.plugins,
+          tooltip: {
+            ...chartOptions.plugins?.tooltip,
+            callbacks: {
+              ...chartOptions.plugins?.tooltip?.callbacks,
+              title: (tooltipItems) => {
+                if (chartType !== 'treemap' || !tooltipItems?.length) return undefined
+                const idx = tooltipItems[0].dataIndex ?? 0
+                // Use full label from dataset instead of truncated label
+                const fullLabel = chartInstanceRef.current.data.datasets[0]?.fullLabels?.[idx]
+                return fullLabel ?? chartData.labels?.[idx] ?? ''
+              },
+              label: (context) => {
+                if (chartType === 'treemap') {
+                  // chartjs-chart-treemap does not expose our tree leaf `label` on context.raw reliably.
+                  const idx = context.dataIndex ?? 0
+                  // Use full label from dataset instead of truncated label
+                  const fullLabel = chartInstanceRef.current.data.datasets[0]?.fullLabels?.[idx]
+                  const name = fullLabel ?? chartData.labels?.[idx] ?? 'Unknown'
+                  const value = Number(
+                    chartData.values?.[idx] ?? context.raw?.v ?? context.raw?.value ?? 0,
+                  )
+                  const totalValue = chartData.values.reduce((sum, x) => sum + Number(x || 0), 0)
+                  const percent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(1) : '0.0'
+                  // Title callback already shows `name`; body is value + share only.
+                  return chartMetric === 'amount'
+                    ? `Amount: ${formatInCrore(value)} (${percent}%)`
+                    : `Count: ${value} (${percent}%)`
+                } else {
+                  // Handle other chart types
+                  const idx = context.dataIndex ?? 0
+                  // Use full label from dataset instead of truncated label
+                  const fullLabel = chartInstanceRef.current.data.datasets[0]?.fullLabels?.[idx]
+                  const name = fullLabel ?? chartData.labels?.[idx] ?? context.label ?? 'Unknown'
+                  const value = context.parsed?.y ?? context.parsed ?? 0
+                  return chartMetric === 'amount'
+                    ? `${name}: ${formatInCrore(value)}`
+                    : `${name}: ${value} count`
+                }
+              },
+            },
+          },
         },
       },
       plugins: [valuePctLabelsPlugin],
@@ -1327,6 +1424,19 @@ function Centerheadanalytics() {
     setQueriesModalOpen(true)
     await fetchQueriesForProject(record.id)
   }, [fetchQueriesForProject])
+
+  const getModalData = useCallback(() => {
+    let proposals = tableData.filter(
+      (item) => !item.project_number || item.project_number.toString().trim() === '',
+    )
+    if (selectedProjectName) {
+      proposals = proposals.filter((item) => {
+        const coordinator = item.quotation_given_by_name || item.project_co_ordinator || ''
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+    }
+    return proposals
+  }, [tableData, selectedProjectName])
 
   const closeQueriesModal = useCallback(() => {
     setQueriesModalOpen(false)
@@ -2477,6 +2587,136 @@ function Centerheadanalytics() {
             </Card>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title={selectedProjectName ? `Proposals for ${selectedProjectName}` : 'Not Converted to Projects'}
+        open={notConvertedModalVisible}
+        onCancel={() => setNotConvertedModalVisible(false)}
+        width={1200}
+        zIndex={9999}
+        footer={[
+          <Button key="close" onClick={() => setNotConvertedModalVisible(false)}>
+            Close
+          </Button>,
+        ]}
+      >
+        <Table
+          dataSource={getModalData()}
+          loading={tableLoading}
+          rowKey="id"
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} proposals`,
+          }}
+          columns={[
+            {
+              title: 'SL NO',
+              dataIndex: 'id',
+              key: 'id',
+              width: 60,
+              render: (_, __, index) => index + 1,
+            },
+            {
+              title: 'Enquiry Date',
+              dataIndex: 'enquiry_date',
+              key: 'enquiry_date',
+              width: 100,
+              render: (value) => formatDate(value),
+            },
+            {
+              title: 'Customer Type',
+              dataIndex: 'customer_type',
+              key: 'customer_type',
+              width: 100,
+            },
+            {
+              title: 'Customer Name',
+              dataIndex: 'customer_name',
+              key: 'customer_name',
+              width: 130,
+              ellipsis: true,
+            },
+            {
+              title: 'Project Name',
+              key: 'project_name',
+              width: 160,
+              render: (_, record) => {
+                const projectName = record.activity && record.activity.trim() !== ''
+                  ? record.activity
+                  : (record.quote_description && record.quote_description.trim() !== ''
+                    ? record.quote_description
+                    : '-')
+                return (
+                  <Tooltip title={projectName} placement="topLeft">
+                    <span>{projectName.length > 20 ? `${projectName.substring(0, 20)}...` : projectName}</span>
+                  </Tooltip>
+                )
+              },
+            },
+            {
+              title: 'Proposal Given By',
+              dataIndex: 'quotation_given_by_name',
+              key: 'quotation_given_by_name',
+              width: 120,
+              ellipsis: true,
+            },
+            {
+              title: 'Project Co-ordinator',
+              key: 'project_coordinator',
+              width: 120,
+              render: (_, record) => {
+                const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== ''
+                  ? record.project_co_ordinator
+                  : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== ''
+                    ? record.quotation_given_by_name
+                    : '-')
+                return (
+                  <Tooltip title={coordinator} placement="topLeft">
+                    <span>{coordinator.length > 15 ? `${coordinator.substring(0, 15)}...` : coordinator}</span>
+                  </Tooltip>
+                )
+              },
+            },
+            {
+              title: 'Quote Amount',
+              dataIndex: 'quote_amount',
+              key: 'quote_amount',
+              width: 100,
+              render: (value) => value ? formatIndianNumber(value) : '-',
+            },
+            {
+              title: 'Proposal Status',
+              dataIndex: 'proposal_status',
+              key: 'proposal_status',
+              width: 110,
+              render: (value) => value ? <Tag color="blue">{value}</Tag> : '-',
+            },
+            {
+              title: 'Actions',
+              key: 'actions',
+              width: 80,
+              fixed: 'right',
+              render: (_, record) => (
+                <Space size="small">
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => {
+                      setSelectedRecord(record)
+                      setDetailModalOpen(true)
+                      setNotConvertedModalVisible(false)
+                    }}
+                  >
+                    View
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+        />
       </Modal>
 
       <Modal

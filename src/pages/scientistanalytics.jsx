@@ -425,6 +425,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [trueOriginalData, setTrueOriginalData] = useState([]) // Store the complete original dataset
   const [activeTab, setActiveTab] = useState('proposals') // Track active tab
 
+  // Not Converted to Projects modal state
+  const [notConvertedModalVisible, setNotConvertedModalVisible] = useState(false)
+  const [modalContentType, setModalContentType] = useState('proposals') // 'proposals' or 'all'
+
   // Upload documents immediately after proposal creation (needs project_id)
   const [stageConfig, setStageConfig] = useState([])
   const [createdProjectId, setCreatedProjectId] = useState(null)
@@ -507,7 +511,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     (items, dimension) => {
       const totals = {}
       items.forEach((item) => {
-        const key = String(item[dimension] || 'Unknown').trim() || 'Unknown'
+        const key = String(item[dimension] || 'Proposals').trim() || 'Proposals'
         totals[key] = (totals[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
       })
       const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
@@ -575,6 +579,16 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     }
   }, [drillLevel])
 
+  const handleResetChart = useCallback(() => {
+    setDrillLevel('top')
+    setSelectedCategory('all')
+    setSelectedCenter('')
+    setSelectedGroup('')
+    setSelectedProjectCode('')
+    setChartType('bar')
+    setChartMetric('count')
+  }, [])
+
   const categoryKeyFromLabel = useCallback(
     (label) => {
       const found = CHART_CATEGORIES.find((category) => category.label === label)
@@ -588,6 +602,13 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       const dimension = chartData.dimension
       if (dimension === 'category') {
         const categoryKey = categoryKeyFromLabel(label)
+        // If Proposals is clicked, show modal instead of drilling down
+        if (label === 'Proposals') {
+          setModalContentType('proposals')
+          setNotConvertedModalVisible(true)
+          return
+        }
+        // For All and other categories, use normal drill-down behavior
         setSelectedCategory(categoryKey)
         setDrillLevel('project_code')
         setSelectedCenter('')
@@ -595,6 +616,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         return
       }
       if (dimension === 'project_code') {
+        // If Proposals is clicked in project code breakdown, show modal
+        if (label === 'Proposals') {
+          setModalContentType('proposals')
+          setNotConvertedModalVisible(true)
+          return
+        }
         setSelectedProjectCode(label)
         setDrillLevel('project_code_detail')
         return
@@ -734,6 +761,15 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     setQueriesData([])
     setSelectedProjectForQueries(null)
   }, [])
+
+  // Function to get data for modal based on content type
+  const getModalData = useCallback(() => {
+    if (modalContentType === 'all') {
+      return tableData // Show all proposals and projects
+    } else {
+      return tableData.filter(item => !item.project_number || item.project_number.toString().trim() === '') // Show only proposals
+    }
+  }, [tableData, modalContentType])
 
   const handleRemarksSubmit = async () => {
     if (!selectedRecord?.id) {
@@ -1232,7 +1268,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     const isAmountChart = chartMetric === 'amount'
     const truncate = (s, max = 12) => {
       const str = String(s ?? '').trim()
-      if (!str) return 'Unknown'
+      if (!str) return 'Proposals'
       return str.length > max ? `${str.slice(0, max)}...` : str
     }
 
@@ -1359,7 +1395,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             label: (context) => {
               if (chartType === 'treemap') {
                 const idx = context.dataIndex ?? 0
-                const name = chartData.labels?.[idx] ?? 'Unknown'
+                const name = chartData.labels?.[idx] ?? 'Proposals'
                 const value = Number(chartData.values?.[idx] ?? context.raw?.v ?? context.raw?.value ?? 0)
                 const totalValue = chartData.values.reduce((sum, x) => sum + Number(x || 0), 0)
                 const percent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(1) : '0.0'
@@ -2089,6 +2125,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                     )}
                     <Button
                       size="small"
+                      onClick={handleResetChart}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      size="small"
                       icon={<FullscreenOutlined />}
                       onClick={handleToggleGraphFullscreen}
                     >
@@ -2663,9 +2705,141 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             },
           ]}
         />
-        {queriesData.length === 0 && !queriesLoading && (
+        {getModalData().length === 0 && !queriesLoading && (
           <div className="text-center text-gray-500 mt-4">No queries found for this project.</div>
         )}
+      </Modal>
+
+      {/* Not Converted to Projects Modal */}
+      <Modal
+        title={modalContentType === 'all' ? 'All Proposals and Projects' : 'Not Converted to Projects'}
+        open={notConvertedModalVisible}
+        onCancel={() => setNotConvertedModalVisible(false)}
+        width={1200}
+        footer={[
+          <Button key="close" onClick={() => setNotConvertedModalVisible(false)}>
+            Close
+          </Button>
+        ]}
+      >
+        <Table
+          dataSource={getModalData()}
+          loading={tableLoading}
+          rowKey="id"
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} proposals`,
+          }}
+          columns={[
+            {
+              title: 'SL NO',
+              dataIndex: 'id',
+              key: 'id',
+              width: 60,
+              render: (text, record, index) => index + 1,
+            },
+            {
+              title: 'Enquiry Date',
+              dataIndex: 'enquiry_date',
+              key: 'enquiry_date',
+              width: 100,
+              render: (value) => formatDate(value),
+            },
+            {
+              title: 'Customer Type',
+              dataIndex: 'customer_type',
+              key: 'customer_type',
+              width: 100,
+            },
+            {
+              title: 'Customer Name',
+              dataIndex: 'customer_name',
+              key: 'customer_name',
+              width: 130,
+              ellipsis: true,
+            },
+            {
+              title: 'Project Name',
+              key: 'project_name',
+              width: 160,
+              render: (_, record) => {
+                const projectName = record.activity && record.activity.trim() !== '' 
+                  ? record.activity 
+                  : (record.quote_description && record.quote_description.trim() !== '' 
+                    ? record.quote_description 
+                    : '-')
+                return (
+                  <Tooltip title={projectName} placement="topLeft">
+                    <span>{projectName.length > 20 ? projectName.substring(0, 20) + '...' : projectName}</span>
+                  </Tooltip>
+                )
+              },
+            },
+            {
+              title: 'Proposal Given By',
+              dataIndex: 'quotation_given_by_name',
+              key: 'quotation_given_by_name',
+              width: 120,
+              ellipsis: true,
+            },
+            {
+              title: 'Project Co-ordinator',
+              key: 'project_coordinator',
+              width: 120,
+              render: (_, record) => {
+                const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== '' 
+                  ? record.project_co_ordinator 
+                  : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
+                    ? record.quotation_given_by_name 
+                    : '-')
+                return (
+                  <Tooltip title={coordinator} placement="topLeft">
+                    <span>{coordinator.length > 15 ? coordinator.substring(0, 15) + '...' : coordinator}</span>
+                  </Tooltip>
+                )
+              },
+            },
+            {
+              title: 'Quote Amount',
+              dataIndex: 'quote_amount',
+              key: 'quote_amount',
+              width: 100,
+              render: (value) => value ? formatIndianNumber(value) : '-',
+            },
+            {
+              title: 'Proposal Status',
+              dataIndex: 'proposal_status',
+              key: 'proposal_status',
+              width: 110,
+              render: (value) => value ? (
+                <Tag color="blue">{value}</Tag>
+              ) : '-',
+            },
+            {
+              title: 'Actions',
+              key: 'actions',
+              width: 80,
+              fixed: 'right',
+              render: (_, record) => (
+                <Space size="small">
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => {
+                      setSelectedRecord(record)
+                      setDetailModalOpen(true)
+                      setNotConvertedModalVisible(false)
+                    }}
+                  >
+                    View
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </>
   )

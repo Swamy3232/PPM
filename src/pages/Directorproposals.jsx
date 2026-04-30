@@ -27,6 +27,7 @@ import {
   Row,
   Col,
   Statistic,
+  Tooltip,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -1197,7 +1198,7 @@ function DirectorProposals() {
       .forEach((name) => {
         const normalized = normalizeValue(name)
         if (!seen.has(normalized)) {
-          seen.set(normalized, name)
+          seen.set(normalized, name.toUpperCase())
         }
       })
     return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
@@ -1490,28 +1491,54 @@ function DirectorProposals() {
         key: 'project_number',
         dataIndex: 'project_number',
         title: 'Project Number',
-        width: 170,
-        render: (value) => value || '-',
+        ellipsis: { showTitle: false },
+        render: (value) => {
+          const projectNumber = value && value.toString().trim() !== '' ? value : 'Still Proposal'
+          return (
+            <Tooltip title={projectNumber} placement="topLeft">
+              <span>{projectNumber}</span>
+            </Tooltip>
+          )
+        },
       },
       {
         key: 'activity',
         dataIndex: 'activity',
         title: 'Project Name',
-        width: 260,
-        render: (value) => value || '-',
+        ellipsis: { showTitle: false },
+        render: (_, record) => {
+          const activity = record?.activity?.toString().trim()
+          const quoteDescription = record?.quote_description?.toString().trim()
+          const projectName = activity || quoteDescription || '-'
+          return (
+            <Tooltip title={projectName} placement="topLeft">
+              <span>{projectName}</span>
+            </Tooltip>
+          )
+        },
       },
       {
         key: 'customer_name',
         dataIndex: 'customer_name',
         title: 'Customer Name',
-        width: 220,
-        render: (value) => value || '-',
+        ellipsis: { showTitle: false },
+        render: (value) => {
+          const customerName = value || '-'
+          return (
+            <Tooltip title={customerName} placement="topLeft">
+              <span>{customerName}</span>
+            </Tooltip>
+          )
+        },
       },
       {
         key: 'overdue_days',
         title: 'Overdue Days',
         width: 150,
         render: (_, record) => {
+          // Don't show overdue days if project is completed
+          if (record.status === 'Completed') return 'Project Completed '
+
           const overdueDays = calculateOverdueDays(
             record.delivery_date,
             record.extended_delivery_date,
@@ -1553,8 +1580,18 @@ function DirectorProposals() {
         key: 'project_co_ordinator',
         dataIndex: 'project_co_ordinator',
         title: 'Project Co-ordinator',
-        width: 220,
-        render: (value) => value || '-',
+        ellipsis: { showTitle: false },
+        render: (_, record) => {
+          const projectCoordinator = record?.project_co_ordinator?.toString().trim()
+          const quotationGivenBy = record?.quotation_given_by_name?.toString().trim()
+          const displayName = projectCoordinator || quotationGivenBy || '-'
+          const coordinatorName = displayName !== '-' ? displayName.toUpperCase() : '-'
+          return (
+            <Tooltip title={coordinatorName} placement="topLeft">
+              <span>{coordinatorName}</span>
+            </Tooltip>
+          )
+        },
       },
       {
         key: 'more',
@@ -1726,7 +1763,7 @@ function DirectorProposals() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            All
+                            Total Proposals Submitted
                           </span>
                         }
                         value={statistics.allCount}
@@ -1747,7 +1784,7 @@ function DirectorProposals() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Proposed Projects
+                            Pending
                           </span>
                         }
                         value={statistics.totalProposals}
@@ -1765,7 +1802,7 @@ function DirectorProposals() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Total Projects
+                           Converted to Projects
                           </span>
                         }
                         value={statistics.totalProjects}
@@ -2561,9 +2598,9 @@ function DirectorProposals() {
                         pageSizeOptions: ['10', '20', '50', '100'],
                         showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
                       }}
-                      scroll={{ x: 'max-content' }}
                       sticky
                       bordered
+                      tableLayout="fixed"
                     />
                   </div>
                 </div>

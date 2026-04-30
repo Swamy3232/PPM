@@ -403,6 +403,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [trueOriginalData, setTrueOriginalData] = useState([]) // Store the complete original dataset
   const [activeTab, setActiveTab] = useState('proposals') // Track active tab
 
+  // Not Converted to Projects modal state
+  const [notConvertedModalVisible, setNotConvertedModalVisible] = useState(false)
+
   // Upload documents immediately after proposal creation (needs project_id)
   const [stageConfig, setStageConfig] = useState([])
   const [createdProjectId, setCreatedProjectId] = useState(null)
@@ -602,17 +605,37 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     }
 
     if (drillLevel === 'project_code') {
-      const filteredItems = items.filter((item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName))
+      // Filter by coordinator and category if coming from coordinator breakdown
+      let filteredItems = items.filter((item) => {
+        const isProject = item.project_number && String(item.project_number).trim() !== ''
+        const coordinatorField = isProject ? 'project_co_ordinator' : 'quotation_given_by_name'
+        const coordinator = String(item[coordinatorField] || 'Unknown').trim() || 'Unknown'
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+      
+      // If we have a specific category selected (coming from coordinator breakdown), filter by it
+      if (selectedCategory && selectedCategory !== 'all') {
+        filteredItems = filteredItems.filter((item) => matchCategory(item, selectedCategory))
+      }
+      
       const totals = {}
       filteredItems.forEach((item) => {
         const code = getProjectCode(item.project_number) || 'Unknown'
         totals[code] = (totals[code] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
       })
       const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
+      
+      // Update title based on context
+      let title = `${selectedProjectName} by Project Code`
+      if (selectedCategory && selectedCategory !== 'all') {
+        const categoryLabel = CHART_CATEGORIES.find((c) => c.key === selectedCategory)?.label || selectedCategory
+        title = `${selectedProjectName} - ${categoryLabel} by Project Code`
+      }
+      
       return {
         labels: entries.map(([key]) => key),
         values: entries.map(([, value]) => value),
-        title: `${selectedProjectName} by Project Code`,
+        title,
         dimension: 'project_code',
       }
     }
@@ -627,6 +650,26 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         ...buildBreakdown(filteredItems, 'activity'),
         title: `${selectedProjectCode} Projects by Activity`,
         dimension: 'activity',
+      }
+    }
+
+    if (drillLevel === 'category' && selectedProjectName) {
+      // Show proposals vs projects breakdown for specific coordinator
+      const coordinatorItems = items.filter((item) => {
+        const isProject = item.project_number && String(item.project_number).trim() !== ''
+        const coordinatorField = isProject ? 'project_co_ordinator' : 'quotation_given_by_name'
+        const coordinator = String(item[coordinatorField] || 'Unknown').trim() || 'Unknown'
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+
+      const counts = CHART_CATEGORIES.map((category) =>
+        coordinatorItems.filter((item) => matchCategory(item, category.key)).length,
+      )
+      return {
+        labels: CHART_CATEGORIES.map((category) => category.label),
+        values: counts,
+        title: `${selectedProjectName} - Proposals vs Projects`,
+        dimension: 'category',
       }
     }
 
@@ -705,9 +748,25 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       return
     }
     if (drillLevel === 'project_code') {
+      // Check if we came from coordinator breakdown (have selectedProjectName and selectedCategory)
+      if (selectedProjectName && selectedCategory && selectedCategory !== 'all') {
+        // Go back to coordinator breakdown
+        setDrillLevel('category')
+        setSelectedProjectCode('')
+        return
+      }
+      // Normal case: go back to coordinator level
       setDrillLevel('project_co_ordinator')
       setSelectedProjectName('')
       setSelectedProjectCode('')
+      return
+    }
+    if (drillLevel === 'category' && selectedProjectName) {
+      // Going back from coordinator's proposals vs projects breakdown to coordinator level
+      setDrillLevel('project_co_ordinator')
+      setSelectedProjectName('')
+      setSelectedProjectCode('')
+      setSelectedCategory('all')
       return
     }
     if (drillLevel === 'project_co_ordinator') {
@@ -719,7 +778,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       setSelectedProjectCode('')
       setTrendCategory(null)
     }
-  }, [drillLevel])
+  }, [drillLevel, selectedProjectName, setSelectedProjectName, setSelectedProjectCode, setSelectedCategory, setSelectedCenter, setSelectedGroup, setTrendCategory])
 
   const handleResetChart = useCallback(() => {
     setDrillLevel('top')
@@ -750,6 +809,25 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         return
       }
       if (dimension === 'category') {
+        // If we're in a coordinator's breakdown (category + selectedProjectName)
+        if (selectedProjectName && drillLevel === 'category') {
+          const categoryKey = categoryKeyFromLabel(label)
+          
+          // For proposals, show modal with not converted proposals
+          if (categoryKey === 'proposals') {
+            // Show modal with proposals not converted to projects
+            setNotConvertedModalVisible(true)
+            return
+          }
+          
+          // For projects and other categories, drill down to project codes
+          setSelectedCategory(categoryKey)
+          setDrillLevel('project_code')
+          // Keep the selectedProjectName to filter by coordinator
+          setSelectedProjectCode('')
+          return
+        }
+        // Normal category navigation for other cases
         const categoryKey = categoryKeyFromLabel(label)
         setSelectedCategory(categoryKey)
         setDrillLevel('project_co_ordinator')
@@ -760,6 +838,21 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         return
       }
       if (dimension === 'project_co_ordinator') {
+        // If we're in 'All' category, show proposals vs projects breakdown
+        if (selectedCategory === 'all' || !selectedCategory) {
+          setSelectedProjectName(label)
+          setSelectedProjectCode('')
+          setDrillLevel('category')
+          return
+        }
+        // For 'proposals' category, stop at coordinator level (no project codes for proposals)
+        if (selectedCategory === 'proposals') {
+          // Ensure selectedProjectName is set to the clicked coordinator
+          setSelectedProjectName(label)
+          setNotConvertedModalVisible(true)
+          return
+        }
+        // For other categories, go to project_code level
         setSelectedProjectName(label)
         setSelectedProjectCode('')
         setDrillLevel('project_code')
@@ -905,6 +998,22 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     setQueriesData([])
     setSelectedProjectForQueries(null)
   }, [])
+
+  // Function to get data for modal (proposals not converted to projects)
+  const getModalData = useCallback(() => {
+    let filteredData = tableData.filter(item => !item.project_number || item.project_number.toString().trim() === '')
+    
+    // If we have a selected coordinator, filter by that coordinator
+    if (selectedProjectName) {
+      filteredData = filteredData.filter(item => {
+        // For proposals, use quotation_given_by_name
+        const coordinator = item.quotation_given_by_name || ''
+        return coordinator.toString().trim() === selectedProjectName.toString().trim()
+      })
+    }
+    
+    return filteredData
+  }, [tableData, selectedProjectName])
 
   const handleRemarksSubmit = async () => {
     if (!selectedRecord?.id) {
@@ -1510,7 +1619,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         tooltip: {
           callbacks: {
             title: (tooltipItems) => {
-              if (chartType !== 'treemap' || !tooltipItems?.length) return undefined
+              if (!tooltipItems?.length) return undefined
               const idx = tooltipItems[0].dataIndex ?? 0
               return chartData.labels?.[idx] ?? ''
             },
@@ -1558,7 +1667,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     chartInstanceRef.current = new Chart(ctx, {
       type: chartTypeToRender,
       data: {
-        labels: chartData.labels.map(label => getFirstTwoWords(label)),
+        labels: chartData.labels, // Use full labels for tooltips
         datasets: [dataset],
       },
       options: {
@@ -2888,6 +2997,139 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         {queriesData.length === 0 && !queriesLoading && (
           <div className="text-center text-gray-500 mt-4">No queries found for this project.</div>
         )}
+      </Modal>
+
+      {/* Not Converted to Projects Modal */}
+      <Modal
+        title={selectedProjectName ? `Proposals for ${selectedProjectName}` : 'Not Converted to Projects'}
+        open={notConvertedModalVisible}
+        onCancel={() => setNotConvertedModalVisible(false)}
+        width={1200}
+        zIndex={9999}
+        footer={[
+          <Button key="close" onClick={() => setNotConvertedModalVisible(false)}>
+            Close
+          </Button>
+        ]}
+      >
+        <Table
+          dataSource={getModalData()}
+          loading={tableLoading}
+          rowKey="id"
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} proposals`,
+          }}
+          columns={[
+            {
+              title: 'SL NO',
+              dataIndex: 'id',
+              key: 'id',
+              width: 60,
+              render: (text, record, index) => index + 1,
+            },
+            {
+              title: 'Enquiry Date',
+              dataIndex: 'enquiry_date',
+              key: 'enquiry_date',
+              width: 100,
+              render: (value) => formatDate(value),
+            },
+            {
+              title: 'Customer Type',
+              dataIndex: 'customer_type',
+              key: 'customer_type',
+              width: 100,
+            },
+            {
+              title: 'Customer Name',
+              dataIndex: 'customer_name',
+              key: 'customer_name',
+              width: 130,
+              ellipsis: true,
+            },
+            {
+              title: 'Project Name',
+              key: 'project_name',
+              width: 160,
+              render: (_, record) => {
+                const projectName = record.activity && record.activity.trim() !== '' 
+                  ? record.activity 
+                  : (record.quote_description && record.quote_description.trim() !== '' 
+                    ? record.quote_description 
+                    : '-')
+                return (
+                  <Tooltip title={projectName} placement="topLeft">
+                    <span>{projectName.length > 20 ? projectName.substring(0, 20) + '...' : projectName}</span>
+                  </Tooltip>
+                )
+              },
+            },
+            {
+              title: 'Proposal Given By',
+              dataIndex: 'quotation_given_by_name',
+              key: 'quotation_given_by_name',
+              width: 120,
+              ellipsis: true,
+            },
+            {
+              title: 'Project Co-ordinator',
+              key: 'project_coordinator',
+              width: 120,
+              render: (_, record) => {
+                const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== '' 
+                  ? record.project_co_ordinator 
+                  : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
+                    ? record.quotation_given_by_name 
+                    : '-')
+                return (
+                  <Tooltip title={coordinator} placement="topLeft">
+                    <span>{coordinator.length > 15 ? coordinator.substring(0, 15) + '...' : coordinator}</span>
+                  </Tooltip>
+                )
+              },
+            },
+            {
+              title: 'Quote Amount',
+              dataIndex: 'quote_amount',
+              key: 'quote_amount',
+              width: 100,
+              render: (value) => value ? formatIndianNumber(value) : '-',
+            },
+            {
+              title: 'Proposal Status',
+              dataIndex: 'proposal_status',
+              key: 'proposal_status',
+              width: 110,
+              render: (value) => value ? (
+                <Tag color="blue">{value}</Tag>
+              ) : '-',
+            },
+            {
+              title: 'Actions',
+              key: 'actions',
+              width: 80,
+              fixed: 'right',
+              render: (_, record) => (
+                <Space size="small">
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => {
+                      setSelectedRecord(record)
+                      setDetailModalOpen(true)
+                      setNotConvertedModalVisible(false)
+                    }}
+                  >
+                    View
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </>
   )

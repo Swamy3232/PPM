@@ -21,6 +21,7 @@ import Ghanalytics from './pages/ghanalytics'
 import Scientistanalytics from './pages/scientistanalytics'
 
 
+
 import './App.css'
 import AdminNotification from './pages/AdminNotification'
 import GhMasterProposals from './pages/GhMasterProposals'

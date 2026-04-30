@@ -21,6 +21,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   message,
   DatePicker,
@@ -317,6 +318,7 @@ function directoranalytics() {
   const [selectedGroup, setSelectedGroup] = useState('')
   const [selectedProjectCode, setSelectedProjectCode] = useState('')
   const [selectedProjectName, setSelectedProjectName] = useState('')
+  const [notConvertedModalVisible, setNotConvertedModalVisible] = useState(false)
   const [chartType, setChartType] = useState('bar')
   const [chartMetric, setChartMetric] = useState('count')
   const [selectedFinancialYear, setSelectedFinancialYear] = useState(null)
@@ -1341,8 +1343,11 @@ function directoranalytics() {
         if (drillLevel === 'coordinator' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedGroup && item.group !== selectedGroup) return false
         }
-        if (drillLevel === 'project_code' || drillLevel === 'project_name') {
+        if (drillLevel === 'coordinator' || drillLevel === 'category' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedProjectName && normalizeValue(item.project_co_ordinator) !== normalizeValue(selectedProjectName)) return false
+        }
+        if (drillLevel === 'project_code' || drillLevel === 'project_name') {
+          if (selectedProjectCode && getProjectCode(item.project_number) !== getProjectCode(selectedProjectCode)) return false
         }
         if (drillLevel === 'project_name') {
           if (selectedProjectCode && getProjectCode(item.project_number) !== getProjectCode(selectedProjectCode)) return false
@@ -1517,6 +1522,25 @@ function directoranalytics() {
       }
     }
 
+    if (drillLevel === 'category') {
+      const filteredItems = filteredData.filter((item) => {
+        const coordinator = item.project_co_ordinator || item.quotation_given_by_name || ''
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+      const totals = CATEGORIES.map((category) =>
+        filteredItems.reduce(
+          (sum, item) => (matchCategory(item, category.key) ? sum + (chartMetric === 'amount' ? getFinancialValue(item) : 1) : sum),
+          0,
+        ),
+      )
+      return {
+        labels: CATEGORIES.map((category) => category.label),
+        values: totals,
+        title: `${selectedProjectName} — Breakdown by Category`,
+        dimension: 'category',
+      }
+    }
+
     if (drillLevel === 'project_code') {
       const filteredItems = items.filter((item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName))
       const projectCodes = {}
@@ -1608,8 +1632,11 @@ function directoranalytics() {
       setSelectedProjectCode('')
     } else if (drillLevel === 'project_code') {
       setDrillLevel('coordinator')
-      setSelectedProjectName('')
       setSelectedProjectCode('')
+    } else if (drillLevel === 'category') {
+      setDrillLevel('coordinator')
+      setSelectedCategory('all')
+      setSelectedProjectName('')
     } else if (drillLevel === 'coordinator') {
       setDrillLevel('group')
       setSelectedGroup('')
@@ -1632,6 +1659,17 @@ function directoranalytics() {
     [CATEGORIES],
   )
 
+  const getModalData = useCallback(() => {
+    let proposals = tableData.filter((item) => !item.project_number || item.project_number.toString().trim() === '')
+    if (selectedProjectName) {
+      proposals = proposals.filter((item) => {
+        const coordinator = item.quotation_given_by_name || item.project_co_ordinator || ''
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+    }
+    return proposals
+  }, [tableData, selectedProjectName])
+
   const handleChartClick = useCallback(
     (label) => {
       const dimension = chartData.dimension
@@ -1641,6 +1679,17 @@ function directoranalytics() {
       }
       if (dimension === 'category') {
         const categoryKey = categoryKeyFromLabel(label)
+        if (selectedProjectName && drillLevel === 'category') {
+          if (categoryKey === 'proposals') {
+            setNotConvertedModalVisible(true)
+            return
+          }
+          setSelectedCategory(categoryKey)
+          setDrillLevel('project_code')
+          setSelectedProjectCode('')
+          return
+        }
+
         setSelectedCategory(categoryKey)
         setDrillLevel('center')
         setSelectedCenter('')
@@ -1659,9 +1708,20 @@ function directoranalytics() {
         return
       }
       if (dimension === 'project_co_ordinator') {
+        if (!selectedCategory || selectedCategory === 'all') {
+          setSelectedProjectName(label)
+          setSelectedProjectCode('')
+          setDrillLevel('category')
+          return
+        }
+        if (selectedCategory === 'proposals') {
+          setSelectedProjectName(label)
+          setNotConvertedModalVisible(true)
+          return
+        }
         setSelectedProjectName(label)
-        setDrillLevel('project_code')
         setSelectedProjectCode('')
+        setDrillLevel('project_code')
         return
       }
       if (dimension === 'project_code') {
@@ -1670,7 +1730,7 @@ function directoranalytics() {
         return
       }
     },
-    [categoryKeyFromLabel, chartData.dimension],
+    [categoryKeyFromLabel, chartData.dimension, selectedCategory, selectedProjectName, drillLevel],
   )
 
   useEffect(() => {
@@ -1826,7 +1886,10 @@ function directoranalytics() {
       type: chartTypeToRender,
       data: {
         labels: chartData.labels.map(label => getFirstTwoWords(label)),
-        datasets: [dataset],
+        datasets: [{
+          ...dataset,
+          fullLabels: chartData.labels, // Store full labels for tooltips
+        }],
       },
       options: {
         responsive: true,
@@ -1865,7 +1928,9 @@ function directoranalytics() {
               // Single tooltip line with name + value + percentage.
               label: (context) => {
                 const idx = context.dataIndex ?? 0
-                const name = chartData.labels?.[idx] ?? context.label ?? 'Unknown'
+                // Use full label from dataset instead of truncated label
+                const fullLabel = chartInstanceRef.current.data.datasets[0]?.fullLabels?.[idx]
+                const name = fullLabel ?? chartData.labels?.[idx] ?? context.label ?? 'Unknown'
                 const v = Number(chartData.values?.[idx] ?? context.raw?.v ?? context.raw?.value ?? context.parsed?.v ?? 0)
                 const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
                 return `${name}: ${isAmountChart ? formatInCrore(v) : v} (${pct.toFixed(1)}%)`
@@ -1910,7 +1975,7 @@ function directoranalytics() {
       .forEach((name) => {
         const normalized = normalizeValue(name)
         if (!seen.has(normalized)) {
-          seen.set(normalized, name)
+          seen.set(normalized, name.toUpperCase())
         }
       })
     return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
@@ -2045,7 +2110,7 @@ function directoranalytics() {
         dataIndex: 'project_co_ordinator',
         title: 'Project Co-ordinator',
         width: 220,
-        render: (value) => value || '-',
+        render: (value) => value ? value.toUpperCase() : '-',
       },
       {
         key: 'more',
@@ -2893,6 +2958,136 @@ function directoranalytics() {
                         </Card>
                       </Space>
                     )}
+                  </Modal>
+
+                  <Modal
+                    title={selectedProjectName ? `Proposals for ${selectedProjectName}` : 'Not Converted to Projects'}
+                    open={notConvertedModalVisible}
+                    onCancel={() => setNotConvertedModalVisible(false)}
+                    width={1200}
+                    zIndex={9999}
+                    footer={[
+                      <Button key="close" onClick={() => setNotConvertedModalVisible(false)}>
+                        Close
+                      </Button>,
+                    ]}
+                  >
+                    <Table
+                      dataSource={getModalData()}
+                      loading={tableLoading}
+                      rowKey="id"
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        showQuickJumper: true,
+                        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} proposals`,
+                      }}
+                      columns={[
+                        {
+                          title: 'SL NO',
+                          dataIndex: 'id',
+                          key: 'id',
+                          width: 60,
+                          render: (_, __, index) => index + 1,
+                        },
+                        {
+                          title: 'Enquiry Date',
+                          dataIndex: 'enquiry_date',
+                          key: 'enquiry_date',
+                          width: 100,
+                          render: (value) => formatDate(value),
+                        },
+                        {
+                          title: 'Customer Type',
+                          dataIndex: 'customer_type',
+                          key: 'customer_type',
+                          width: 120,
+                        },
+                        {
+                          title: 'Customer Name',
+                          dataIndex: 'customer_name',
+                          key: 'customer_name',
+                          width: 150,
+                          ellipsis: true,
+                        },
+                        {
+                          title: 'Project Name',
+                          key: 'project_name',
+                          width: 180,
+                          render: (_, record) => {
+                            const projectName = record.activity && record.activity.trim() !== ''
+                              ? record.activity
+                              : (record.quote_description && record.quote_description.trim() !== ''
+                                ? record.quote_description
+                                : '-')
+                            return (
+                              <Tooltip title={projectName} placement="topLeft">
+                                <span>{projectName.length > 20 ? `${projectName.substring(0, 20)}...` : projectName}</span>
+                              </Tooltip>
+                            )
+                          },
+                        },
+                        {
+                          title: 'Proposal Given By',
+                          dataIndex: 'quotation_given_by_name',
+                          key: 'quotation_given_by_name',
+                          width: 150,
+                          ellipsis: true,
+                        },
+                        {
+                          title: 'Project Co-ordinator',
+                          key: 'project_coordinator',
+                          width: 150,
+                          render: (_, record) => {
+                            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== ''
+                              ? record.project_co_ordinator
+                              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== ''
+                                ? record.quotation_given_by_name
+                                : '-')
+                            return (
+                              <Tooltip title={coordinator} placement="topLeft">
+                                <span>{coordinator.length > 15 ? `${coordinator.substring(0, 15)}...` : coordinator}</span>
+                              </Tooltip>
+                            )
+                          },
+                        },
+                        {
+                          title: 'Quote Amount',
+                          dataIndex: 'quote_amount',
+                          key: 'quote_amount',
+                          width: 120,
+                          render: (value) => value ? formatIndianNumber(value) : '-',
+                        },
+                        {
+                          title: 'Proposal Status',
+                          dataIndex: 'proposal_status',
+                          key: 'proposal_status',
+                          width: 130,
+                          render: (value) => value ? <Tag color="blue">{value}</Tag> : '-',
+                        },
+                        {
+                          title: 'Actions',
+                          key: 'actions',
+                          width: 90,
+                          fixed: 'right',
+                          render: (_, record) => (
+                            <Space size="small">
+                              <Button
+                                size="small"
+                                type="link"
+                                onClick={() => {
+                                  setSelectedRecord(record)
+                                  setDetailModalOpen(true)
+                                  setNotConvertedModalVisible(false)
+                                }}
+                              >
+                                View
+                              </Button>
+                            </Space>
+                          ),
+                        },
+                      ]}
+                    />
                   </Modal>
 
                   {/* Analytics Graph */}
