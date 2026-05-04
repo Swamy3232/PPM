@@ -15,6 +15,7 @@ import {
   Modal,
   Radio,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -32,6 +33,8 @@ import {
   Tooltip,
 } from 'antd'
 import * as XLSX from 'xlsx'
+import { ExcelRenderer } from 'react-excel-renderer'
+import mammoth from 'mammoth'
 import dayjs from 'dayjs'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
@@ -121,6 +124,8 @@ const ALL_FIELDS = [
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
   { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
+  { name: 'proposals_converted', label: 'Proposals Converted', width: 180, input: 'select' },
+  { name: 'if_not_reason', label: 'If Not Reason', width: 200, input: 'textarea' },
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -175,6 +180,13 @@ const API_FIELD_MAP = {
   'revised/negotiated_quote_amount': 'revised_negotiated_quote_amount',
 }
 
+// Helper function to check if proposals_converted is Yes
+const isProposalConverted = (proposalsConverted) => {
+  if (!proposalsConverted) return false
+  const convertedValue = String(proposalsConverted).toLowerCase().trim()
+  return convertedValue === 'yes'
+}
+
 function ScientistProposals() {
   const [form] = Form.useForm()
   const [coordinatorForm] = Form.useForm()
@@ -188,8 +200,6 @@ function ScientistProposals() {
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [editingRecord, setEditingRecord] = useState(null)
   const [searchText, setSearchText] = useState('')
-  const [centerFilter, setCenterFilter] = useState(null)
-  const [groupFilter, setGroupFilter] = useState(null)
   const [dateRange, setDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState('totalProjects')
   const [projectNumberFilter, setProjectNumberFilter] = useState(null)
@@ -230,6 +240,14 @@ function ScientistProposals() {
   const [projectDocs, setProjectDocs] = useState([])
   const [docsLoading, setDocsLoading] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+  const [excelRendererData, setExcelRendererData] = useState(null)
+  const [excelRendererLoading, setExcelRendererLoading] = useState(false)
+  const [excelRendererError, setExcelRendererError] = useState(null)
+  const [activeSheetIndex, setActiveSheetIndex] = useState(0)
+  const [wordDocumentContent, setWordDocumentContent] = useState(null)
+  const [wordDocumentLoading, setWordDocumentLoading] = useState(false)
+  const [wordDocumentError, setWordDocumentError] = useState(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
   const [uploadProjectId, setUploadProjectId] = useState(null)
   const [enquiryFileToUpload, setEnquiryFileToUpload] = useState(null)
@@ -854,6 +872,95 @@ function ScientistProposals() {
     setViewDocumentUrl(url)
   }, [])
 
+  const loadExcelWithRenderer = async (url) => {
+    setExcelRendererLoading(true)
+    setExcelRendererError(null)
+    setExcelRendererData(null)
+
+    try {
+      console.log('Loading Excel file with react-excel-renderer:', url)
+      
+      // Fetch the Excel file
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Excel file: ${response.status}`)
+      }
+      
+      const blob = await response.blob()
+      
+      // Use react-excel-renderer to parse the file
+      const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      
+      ExcelRenderer(file, (err, resp) => {
+        if (err) {
+          console.error('ExcelRenderer error:', err)
+          setExcelRendererError(`Failed to parse Excel file: ${err.message || err}`)
+          setExcelRendererLoading(false)
+        } else {
+          console.log('ExcelRenderer success:', resp)
+          console.log('Rows structure:', resp.rows?.[0])
+          console.log('Cols structure:', resp.cols)
+          
+          // Check if multiple sheets are available
+          if (resp.sheets && resp.sheets.length > 1) {
+            console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
+          }
+          
+          setExcelRendererData(resp)
+          setActiveSheetIndex(0)
+          setExcelRendererLoading(false)
+        }
+      })
+      
+    } catch (error) {
+      console.error('Error loading Excel file:', error)
+      setExcelRendererError(`Error loading Excel file: ${error.message}`)
+      setExcelRendererLoading(false)
+    }
+  }
+
+  const loadWordDocument = async (url) => {
+    setWordDocumentLoading(true)
+    setWordDocumentError(null)
+    setWordDocumentContent(null)
+
+    try {
+      console.log('Loading Word document with mammoth.js:', url)
+      
+      // Fetch the Word document
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Word document: ${response.status}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      
+      // Use mammoth.js to convert Word document to HTML
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer: arrayBuffer },
+        {
+          styleMap: [
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "p[style-name='Title'] => h1.title:fresh",
+            "b => strong",
+            "i => em"
+          ]
+        }
+      )
+      
+      console.log('Mammoth.js conversion success:', result)
+      setWordDocumentContent(result.value)
+      setWordDocumentLoading(false)
+      
+    } catch (error) {
+      console.error('Error loading Word document:', error)
+      setWordDocumentError(`Error loading Word document: ${error.message}`)
+      setWordDocumentLoading(false)
+    }
+  }
+
   useEffect(() => {
     const loadData = async () => {
       await fetchProposals()
@@ -865,6 +972,25 @@ function ScientistProposals() {
     }
     loadData()
   }, [])
+
+  // Load Excel/Word files when viewDocumentUrl changes
+  useEffect(() => {
+    const currentUrl = viewDocumentUrl || ''
+    if (!currentUrl) return
+    
+    const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
+    const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+    const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+    const isOffice = officeTypes.includes(ext)
+
+    if (isOffice) {
+      if (ext === 'xlsx' || ext === 'xls') {
+        loadExcelWithRenderer(currentUrl)
+      } else if (ext === 'docx' || ext === 'doc') {
+        loadWordDocument(currentUrl)
+      }
+    }
+  }, [viewDocumentUrl])
 
   const openEditModal = useCallback(
     (record) => {
@@ -1478,11 +1604,15 @@ function ScientistProposals() {
         (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
     ).length
     const pendingProjects = tableData.filter(
-      (item) => item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing' || item.status === 'On Hold',
+    ).length
+
+    const onHoldProjects = tableData.filter(
+      (item) => item.status === 'On Hold',
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number?.trim()) {
@@ -1505,6 +1635,7 @@ function ScientistProposals() {
       financiallyCompleted,
       financiallyNotCompleted,
       pendingProjects,
+      onHoldProjects,
       projectCodeBreakdown,
     }
   }, [tableData])
@@ -1527,19 +1658,6 @@ function ScientistProposals() {
       )
     }
 
-    if (centerFilter) {
-      filtered = filtered.filter((item) => {
-        const center = (item.center || '').toString().trim()
-        return center === centerFilter
-      })
-    }
-
-    if (groupFilter) {
-      filtered = filtered.filter((item) => {
-        const group = (item.group || '').toString().trim()
-        return group === groupFilter
-      })
-    }
 
     if (dateRange && dateRange.length === 2) {
       const [start, end] = dateRange
@@ -1584,7 +1702,7 @@ function ScientistProposals() {
       } else if (statusFilter === 'pendingProjects') {
         // Filter by ongoing status (same as statistics calculation)
         filtered = filtered.filter(
-          (item) => item.status === 'Ongoing',
+          (item) => item.status === 'Ongoing' || item.status === 'On Hold',
         )
         console.log('After pendingProjects filter:', filtered.length, 'items')
       } else {
@@ -1644,21 +1762,8 @@ function ScientistProposals() {
     })
 
     setFilteredData(filtered)
-  }, [searchText, centerFilter, groupFilter, dateRange, statusFilter, projectNumberFilter, tableData, unrespondedQueryCounts])
+  }, [searchText, dateRange, statusFilter, projectNumberFilter, tableData, unrespondedQueryCounts])
 
-  const uniqueCenters = useMemo(() => {
-    const centers = [
-      ...new Set(tableData.map((item) => item.center).filter(Boolean)),
-    ]
-    return centers.sort()
-  }, [tableData])
-
-  const uniqueGroups = useMemo(() => {
-    const groups = [
-      ...new Set(tableData.map((item) => item.group).filter(Boolean)),
-    ]
-    return groups.sort()
-  }, [tableData])
 
   const handleExportExcel = () => {
     if (filteredData.length === 0) {
@@ -1949,7 +2054,7 @@ function ScientistProposals() {
           items={[
             {
               key: 'proposals',
-              label: 'Proposals',
+              label: 'Total Proposals Submitted',
               children: (
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
@@ -1957,19 +2062,19 @@ function ScientistProposals() {
                       className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer"
                       onClick={() => setStatusFilter(null)}
                     >
-                      <Statistic title={<span className="text-white/90">All</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      <Statistic title={<span className="text-white/90">Total Proposals Submitted</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer"
                       onClick={() => setStatusFilter('proposals')}
                     >
-                      <Statistic title={<span className="text-white/90">Total Proposals</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      <Statistic title={<span className="text-white/90">Pending</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer"
                       onClick={() => setStatusFilter('totalProjects')}
                     >
-                      <Statistic title={<span className="text-white/90">Total Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      <Statistic title={<span className="text-white/90"> Converted to Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                       {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
                         <div className="mt-2 text-xs text-white/80">
                           {Object.entries(statistics.projectCodeBreakdown)
@@ -2006,6 +2111,11 @@ function ScientistProposals() {
                       onClick={() => setStatusFilter('pendingProjects')}
                     >
                       <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      {statistics.onHoldProjects > 0 && (
+                        <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
+                          On hold: {statistics.onHoldProjects}
+                        </div>
+                      )}
                     </Card>
                   </div>
 
@@ -2035,41 +2145,9 @@ function ScientistProposals() {
                             allowClear
                             style={{ width: '100%' }}
                           >
-                            {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
+                            {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
                               <Select.Option key={code} value={code}>
                                 {code}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        </Col>
-                        <Col xs={24} sm={12} md={6}>
-                          <Select
-                            placeholder="Filter by Centre"
-                            value={centerFilter}
-                            onChange={setCenterFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            {uniqueCenters.map((center) => (
-                              <Select.Option key={center} value={center}>
-                                {center}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        </Col>
-                        <Col xs={24} sm={12} md={6}>
-                          <Select
-                            placeholder="Filter by Group"
-                            value={groupFilter}
-                            onChange={setGroupFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            {uniqueGroups.map((group) => (
-                              <Select.Option key={group} value={group}>
-                                {group}
                               </Select.Option>
                             ))}
                           </Select>
@@ -2088,8 +2166,6 @@ function ScientistProposals() {
                           <Button
                             onClick={() => {
                               setSearchText('')
-                              setCenterFilter(null)
-                              setGroupFilter(null)
                               setDateRange(null)
                               setStatusFilter(null)
                               setProjectNumberFilter(null)
@@ -2208,81 +2284,129 @@ function ScientistProposals() {
       >
         {selectedRecord && (
           <div style={{ maxHeight: '65vh', overflowY: 'auto' }} className="space-y-4">
-            <Card title="Customer / Enquiry" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Enquiry Date">{formatDate(selectedRecord?.enquiry_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Customer Type">{selectedRecord?.customer_type || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Customer Name">{selectedRecord?.customer_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Email">{selectedRecord?.email || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Phone No.">{selectedRecord?.phone_no || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Alternate Contact">{selectedRecord?.alternate_contact_details || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Request Type">{selectedRecord?.request_type || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Email Reference">{selectedRecord?.email_reference || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Address" span={2}>{selectedRecord?.address || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+            {isProposalConverted(selectedRecord.proposals_converted) ? (
+              // Show all details if proposals_converted is Yes
+              <>
+                <Card title="Customer / Enquiry" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Enquiry Date">{formatDate(selectedRecord?.enquiry_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Type">{selectedRecord?.customer_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Name">{selectedRecord?.customer_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email">{selectedRecord?.email || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Phone No.">{selectedRecord?.phone_no || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Alternate Contact">{selectedRecord?.alternate_contact_details || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Request Type">{selectedRecord?.request_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email Reference">{selectedRecord?.email_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Address" span={2}>{selectedRecord?.address || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="CMTI / Coordinator" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Proposal Given By">{selectedRecord?.quotation_given_by_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Department">{selectedRecord?.quotation_given_by_department || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Centre">{selectedRecord?.center || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Group">{selectedRecord?.group || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Proposal Status">{selectedRecord?.proposal_status || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="CMTI / Coordinator" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Proposal Given By">{selectedRecord?.quotation_given_by_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Department">{selectedRecord?.quotation_given_by_department || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Centre">{selectedRecord?.center || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Group">{selectedRecord?.group || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Proposal Status">{selectedRecord?.proposal_status || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Quotation" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Quote Reference">{selectedRecord?.quote_reference || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Quote Date">{formatDate(selectedRecord?.quote_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Quote Amount">{selectedRecord?.quote_amount || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Revised/Negotiated">{selectedRecord?.revised_negotiated || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Revised Quote Date">{formatDate(selectedRecord?.revised_negotiated_quote_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Revised Quote Amount">{selectedRecord?.revised_negotiated_quote_amount || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Quotation" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Quote Reference">{selectedRecord?.quote_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Date">{formatDate(selectedRecord?.quote_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Amount">{selectedRecord?.quote_amount || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Revised/Negotiated">{selectedRecord?.revised_negotiated || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Revised Quote Date">{formatDate(selectedRecord?.revised_negotiated_quote_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Revised Quote Amount">{selectedRecord?.revised_negotiated_quote_amount || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Project Details" size="small" className="bg-green-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Project Number">{selectedRecord?.project_number || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Party Name">{selectedRecord?.party_name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Activity">{selectedRecord?.activity || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Project Co-ordinator">{selectedRecord?.project_co_ordinator || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Key Deliverables" span={2}>{selectedRecord?.key_deliverables || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Project Details" size="small" className="bg-green-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Project Number">{selectedRecord?.project_number || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Party Name">{selectedRecord?.party_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Activity">{selectedRecord?.activity || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Project Co-ordinator">{selectedRecord?.project_co_ordinator || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Key Deliverables" span={2}>{selectedRecord?.key_deliverables || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Order Information" size="small" className="bg-orange-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Order Number">{selectedRecord?.order_number || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Order Date">{formatDate(selectedRecord?.order_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Order Value">{selectedRecord?.order_value || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Delivery Date">{formatDate(selectedRecord?.delivery_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Extended Delivery">{formatDate(selectedRecord?.extended_delivery_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Actual Commencement">{formatDate(selectedRecord?.date_of_actual_commencement) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Dispatch Date">{formatDate(selectedRecord?.dispatch_date) || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Technical Completion Year">{selectedRecord?.technical_completed_year || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Financial Completion Year">{selectedRecord?.financial_completed_year || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Status">{selectedRecord?.status || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Order Information" size="small" className="bg-orange-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Order Number">{selectedRecord?.order_number || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Order Date">{formatDate(selectedRecord?.order_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Order Value">{selectedRecord?.order_value || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Delivery Date">{formatDate(selectedRecord?.delivery_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Extended Delivery">{formatDate(selectedRecord?.extended_delivery_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Actual Commencement">{formatDate(selectedRecord?.date_of_actual_commencement) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Dispatch Date">{formatDate(selectedRecord?.dispatch_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Technical Completion Year">{selectedRecord?.technical_completed_year || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Financial Completion Year">{selectedRecord?.financial_completed_year || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Status">{selectedRecord?.status || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Meeting & Remarks" size="small" className="bg-purple-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Review Meeting Details" span={2}>{selectedRecord?.details_of_external_internal_review_meeting || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Co-ordinator Remarks" span={2}>{selectedRecord?.co_ordinator_remarks || '-'}</Descriptions.Item>
-                <Descriptions.Item label="PPM Remarks" span={2}>{selectedRecord?.ppm_remarks || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Closure Report" span={2}>{selectedRecord?.closer_report || '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Meeting & Remarks" size="small" className="bg-purple-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Review Meeting Details" span={2}>{selectedRecord?.details_of_external_internal_review_meeting || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Co-ordinator Remarks" span={2}>{selectedRecord?.co_ordinator_remarks || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="PPM Remarks" span={2}>{selectedRecord?.ppm_remarks || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Closure Report" span={2}>{selectedRecord?.closer_report || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
 
-            <Card title="Acknowledgement" size="small" className="bg-blue-50">
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="Is Acknowledged">{selectedRecord?.is_acknowledged === true ? 'Yes' : selectedRecord?.is_acknowledged === false ? 'No' : '-'}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+                <Card title="Acknowledgement" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Is Acknowledged">{selectedRecord?.is_acknowledged === true ? 'Yes' : selectedRecord?.is_acknowledged === false ? 'No' : '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+              </>
+            ) : (
+              // Show limited details from enquiry date to if_not_reason if proposals_converted is No/null/empty
+              <>
+                <Card title="Customer / Enquiry" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Enquiry Date">{formatDate(selectedRecord?.enquiry_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Type">{selectedRecord?.customer_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Customer Name">{selectedRecord?.customer_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email">{selectedRecord?.email || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Phone No.">{selectedRecord?.phone_no || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Alternate Contact">{selectedRecord?.alternate_contact_details || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Request Type">{selectedRecord?.request_type || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Email Reference">{selectedRecord?.email_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Address" span={2}>{selectedRecord?.address || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                <Card title="CMTI / Coordinator" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Proposal Given By">{selectedRecord?.quotation_given_by_name || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Department">{selectedRecord?.quotation_given_by_department || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Centre">{selectedRecord?.center || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Group">{selectedRecord?.group || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Proposal Status">{selectedRecord?.proposal_status || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                <Card title="Quotation" size="small" className="bg-blue-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Quote Reference">{selectedRecord?.quote_reference || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Date">{formatDate(selectedRecord?.quote_date) || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Amount">{selectedRecord?.quote_amount || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="Quote Description" span={2}>{selectedRecord?.quote_description || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                <Card title="Conversion Status" size="small" className="bg-yellow-50">
+                  <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                    <Descriptions.Item label="Proposals Converted">{selectedRecord?.proposals_converted || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="If Not Reason" span={2}>{selectedRecord?.if_not_reason || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Card>
+              </>
+            )}
 
             <Card title="Documents" size="small" className="bg-gray-50">
               <Table
@@ -2383,7 +2507,7 @@ function ScientistProposals() {
                     getValueProps={(value) => ({ value: value ? dayjs(value).isValid() ? dayjs(value) : null : null })}
                     normalize={(value) => {
                       if (!value) return ''
-                      if (dayjs.isDayjs(value)) return value.format('YYYY-MM-DD')
+                      if (dayjs.isDayjs(value)) return value.format(DISPLAY_DATE_FORMAT)
                       return value
                     }}
                   >
@@ -2823,11 +2947,19 @@ function ScientistProposals() {
   </div>
 </Modal>
 
-      <Modal
+        <Modal
         title="Document Viewer"
         open={!!viewDocumentUrl}
         onCancel={() => {
           setViewDocumentUrl(null)
+          setExcelRendererData(null)
+          setExcelRendererError(null)
+          setExcelRendererLoading(false)
+          setActiveSheetIndex(0)
+          setWordDocumentContent(null)
+          setWordDocumentError(null)
+          setWordDocumentLoading(false)
+          setIsFullscreen(false)
         }}
         footer={null}
         width={1100}
@@ -2842,11 +2974,227 @@ function ScientistProposals() {
 
           if (!currentUrl) return null
 
-          // Office files - show download button (Office Online viewer can't access private URLs)
+          // Office files (including Excel and Word) - show viewer or download option
           if (isOffice) {
+            // For Excel files, use react-excel-renderer
+            if (ext === 'xlsx' || ext === 'xls') {
+              if (excelRendererLoading) {
+                return (
+                  <div className="flex items-center justify-center h-[60vh]">
+                    <Spin size="large" tip="Loading Excel file..." />
+                  </div>
+                )
+              }
+
+              if (excelRendererError) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                    <div className="text-6xl mb-4">??</div>
+                    <h3 className="text-xl font-semibold">Excel Viewer Error</h3>
+                    <p className="text-gray-500 text-center max-w-md">{excelRendererError}</p>
+                    <div className="space-x-2">
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        onClick={() => window.open(currentUrl, '_blank')}
+                      >
+                        Download Excel File
+                      </Button>
+                      <Button onClick={() => loadExcelWithRenderer(currentUrl)}>
+                        Retry
+                      </Button>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (excelRendererData) {
+                return (
+                  <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">Excel Viewer</h3>
+                        {/* Sheet tabs */}
+                        {excelRendererData.sheets && excelRendererData.sheets.length > 1 && (
+                          <div className="flex space-x-1 mt-2 border-b">
+                            {excelRendererData.sheets.map((sheet, index) => (
+                              <button
+                                key={index}
+                                className={`px-3 py-1 text-sm border-b-2 transition-colors ${
+                                  activeSheetIndex === index
+                                    ? 'border-blue-500 text-blue-600 font-medium'
+                                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                                }`}
+                                onClick={() => setActiveSheetIndex(index)}
+                              >
+                                {sheet.name || `Sheet ${index + 1}`}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-x-2">
+                        <Button 
+                          size="small" 
+                          onClick={() => setIsFullscreen(!isFullscreen)}
+                        >
+                          {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        </Button>
+                        <Button 
+                          size="small" 
+                          icon={<DownloadOutlined />}
+                          onClick={() => window.open(currentUrl, '_blank')}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <style>{`
+                      .excel-scroll-container {
+                        overflow: auto;
+                        max-height: 60vh;
+                        border: 1px solid #d9d9d9;
+                        border-radius: 6px;
+                      }
+                      .excel-table {
+                        border-collapse: collapse;
+                        font-size: 12px;
+                        min-width: 100%;
+                      }
+                      .excel-table th,
+                      .excel-table td {
+                        border: 1px solid #d9d9d9;
+                        padding: 4px 8px;
+                        text-align: left;
+                        white-space: nowrap;
+                        min-width: 80px;
+                        max-width: 200px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                      }
+                      .excel-table th {
+                        background-color: #f5f5f5;
+                        font-weight: 600;
+                        position: sticky;
+                        top: 0;
+                        z-index: 10;
+                      }
+                      .excel-table td:hover {
+                        background-color: #f0f8ff;
+                        white-space: normal;
+                        word-wrap: break-word;
+                      }
+                    `}</style>
+                    {(() => {
+                      // Get current sheet data
+                      const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
+                      const currentRows = currentSheet?.rows || excelRendererData.rows || []
+                      const currentCols = currentSheet?.cols || excelRendererData.cols || []
+                      
+                      return currentRows.length > 0 ? (
+                        <div className="excel-scroll-container h-full">
+                          <table className="excel-table">
+                            <thead>
+                              <tr>
+                                {currentCols.map((col, index) => (
+                                  <th key={index}>{col.name || `Column ${index + 1}`}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentRows.map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                  {row.map((cell, cellIndex) => (
+                                    <td 
+                                      key={cellIndex} 
+                                      title={cell}
+                                    >
+                                      {cell}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-[60vh] text-gray-500">
+                          No data available in this Excel file
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )
+              }
+            }
+            
+            // For Word documents, use mammoth.js
+            if (ext === 'docx' || ext === 'doc') {
+              if (wordDocumentLoading) {
+                return (
+                  <div className="flex items-center justify-center h-[60vh]">
+                    <Spin size="large" tip="Loading Word document..." />
+                  </div>
+                )
+              }
+
+              if (wordDocumentError) {
+                return (
+                  <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                    <div className="text-6xl mb-4">??</div>
+                    <h3 className="text-xl font-semibold">Word Document Viewer Error</h3>
+                    <p className="text-gray-500 text-center max-w-md">{wordDocumentError}</p>
+                    <div className="space-x-2">
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        onClick={() => window.open(currentUrl, '_blank')}
+                      >
+                        Download Word Document
+                      </Button>
+                      <Button onClick={() => loadWordDocument(currentUrl)}>
+                        Retry
+                      </Button>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (wordDocumentContent) {
+                return (
+                  <div className={`w-full ${isFullscreen ? 'h-full' : 'h-[80vh]'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
+                      <div className="space-x-2">
+                        <Button 
+                          size="small" 
+                          onClick={() => setIsFullscreen(!isFullscreen)}
+                        >
+                          {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                        </Button>
+                        <Button 
+                          size="small" 
+                          icon={<DownloadOutlined />}
+                          onClick={() => window.open(currentUrl, '_blank')}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                    <div 
+                      className={`overflow-auto border border-gray-300 rounded-lg p-4 ${isFullscreen ? 'h-[90vh]' : 'h-[70vh]'}`}
+                      dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
+                    />
+                  </div>
+                )
+              }
+            }
+            
+            // For other Office files (PowerPoint, etc.)
             return (
               <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-                <div className="text-6xl mb-4">📄</div>
+                <div className="text-6xl mb-4">??</div>
                 <h3 className="text-xl font-semibold">
                   {ext.toUpperCase()} Document
                 </h3>
@@ -2855,10 +3203,8 @@ function ScientistProposals() {
                 </p>
                 <Button
                   type="primary"
-                  size="large"
                   icon={<DownloadOutlined />}
                   onClick={() => window.open(currentUrl, '_blank')}
-                  className="mt-4"
                 >
                   Download Document
                 </Button>
@@ -2874,7 +3220,7 @@ function ScientistProposals() {
           // Unknown file types - offer download
           return (
             <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-              <div className="text-6xl mb-4">📎</div>
+              <div className="text-6xl mb-4">??</div>
               <h3 className="text-xl font-semibold">
                 Document Preview
               </h3>

@@ -1488,7 +1488,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         item.status === 'Ongoing',
     ).length
 
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     dataSource.forEach((item) => {
       if (item.project_number) {

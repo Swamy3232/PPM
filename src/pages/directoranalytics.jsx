@@ -1297,9 +1297,9 @@ function directoranalytics() {
 
   const CATEGORIES = useMemo(
     () => [
-      { key: 'all', label: 'All' },
-      { key: 'proposals', label: 'Proposals' },
-      { key: 'projects', label: 'Projects' },
+      { key: 'all', label: 'Total Proposals Submitted' },
+      { key: 'proposals', label: 'Pending' },
+      { key: 'projects', label: 'Converted to Projects' },
       { key: 'technicallyCompleted', label: 'Technically Completed' },
       { key: 'financiallyNotCompleted', label: 'Financially Not Completed' },
       { key: 'financiallyCompleted', label: 'Financially Completed' },
@@ -1499,8 +1499,19 @@ function directoranalytics() {
     }
 
     if (drillLevel === 'coordinator') {
+      const totals = {}
+      items.forEach((item) => {
+        // For proposals (no project_number), use quotation_given_by_name
+        // For projects (has project_number), use project_co_ordinator
+        const isProject = item.project_number && String(item.project_number).trim() !== ''
+        const coordinatorField = isProject ? 'project_co_ordinator' : 'quotation_given_by_name'
+        const key = String(item[coordinatorField] || 'Unknown').trim() || 'Unknown'
+        totals[key] = (totals[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+      })
+      const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
       return {
-        ...buildBreakdown(items, 'project_co_ordinator'),
+        labels: entries.map(([key]) => key),
+        values: entries.map(([, value]) => value),
         title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${formatGroupName(selectedGroup)} in ${formatCenterName(selectedCenter)} by Coordinator`,
         dimension: 'project_co_ordinator',
       }
@@ -2154,7 +2165,7 @@ function directoranalytics() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2201,7 +2212,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            All
+                            Total Proposals Submitted
                           </span>
                         }
                         value={statistics.allCount}
@@ -2222,7 +2233,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Proposed Projects
+                             Pending
                           </span>
                         }
                         value={statistics.totalProposals}
@@ -2240,7 +2251,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Total Projects
+                            Converted to Projects
                           </span>
                         }
                         value={statistics.totalProjects}
@@ -2387,7 +2398,7 @@ function directoranalytics() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>
                               {code}
                             </Select.Option>
@@ -2951,6 +2962,8 @@ function directoranalytics() {
                           disabled={Boolean(trendCategory)}
                           style={{ minWidth: 120 }}
                           popupMatchSelectWidth={false}
+                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                          dropdownStyle={{ zIndex: 9999 }}
                           options={availableFinancialYears.map(year => ({
                             value: year,
                             label: `${year}-${year + 1}`,
@@ -2983,6 +2996,8 @@ function directoranalytics() {
                             },
                           }}
                           trigger={['click']}
+                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                          overlayStyle={{ zIndex: 9999 }}
                         >
                           <Button size="small">
                             Trend {trendCategory ? `: ${CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
@@ -3005,6 +3020,8 @@ function directoranalytics() {
                           size="small"
                           value={chartType}
                           onChange={setChartType}
+                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                          dropdownStyle={{ zIndex: 9999 }}
                           options={[
                             { value: 'bar', label: 'Bar Chart' },
                             { value: 'pie', label: 'Pie Chart' },

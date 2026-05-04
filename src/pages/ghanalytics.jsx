@@ -630,8 +630,20 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       }
     }
 
+    // Coordinator level - use different fields for proposals vs projects
+    const totals = {}
+    items.forEach((item) => {
+      // For proposals (no project_number), use quotation_given_by_name
+      // For projects (has project_number), use project_co_ordinator
+      const isProject = item.project_number && String(item.project_number).trim() !== ''
+      const coordinatorField = isProject ? 'project_co_ordinator' : 'quotation_given_by_name'
+      const key = String(item[coordinatorField] || 'Unknown').trim() || 'Unknown'
+      totals[key] = (totals[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+    })
+    const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
     return {
-      ...buildBreakdown(items, 'project_co_ordinator'),
+      labels: entries.map(([key]) => key),
+      values: entries.map(([, value]) => value),
       title: `${CHART_CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} by Project Coordinator`,
       dimension: 'project_co_ordinator',
     }
@@ -693,12 +705,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       return
     }
     if (drillLevel === 'project_code') {
-      setDrillLevel('coordinator')
+      setDrillLevel('project_co_ordinator')
       setSelectedProjectName('')
       setSelectedProjectCode('')
       return
     }
-    if (drillLevel === 'coordinator') {
+    if (drillLevel === 'project_co_ordinator') {
       setDrillLevel('top')
       setSelectedCategory('all')
       setSelectedCenter('')
@@ -708,6 +720,19 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       setTrendCategory(null)
     }
   }, [drillLevel])
+
+  const handleResetChart = useCallback(() => {
+    setDrillLevel('top')
+    setSelectedCategory('all')
+    setSelectedCenter('')
+    setSelectedGroup('')
+    setSelectedProjectName('')
+    setSelectedProjectCode('')
+    setTrendCategory(null)
+    setSelectedFinancialYear(null)
+    setChartType('bar')
+    setChartMetric('count')
+  }, [])
 
   const categoryKeyFromLabel = useCallback(
     (label) => {
@@ -1621,7 +1646,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         item.status === 'Ongoing',
     ).length
 
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     dataSource.forEach((item) => {
       if (item.project_number) {
@@ -2217,6 +2242,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         Back
                       </Button>
                     )}
+                    <Button size="small" onClick={handleResetChart}>
+                      Reset
+                    </Button>
                     <Button
                       size="small"
                       icon={<FullscreenOutlined />}
@@ -2249,6 +2277,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         disabled={Boolean(trendCategory)}
                         style={{ minWidth: 120 }}
                         popupMatchSelectWidth={false}
+                        getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                        dropdownStyle={{ zIndex: 9999 }}
                         options={availableFinancialYears.map(year => ({
                           value: year,
                           label: `${year}-${year + 1}`,
@@ -2281,6 +2311,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                           },
                         }}
                         trigger={['click']}
+                        getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                        overlayStyle={{ zIndex: 9999 }}
                       >
                         <Button size="small">
                           Trend {trendCategory ? `: ${CHART_CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
@@ -2302,6 +2334,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                       size="small"
                       value={chartType}
                       onChange={setChartType}
+                      getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                      dropdownStyle={{ zIndex: 9999 }}
                       options={[
                         { value: 'bar', label: 'Bar' },
                         { value: 'line', label: 'Line' },

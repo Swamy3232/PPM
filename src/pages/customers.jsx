@@ -32,8 +32,8 @@ const CUSTOMER_FIELDS = [
   { name: 'email', label: 'Email', width: 200 },
   { name: 'phone_no', label: 'Phone No.', width: 150 },
   { name: 'alternate_contact_details', label: 'Alternate Contact', width: 200 },
-  { name: 'created_at', label: 'Created At', width: 180, render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-' },
-  { name: 'updated_at', label: 'Updated At', width: 180, render: (text) => text ? dayjs(text).format('DD/MM/YYYY HH:mm') : '-' },
+  { name: 'created_at', label: 'Created At', width: 180, render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-' },
+  { name: 'updated_at', label: 'Updated At', width: 180, render: (text) => text ? dayjs(text).format('DD-MM-YYYY HH:mm') : '-' },
 ]
 
 function Customers() {

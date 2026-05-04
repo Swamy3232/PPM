@@ -246,7 +246,7 @@ function Analytics() {
     return counts
   }, [proposals, chartLabels])
 
-  const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'SVP', 'TOT']
+  const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT']
   
   const getProjectPrefix = (pn) => {
     if (!pn) return 'OTHER'

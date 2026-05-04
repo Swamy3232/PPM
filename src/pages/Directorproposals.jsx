@@ -109,6 +109,8 @@ const PROPOSAL_FIELDS = [
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'center', label: 'Centre', width: 150 },
   { name: 'group', label: 'Group', width: 150 },
+  { name: 'proposals_converted', label: 'Proposals Converted', width: 180, input: 'select' },
+  { name: 'if_not_reason', label: 'If Not Reason', width: 200, input: 'textarea' },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -170,6 +172,13 @@ const mapUiToApi = (values) => {
     payload[apiName] = values[field.name] ?? ''
   })
   return payload
+}
+
+// Helper function to check if proposals_converted is Yes
+const isProposalConverted = (proposalsConverted) => {
+  if (!proposalsConverted) return false
+  const convertedValue = String(proposalsConverted).toLowerCase().trim()
+  return convertedValue === 'yes'
 }
 
 // Helper functions to format center and group names with prefixes
@@ -1661,11 +1670,15 @@ function DirectorProposals() {
     ).length
 
     const pendingProjects = tableData.filter(
-      (item) => item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing' || item.status === 'On Hold',
+    ).length
+
+    const onHoldProjects = tableData.filter(
+      (item) => item.status === 'On Hold',
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -1688,6 +1701,7 @@ function DirectorProposals() {
       financiallyCompleted,
       financiallyNotCompleted,
       pendingProjects,
+      onHoldProjects,
       projectCodeBreakdown,
     }
   }, [tableData])
@@ -1845,6 +1859,11 @@ function DirectorProposals() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {statistics.onHoldProjects > 0 && (
+                        <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
+                          On hold: {statistics.onHoldProjects}
+                        </div>
+                      )}
                     </Card>
                   </div>
 
@@ -1897,7 +1916,7 @@ function DirectorProposals() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>
                               {code}
                             </Select.Option>
@@ -2035,182 +2054,290 @@ function DirectorProposals() {
                       <div className="text-slate-500">No proposal selected.</div>
                     ) : (
                       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <Card
-                          size="small"
-                          className="bg-slate-50"
-                          styles={{ body: { padding: 14 } }}
-                          title={<span className="font-semibold">Overview</span>}
-                        >
-                          <Descriptions
-                            bordered
-                            size="small"
-                            column={{ xs: 1, sm: 2, md: 3 }}
-                            labelStyle={{ width: 170, fontWeight: 600 }}
-                          >
-                            <Descriptions.Item label="Project Number">
-                              {renderDetailValue('project_number', selectedRecord.project_number)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Status">
-                              {renderDetailValue('status', selectedRecord.status)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Activity">
-                              {renderDetailValue('activity', selectedRecord.activity)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Customer Name">
-                              {renderDetailValue('customer_name', selectedRecord.customer_name)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Customer Type">
-                              {renderDetailValue('customer_type', selectedRecord.customer_type)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Order Number">
-                              {renderDetailValue('order_number', selectedRecord.order_number)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Email">
-                              {renderDetailValue('email', selectedRecord.email)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Phone No.">
-                              {renderDetailValue('phone_no', selectedRecord.phone_no)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Alternate Contact">
-                              {renderDetailValue(
-                                'alternate_contact_details',
-                                selectedRecord.alternate_contact_details,
-                              )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Centre">
-                              {renderDetailValue('center', formatCenterName(selectedRecord.center))}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Group">
-                              {renderDetailValue('group', formatGroupName(selectedRecord.group))}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Project Co-ordinator">
-                              {renderDetailValue(
-                                'project_co_ordinator',
-                                selectedRecord.project_co_ordinator,
-                              )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Proposal Status">
-                              {renderDetailValue('proposal_status', selectedRecord.proposal_status)}
-                            </Descriptions.Item>
-                          </Descriptions>
-                        </Card>
+                        {isProposalConverted(selectedRecord.proposals_converted) ? (
+                          // Show all details if proposals_converted is Yes
+                          <>
+                            <Card
+                              size="small"
+                              className="bg-slate-50"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Overview</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={{ xs: 1, sm: 2, md: 3 }}
+                                labelStyle={{ width: 170, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Project Number">
+                                  {renderDetailValue('project_number', selectedRecord.project_number)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Status">
+                                  {renderDetailValue('status', selectedRecord.status)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Activity">
+                                  {renderDetailValue('activity', selectedRecord.activity)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Customer Name">
+                                  {renderDetailValue('customer_name', selectedRecord.customer_name)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Customer Type">
+                                  {renderDetailValue('customer_type', selectedRecord.customer_type)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Order Number">
+                                  {renderDetailValue('order_number', selectedRecord.order_number)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Email">
+                                  {renderDetailValue('email', selectedRecord.email)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Phone No.">
+                                  {renderDetailValue('phone_no', selectedRecord.phone_no)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Alternate Contact">
+                                  {renderDetailValue(
+                                    'alternate_contact_details',
+                                    selectedRecord.alternate_contact_details,
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Centre">
+                                  {renderDetailValue('center', formatCenterName(selectedRecord.center))}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Group">
+                                  {renderDetailValue('group', formatGroupName(selectedRecord.group))}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Project Co-ordinator">
+                                  {renderDetailValue(
+                                    'project_co_ordinator',
+                                    selectedRecord.project_co_ordinator,
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Proposal Status">
+                                  {renderDetailValue('proposal_status', selectedRecord.proposal_status)}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
 
-                        <Card
-                          size="small"
-                          styles={{ body: { padding: 14 } }}
-                          title={<span className="font-semibold">Dates</span>}
-                        >
-                          <Descriptions
-                            bordered
-                            size="small"
-                            column={{ xs: 1, sm: 2, md: 3 }}
-                            labelStyle={{ width: 170, fontWeight: 600 }}
-                          >
-                            <Descriptions.Item label="Enquiry Date">
-                              {renderDetailValue('enquiry_date', selectedRecord.enquiry_date)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Quote Date">
-                              {renderDetailValue('quote_date', selectedRecord.quote_date)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Revised Quote Date">
-                              {renderDetailValue(
-                                'revised_negotiated_quote_date',
-                                selectedRecord.revised_negotiated_quote_date,
-                              )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Order Date">
-                              {renderDetailValue('order_date', selectedRecord.order_date)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Delivery Date">
-                              {renderDetailValue('delivery_date', selectedRecord.delivery_date)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Extended Delivery">
-                              {renderDetailValue(
-                                'extended_delivery_date',
-                                selectedRecord.extended_delivery_date,
-                              )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Dispatch Date">
-                              {renderDetailValue('dispatch_date', selectedRecord.dispatch_date)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Technical Completion Year">
-                              {renderDetailValue(
-                                'technical_completed_year',
-                                selectedRecord.technical_completed_year,
-                              )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Financial Completion Year">
-                              {renderDetailValue(
-                                'financial_completed_year',
-                                selectedRecord.financial_completed_year,
-                              )}
-                            </Descriptions.Item>
-                          </Descriptions>
-                        </Card>
+                            <Card
+                              size="small"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Dates</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={{ xs: 1, sm: 2, md: 3 }}
+                                labelStyle={{ width: 170, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Enquiry Date">
+                                  {renderDetailValue('enquiry_date', selectedRecord.enquiry_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Quote Date">
+                                  {renderDetailValue('quote_date', selectedRecord.quote_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Revised Quote Date">
+                                  {renderDetailValue(
+                                    'revised_negotiated_quote_date',
+                                    selectedRecord.revised_negotiated_quote_date,
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Order Date">
+                                  {renderDetailValue('order_date', selectedRecord.order_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Delivery Date">
+                                  {renderDetailValue('delivery_date', selectedRecord.delivery_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Extended Delivery">
+                                  {renderDetailValue(
+                                    'extended_delivery_date',
+                                    selectedRecord.extended_delivery_date,
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Dispatch Date">
+                                  {renderDetailValue('dispatch_date', selectedRecord.dispatch_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Technical Completion Year">
+                                  {renderDetailValue(
+                                    'technical_completed_year',
+                                    selectedRecord.technical_completed_year,
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Financial Completion Year">
+                                  {renderDetailValue(
+                                    'financial_completed_year',
+                                    selectedRecord.financial_completed_year,
+                                  )}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
 
-                        <Card
-                          size="small"
-                          styles={{ body: { padding: 14 } }}
-                          title={<span className="font-semibold">Description</span>}
-                        >
-                          <Descriptions
-                            bordered
-                            size="small"
-                            column={1}
-                            labelStyle={{ width: 220, fontWeight: 600 }}
-                          >
-                            <Descriptions.Item label="Address">
-                              {renderDetailValue('address', selectedRecord.address)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Quote Description">
-                              {renderDetailValue('quote_description', selectedRecord.quote_description)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Key Deliverables">
-                              {renderDetailValue('key_deliverables', selectedRecord.key_deliverables)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Review Meeting Details">
-                              {renderDetailValue(
-                                'details_of_external_internal_review_meeting',
-                                selectedRecord.details_of_external_internal_review_meeting,
-                              )}
-                            </Descriptions.Item>
-                          </Descriptions>
-                        </Card>
+                            <Card
+                              size="small"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Description</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={1}
+                                labelStyle={{ width: 220, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Address">
+                                  {renderDetailValue('address', selectedRecord.address)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Quote Description">
+                                  {renderDetailValue('quote_description', selectedRecord.quote_description)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Key Deliverables">
+                                  {renderDetailValue('key_deliverables', selectedRecord.key_deliverables)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Review Meeting Details">
+                                  {renderDetailValue(
+                                    'details_of_external_internal_review_meeting',
+                                    selectedRecord.details_of_external_internal_review_meeting,
+                                  )}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
 
-                        <Card
-                          size="small"
-                          styles={{ body: { padding: 14 } }}
-                          title={<span className="font-semibold">Financials</span>}
-                        >
-                          <Descriptions
-                            bordered
-                            size="small"
-                            column={{ xs: 1, sm: 2, md: 3 }}
-                            labelStyle={{ width: 170, fontWeight: 600 }}
-                          >
-                            <Descriptions.Item label="Quote Amount">
-                              {renderDetailValue('quote_amount', selectedRecord.quote_amount)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Revised Quote Amount">
-                              {renderDetailValue(
-                                'revised_negotiated_quote_amount',
-                                selectedRecord.revised_negotiated_quote_amount,
-                              )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Order Value">
-                              {renderDetailValue('order_value', selectedRecord.order_value)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="PPM Remarks">
-                              {renderDetailValue('ppm_remarks', selectedRecord.ppm_remarks)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Updated By">
-                              {renderDetailValue('updated_by', selectedRecord.updated_by)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Updated At">
-                              {renderDetailValue('updated_at', selectedRecord.updated_at)}
-                            </Descriptions.Item>
-                          </Descriptions>
-                        </Card>
+                            <Card
+                              size="small"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Financials</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={{ xs: 1, sm: 2, md: 3 }}
+                                labelStyle={{ width: 170, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Quote Amount">
+                                  {renderDetailValue('quote_amount', selectedRecord.quote_amount)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Revised Quote Amount">
+                                  {renderDetailValue(
+                                    'revised_negotiated_quote_amount',
+                                    selectedRecord.revised_negotiated_quote_amount,
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Order Value">
+                                  {renderDetailValue('order_value', selectedRecord.order_value)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="PPM Remarks">
+                                  {renderDetailValue('ppm_remarks', selectedRecord.ppm_remarks)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Updated By">
+                                  {renderDetailValue('updated_by', selectedRecord.updated_by)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Updated At">
+                                  {renderDetailValue('updated_at', selectedRecord.updated_at)}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
+                          </>
+                        ) : (
+                          // Show limited details from enquiry date to if_not_reason if proposals_converted is No/null/empty
+                          <>
+                            <Card
+                              size="small"
+                              className="bg-slate-50"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Enquiry Details</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={{ xs: 1, sm: 2, md: 3 }}
+                                labelStyle={{ width: 170, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Enquiry Date">
+                                  {renderDetailValue('enquiry_date', selectedRecord.enquiry_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Customer Name">
+                                  {renderDetailValue('customer_name', selectedRecord.customer_name)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Customer Type">
+                                  {renderDetailValue('customer_type', selectedRecord.customer_type)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Email">
+                                  {renderDetailValue('email', selectedRecord.email)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Phone No.">
+                                  {renderDetailValue('phone_no', selectedRecord.phone_no)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Address">
+                                  {renderDetailValue('address', selectedRecord.address)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Request Type">
+                                  {renderDetailValue('request_type', selectedRecord.request_type)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Email Reference">
+                                  {renderDetailValue('email_reference', selectedRecord.email_reference)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Quote Reference">
+                                  {renderDetailValue('quote_reference', selectedRecord.quote_reference)}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
+
+                            <Card
+                              size="small"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Quote Details</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={{ xs: 1, sm: 2, md: 3 }}
+                                labelStyle={{ width: 170, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Quote Date">
+                                  {renderDetailValue('quote_date', selectedRecord.quote_date)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Quote Amount">
+                                  {renderDetailValue('quote_amount', selectedRecord.quote_amount)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Quote Description">
+                                  {renderDetailValue('quote_description', selectedRecord.quote_description)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Proposal Status">
+                                  {renderDetailValue('proposal_status', selectedRecord.proposal_status)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Quotation Given By">
+                                  {renderDetailValue('quotation_given_by_name', selectedRecord.quotation_given_by_name)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Department">
+                                  {renderDetailValue('quotation_given_by_department', selectedRecord.quotation_given_by_department)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Centre">
+                                  {renderDetailValue('center', formatCenterName(selectedRecord.center))}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="Group">
+                                  {renderDetailValue('group', formatGroupName(selectedRecord.group))}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
+
+                            <Card
+                              size="small"
+                              styles={{ body: { padding: 14 } }}
+                              title={<span className="font-semibold">Conversion Status</span>}
+                            >
+                              <Descriptions
+                                bordered
+                                size="small"
+                                column={1}
+                                labelStyle={{ width: 220, fontWeight: 600 }}
+                              >
+                                <Descriptions.Item label="Proposals Converted">
+                                  {renderDetailValue('proposals_converted', selectedRecord.proposals_converted)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="If Not Reason">
+                                  {renderDetailValue('if_not_reason', selectedRecord.if_not_reason)}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </Card>
+                          </>
+                        )}
 
                         {Array.isArray(selectedRecord?.payments) && selectedRecord.payments.length > 0 && (
                           <Card

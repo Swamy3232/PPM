@@ -492,8 +492,20 @@ function Centerheadanalytics() {
       }
     }
 
+    // Coordinator level - use different fields for proposals vs projects
+    const totals = {}
+    items.forEach((item) => {
+      // For proposals (no project_number), use quotation_given_by_name
+      // For projects (has project_number), use project_co_ordinator
+      const isProject = item.project_number && String(item.project_number).trim() !== ''
+      const coordinatorField = isProject ? 'project_co_ordinator' : 'quotation_given_by_name'
+      const key = String(item[coordinatorField] || 'Unknown').trim() || 'Unknown'
+      totals[key] = (totals[key] || 0) + (chartMetric === 'amount' ? getFinancialValue(item) : 1)
+    })
+    const entries = Object.entries(totals).sort((a, b) => b[1] - a[1])
     return {
-      ...buildBreakdown(items, 'project_co_ordinator'),
+      labels: entries.map(([key]) => key),
+      values: entries.map(([, value]) => value),
       title: `${CATEGORIES.find((c) => c.key === selectedCategory)?.label || 'All'} for ${selectedGroup} in ${selectedCenter} by Coordinator`,
       dimension: 'project_co_ordinator',
     }
@@ -1531,11 +1543,11 @@ function Centerheadanalytics() {
         (!item.financial_completed_year || item.financial_completed_year.trim() === ''),
     ).length
     const pendingProjects = dataSource.filter(
-      (item) => item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing' || item.status === 'On Hold',
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT']
+    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     dataSource.forEach((item) => {
       if (item.project_number) {
@@ -1649,7 +1661,7 @@ function Centerheadanalytics() {
         )
       } else if (statusFilter === 'pendingProjects') {
         filtered = filtered.filter(
-          (item) => item.status === 'Ongoing',
+          (item) => item.status === 'Ongoing' || item.status === 'On Hold',
         )
       } else {
         // For other status filters, filter by status
@@ -2059,7 +2071,7 @@ function Centerheadanalytics() {
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO', 'SVP', 'TOT', 'SVP', 'TOT'].map((code) => (
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT'].map((code) => (
                             <Select.Option key={code} value={code}>{code}</Select.Option>
                           ))}
                         </Select>
@@ -2186,6 +2198,21 @@ function Centerheadanalytics() {
                               Back
                             </Button>
                           )}
+                          <Button size="small" onClick={() => {
+                            setDrillLevel('top')
+                            setSelectedCategory('all')
+                            setSelectedCenter('')
+                            setSelectedGroup('')
+                            setSelectedProjectName('')
+                            setSelectedProjectCode('')
+                            setTrendCategory(null)
+                            setSelectedFinancialYear(null)
+                            setOrderDateRange(null)
+                            setChartType('bar')
+                            setChartMetric('count')
+                          }}>
+                            Reset
+                          </Button>
                           <Button
                             size="small"
                             icon={<FullscreenOutlined />}
@@ -2218,6 +2245,8 @@ function Centerheadanalytics() {
                             disabled={Boolean(trendCategory)}
                             style={{ minWidth: 120 }}
                             popupMatchSelectWidth={false}
+                            getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                            dropdownStyle={{ zIndex: 9999 }}
                             options={availableFinancialYears.map(year => ({
                               value: year,
                               label: `${year}-${year + 1}`,
@@ -2250,6 +2279,8 @@ function Centerheadanalytics() {
                               },
                             }}
                             trigger={['click']}
+                            getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                            overlayStyle={{ zIndex: 9999 }}
                           >
                             <Button size="small">
                               Trend {trendCategory ? `: ${CATEGORIES.find((c) => c.key === trendCategory)?.label || trendCategory}` : ''}
@@ -2271,6 +2302,8 @@ function Centerheadanalytics() {
                             size="small"
                             value={chartType}
                             onChange={setChartType}
+                            getPopupContainer={(triggerNode) => triggerNode.parentElement}
+                            dropdownStyle={{ zIndex: 9999 }}
                             options={[
                               { value: 'bar', label: 'Bar' },
                               { value: 'line', label: 'Line' },
