@@ -519,10 +519,9 @@ function MasterProposals() {
 
   return (
     <>
-      <div className="rounded-3xl bg-white p-4 md:p-6 shadow-sm">
+      {/* <div className="rounded-3xl bg-white p-4 md:p-6 shadow-sm">
         <Title level={3} className="mb-4">Master Proposals</Title>
         
-        {/* Filters - Responsive */}
         <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm mb-6">
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} lg={6}>
@@ -601,9 +600,10 @@ function MasterProposals() {
             </Button>
           </div>
         </div>
+      </div> */}
 
         {/* Master Proposals Table - Responsive with fixed header on vertical scroll */}
-        <div className="overflow-x-auto">
+        {/* <div className="overflow-x-auto">
           <Table
             rowKey="key"
             columns={columns}
@@ -615,8 +615,7 @@ function MasterProposals() {
             sticky
             title={() => 'Master Proposals'}
           />
-        </div>
-      </div>
+        </div> */}
 
       <div className="rounded-3xl bg-white p-4 md:p-6 shadow-sm mt-8">
         <Title level={3} className="mb-4">

@@ -1174,6 +1174,27 @@ function Proposals() {
           ellipsis: true,
         },
         {
+          key: 'activity',
+          dataIndex: 'activity',
+          title: 'Project Name',
+          width: 140,
+          render: (value, record) => {
+            const projectValue = value || record.quote_description || 'No Project Name'
+            return (
+              <Tooltip title={projectValue} placement="topLeft">
+                <span>{projectValue.length > 20 ? projectValue.substring(0, 20) + '...' : projectValue}</span>
+              </Tooltip>
+            )
+          },
+        },
+        {
+          key: 'quotation_given_by_name',
+          dataIndex: 'quotation_given_by_name',
+          title: 'Proposal Given By',
+          width: 140,
+          ellipsis: true,
+        },
+        {
           key: 'actions',
           title: 'Actions',
           width: 70,
@@ -1246,7 +1267,33 @@ function Proposals() {
       if (field.name === 'activity') {
         return {
           ...baseColumn,
-          render: (value) => wrapWithTooltip(value, 25),
+          render: (value, record) => {
+            const projectValue = value || record.quote_description || 'No Project Name'
+            return (
+              <Tooltip title={projectValue} placement="topLeft">
+                <span>{projectValue.length > 25 ? projectValue.substring(0, 25) + '...' : projectValue}</span>
+              </Tooltip>
+            )
+          },
+        }
+      }
+
+      if (field.name === 'project_co_ordinator') {
+        return {
+          ...baseColumn,
+          render: (value, record) => {
+            // Show project coordinator if available, otherwise show proposal given by
+            const coordinator = value && value.trim() !== '' 
+              ? value 
+              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
+                ? record.quotation_given_by_name 
+                : '-')
+            return (
+              <Tooltip title={coordinator} placement="topLeft">
+                <span>{coordinator.length > 20 ? coordinator.substring(0, 20) + '...' : coordinator}</span>
+              </Tooltip>
+            )
+          },
         }
       }
 
@@ -1267,7 +1314,7 @@ function Proposals() {
       width: 140,
       render: (_, record) => {
         // Don't show overdue days if project is completed
-        if (record.status === 'Completed') return '-'
+        if (record.status === 'Completed') return 'Project Completed '
 
         const overdueDays = calculateOverdueDays(
           record.delivery_date,

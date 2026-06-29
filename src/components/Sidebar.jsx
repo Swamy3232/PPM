@@ -209,15 +209,15 @@ function Sidebar() {
             { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals / Projects' },
             ...(!isDirector ? [{ key: 'projects', icon: <ProjectOutlined />, label: 'Projects Documents' }] : []),
 
-            ...(isGHOrScientist
-              ? [
-                  {
-                    key: 'gh-master-proposals',
-                    icon: <ProfileOutlined />,
-                    label: 'Master Proposals',
-                  },
-                ]
-              : []),
+            // ...(isGHOrScientist
+            //   ? [
+            //       {
+            //         key: 'gh-master-proposals',
+            //         icon: <ProfileOutlined />,
+            //         label: 'Master Proposals',
+            //       },
+            //     ]
+            //   : []),
 
             ...(isGHOrScientist
               ? [
@@ -254,16 +254,18 @@ function Sidebar() {
                     icon: <ProfileOutlined />,
                     label: (
                       <span>
-                        Master Proposals
+                        Acknowledge Proposals
                         {unacknowledgedCount > 0 && (
                           <span
                             style={{
                               backgroundColor: '#ff4d4f',
                               borderRadius: '50%',
                               color: 'white',
-                              padding: '0 6px',
-                              marginLeft: '8px',
-                              fontSize: '12px',
+                              padding: '0 4px',
+                              marginLeft: '4px',
+                              fontSize: '10px',
+                              lineHeight: '14px',
+                              display: 'inline-block',
                             }}
                           >
                             {unacknowledgedCount}
@@ -275,7 +277,7 @@ function Sidebar() {
                 ]
               : []),
 
-            ...((normalizedBasePath === 'admin' || isDirector || isCH || isGHOrScientist) ? [{
+            ...((isDirector || isCH || isGHOrScientist) ? [{
                     key: 'analytics',
                     icon: <BarChartOutlined />,
                     label: isCH ? 'CH Analytics' : isDirector ? 'Project Analytics' : basePath === 'scientist' ? 'Scientist Analytics' : 'Analytics',

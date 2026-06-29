@@ -6,6 +6,7 @@ import {
   PlusOutlined,
   SearchOutlined,
   DownloadOutlined,
+  LinkOutlined,
   FilterOutlined,
   CalendarOutlined,
   MessageOutlined,
@@ -114,8 +115,6 @@ const PROPOSAL_FIELDS = [
   { name: 'revised_negotiated', label: 'Revised / Negotiated', width: 190, apiName: 'revised/negotiated' },
   { name: 'revised_negotiated_quote_date', label: 'Revised Quote Date', width: 190, apiName: 'revised/negotiated_quote_date' },
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
-  { name: 'center', label: 'Centre', width: 150 },
-  { name: 'group', label: 'Group', width: 150 },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
   { name: 'center', label: 'Centre', width: 150 },
   { name: 'group', label: 'Group', width: 150 },
@@ -313,36 +312,20 @@ function Proposals() {
       const data = await res.json()
       const docs = Array.isArray(data) ? data : []
 
-      const enquiryStage = stageConfig.find(
-        (s) => (s.name || '').toString().trim().toLowerCase() === 'enquiry',
-      )
-      const enquiryStageId = enquiryStage?.id
-
       const projectDocsRaw = docs.filter((d) => {
         const docProjectId = d?.project_id ?? d?.project ?? d?.projectId
         if (docProjectId == null || projectId == null) return false
         return String(docProjectId) === String(projectId)
       })
 
-      const stageFiltered = projectDocsRaw.filter((d) => {
-        if (!enquiryStageId) return true
-        const docStageId = d?.stage_id ?? d?.stage ?? d?.stageId
-        if (docStageId == null) return false
-        return String(docStageId) === String(enquiryStageId)
-      })
-
-      const filtered = stageFiltered
-
-      const baseName = (enquiryStage?.name || 'Enquiry').toString().trim() || 'Enquiry'
-
-      const sortedByDate = [...filtered].sort(
+      const sortedByDate = [...projectDocsRaw].sort(
         (a, b) => new Date(a.created_at) - new Date(b.created_at),
       )
 
       const withVersions = sortedByDate.map((d, idx) => ({
         ...d,
         version: idx + 1,
-        display_name: d.name || `${baseName} v${idx + 1}`,
+        display_name: d.name || `Document v${idx + 1}`,
       }))
 
       setProjectDocs(withVersions)
@@ -353,7 +336,7 @@ function Proposals() {
     } finally {
       setDocsLoading(false)
     }
-  }, [stageConfig])
+  }, [])
 
   // Queries functions for admin users
   const fetchQueriesForProject = useCallback(async (projectId) => {
@@ -511,7 +494,7 @@ function Proposals() {
   const openDetailModal = useCallback((record) => {
     setSelectedRecord(record)
     setDetailModalOpen(true)
-    // Fetch enquiry documents for this proposal
+    // Fetch uploaded documents for this proposal
     if (record?.id) {
       fetchProjectDocuments(record.id)
     }
@@ -1698,8 +1681,8 @@ function Proposals() {
               'Delayed': { bg: '#fff3e0', color: '#e65100' },
               'On Hold': { bg: '#f3e5f5', color: '#6a1b9a' },
               'Technically completed': { bg: '#e0f7fa', color: '#00695c' },
-              'Completed and Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
-              'Completed and Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
+              'Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
+              'Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
             }
             const colors = statusColors[value] || { bg: '#f5f5f5', color: '#616161' }
             return (
@@ -3267,6 +3250,88 @@ function Proposals() {
             return <iframe src={previewUrl} className="w-full h-[80vh]" title="Document" />
           }
 
+          const isWordFile =
+            ext === 'docx' ||
+            ext === 'doc' ||
+            mime.includes('wordprocessingml.document') ||
+            mime.includes('msword') ||
+            mime.includes('word')
+
+          if (isWordFile) {
+            if (wordDocumentLoading) {
+              return (
+                <div className="flex items-center justify-center h-[60vh]">
+                  <Spin />
+                </div>
+              )
+            }
+
+            if (wordDocumentError) {
+              return (
+                <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+                  <div className="text-6xl mb-4">📎</div>
+                  <h3 className="text-xl font-semibold">Word Document Preview</h3>
+                  <p className="text-gray-500 text-center max-w-md">{wordDocumentError}</p>
+                  <div className="space-x-2">
+                    <Button
+                      type="primary"
+                      size="large"
+                      onClick={() => window.open(currentUrl, '_blank')}
+                    >
+                      Download Document
+                    </Button>
+                    <Button
+                      size="large"
+                      onClick={() => loadWordDocument(currentUrl)}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              )
+            }
+
+            if (wordDocumentContent) {
+              return (
+                <div className="w-full h-[80vh] overflow-auto bg-white border rounded p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Word Document Viewer</h3>
+                    <div className="space-x-2">
+                      <Button
+                        size="small"
+                        onClick={() => window.open(currentUrl, '_blank')}
+                        icon={<LinkOutlined />}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => loadWordDocument(currentUrl)}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+                  <div
+                    className="word-document-content"
+                    dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
+                    style={{
+                      fontFamily: 'Arial, sans-serif',
+                      lineHeight: '1.6',
+                      color: '#333',
+                    }}
+                  />
+                </div>
+              )
+            }
+
+            return (
+              <div className="flex items-center justify-center h-[60vh]">
+                <Spin />
+              </div>
+            )
+          }
+
           // Unknown file types - offer download
           return (
             <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
@@ -3287,7 +3352,7 @@ function Proposals() {
 
       {/* Uploaded Documents (Version List) Modal */}
       <Modal
-        title="Uploaded Enquiry Documents"
+        title="Uploaded Documents"
         open={docsModalVisible}
         onCancel={() => setDocsModalVisible(false)}
         footer={[
@@ -4052,8 +4117,8 @@ function Proposals() {
                       <Select.Option value="On Hold">On Hold</Select.Option>
                       <Select.Option value="Delayed">Delayed</Select.Option>
                       <Select.Option value="Technically completed">Technically completed</Select.Option>
-                      <Select.Option value="Completed and Short closed by cutomer">Completed and Short closed by cutomer</Select.Option>
-                      <Select.Option value="Completed and Short closed by CMTI">Completed and Short closed by CMTI</Select.Option>
+                      <Select.Option value="Short closed by cutomer">Short closed by cutomer</Select.Option>
+                      <Select.Option value="Short closed by CMTI">Short closed by CMTI</Select.Option>
                     </Select>
                   </Form.Item>
                 )

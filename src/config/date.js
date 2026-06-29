@@ -17,7 +17,8 @@ export function formatDateTime(value) {
 
 export function formatIndianNumber(num) {
   if (!num && num !== 0) return '-'
-  const x = num.toString().split('.')
+  // Remove any existing commas first, then split on decimal point
+  const x = num.toString().replace(/,/g, '').split('.')
   let lastThree = x[0].slice(-3)
   const otherNumbers = x[0].slice(0, -3)
   if (otherNumbers !== '')

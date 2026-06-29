@@ -21,6 +21,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   message,
   DatePicker,
@@ -317,6 +318,7 @@ function directoranalytics() {
   const [selectedGroup, setSelectedGroup] = useState('')
   const [selectedProjectCode, setSelectedProjectCode] = useState('')
   const [selectedProjectName, setSelectedProjectName] = useState('')
+  const [notConvertedModalVisible, setNotConvertedModalVisible] = useState(false)
   const [chartType, setChartType] = useState('bar')
   const [chartMetric, setChartMetric] = useState('count')
   const [selectedFinancialYear, setSelectedFinancialYear] = useState(null)
@@ -1341,8 +1343,11 @@ function directoranalytics() {
         if (drillLevel === 'coordinator' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedGroup && item.group !== selectedGroup) return false
         }
-        if (drillLevel === 'project_code' || drillLevel === 'project_name') {
+        if (drillLevel === 'coordinator' || drillLevel === 'category' || drillLevel === 'project_code' || drillLevel === 'project_name') {
           if (selectedProjectName && normalizeValue(item.project_co_ordinator) !== normalizeValue(selectedProjectName)) return false
+        }
+        if (drillLevel === 'project_code' || drillLevel === 'project_name') {
+          if (selectedProjectCode && getProjectCode(item.project_number) !== getProjectCode(selectedProjectCode)) return false
         }
         if (drillLevel === 'project_name') {
           if (selectedProjectCode && getProjectCode(item.project_number) !== getProjectCode(selectedProjectCode)) return false
@@ -1517,6 +1522,25 @@ function directoranalytics() {
       }
     }
 
+    if (drillLevel === 'category') {
+      const filteredItems = filteredData.filter((item) => {
+        const coordinator = item.project_co_ordinator || item.quotation_given_by_name || ''
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+      const totals = CATEGORIES.map((category) =>
+        filteredItems.reduce(
+          (sum, item) => (matchCategory(item, category.key) ? sum + (chartMetric === 'amount' ? getFinancialValue(item) : 1) : sum),
+          0,
+        ),
+      )
+      return {
+        labels: CATEGORIES.map((category) => category.label),
+        values: totals,
+        title: `${selectedProjectName} — Breakdown by Category`,
+        dimension: 'category',
+      }
+    }
+
     if (drillLevel === 'project_code') {
       const filteredItems = items.filter((item) => normalizeValue(item.project_co_ordinator) === normalizeValue(selectedProjectName))
       const projectCodes = {}
@@ -1608,8 +1632,11 @@ function directoranalytics() {
       setSelectedProjectCode('')
     } else if (drillLevel === 'project_code') {
       setDrillLevel('coordinator')
-      setSelectedProjectName('')
       setSelectedProjectCode('')
+    } else if (drillLevel === 'category') {
+      setDrillLevel('coordinator')
+      setSelectedCategory('all')
+      setSelectedProjectName('')
     } else if (drillLevel === 'coordinator') {
       setDrillLevel('group')
       setSelectedGroup('')
@@ -1632,6 +1659,17 @@ function directoranalytics() {
     [CATEGORIES],
   )
 
+  const getModalData = useCallback(() => {
+    let proposals = tableData.filter((item) => !item.project_number || item.project_number.toString().trim() === '')
+    if (selectedProjectName) {
+      proposals = proposals.filter((item) => {
+        const coordinator = item.quotation_given_by_name || item.project_co_ordinator || ''
+        return normalizeValue(coordinator) === normalizeValue(selectedProjectName)
+      })
+    }
+    return proposals
+  }, [tableData, selectedProjectName])
+
   const handleChartClick = useCallback(
     (label) => {
       const dimension = chartData.dimension
@@ -1641,6 +1679,17 @@ function directoranalytics() {
       }
       if (dimension === 'category') {
         const categoryKey = categoryKeyFromLabel(label)
+        if (selectedProjectName && drillLevel === 'category') {
+          if (categoryKey === 'proposals') {
+            setNotConvertedModalVisible(true)
+            return
+          }
+          setSelectedCategory(categoryKey)
+          setDrillLevel('project_code')
+          setSelectedProjectCode('')
+          return
+        }
+
         setSelectedCategory(categoryKey)
         setDrillLevel('center')
         setSelectedCenter('')
@@ -1659,9 +1708,20 @@ function directoranalytics() {
         return
       }
       if (dimension === 'project_co_ordinator') {
+        if (!selectedCategory || selectedCategory === 'all') {
+          setSelectedProjectName(label)
+          setSelectedProjectCode('')
+          setDrillLevel('category')
+          return
+        }
+        if (selectedCategory === 'proposals') {
+          setSelectedProjectName(label)
+          setNotConvertedModalVisible(true)
+          return
+        }
         setSelectedProjectName(label)
-        setDrillLevel('project_code')
         setSelectedProjectCode('')
+        setDrillLevel('project_code')
         return
       }
       if (dimension === 'project_code') {
@@ -1670,7 +1730,7 @@ function directoranalytics() {
         return
       }
     },
-    [categoryKeyFromLabel, chartData.dimension],
+    [categoryKeyFromLabel, chartData.dimension, selectedCategory, selectedProjectName, drillLevel],
   )
 
   useEffect(() => {
@@ -1680,9 +1740,38 @@ function directoranalytics() {
       chartInstanceRef.current = null
     }
 
-    const chartTypeToRender = chartType === 'box' ? 'bar' : chartType
+    const chartTypeToRender = chartType === 'box'
+      ? 'bar'
+      : chartType === 'area'
+        ? 'line'
+        : chartType === 'donut'
+          ? 'doughnut'
+        : chartType === 'funnel'
+          ? 'bar'
+        : chartType
     const ctx = chartRef.current.getContext('2d')
-    const totalValue = chartData.values.reduce((acc, v) => acc + Number(v || 0), 0)
+    const renderedItems = chartType === 'funnel'
+      ? chartData.labels
+          .map((label, idx) => ({
+            label,
+            value: Number(chartData.values[idx] ?? 0),
+          }))
+          .sort((a, b) => b.value - a.value)
+      : chartData.labels.map((label, idx) => ({
+          label,
+          value: Number(chartData.values[idx] ?? 0),
+        }))
+    const renderedFullLabels = renderedItems.map((item) => item.label)
+    const renderedDisplayLabels = renderedFullLabels.map((label) => getFirstTwoWords(label))
+    const renderedValues = renderedItems.map((item) => item.value)
+    const maxRenderedValue = renderedValues.length ? Math.max(...renderedValues) : 0
+    const renderedDatasetValues = chartType === 'funnel'
+      ? renderedValues.map((v) => {
+          const offset = (maxRenderedValue - v) / 2
+          return [offset, offset + v]
+        })
+      : renderedValues
+    const totalValue = renderedValues.reduce((acc, v) => acc + Number(v || 0), 0)
     const isAmountChart = chartMetric === 'amount'
     const truncate = (s, max = 12) => {
       const str = String(s ?? '').trim()
@@ -1695,6 +1784,8 @@ function directoranalytics() {
       afterDatasetsDraw: (chart) => {
         // Treemap already draws labels inside the tiles.
         if (chartTypeToRender === 'treemap') return
+        // Floating/centered funnel bars are cleaner without overlaid custom labels.
+        if (chartType === 'funnel') return
         if (!chart?.ctx) return
 
         const canvasCtx = chart.ctx
@@ -1732,7 +1823,7 @@ function directoranalytics() {
           if (v <= 0) return
           const name = truncate(chartLabels[idx])
 
-          // For pie, avoid drawing on very tiny slices (it will be unreadable).
+          // For pie/donut, avoid drawing on very tiny slices (it will be unreadable).
           if ((type === 'pie' || type === 'doughnut') && pct < 2) return
 
           const labelValue = isAmountChart ? formatInCrore(v) : String(v)
@@ -1813,60 +1904,74 @@ function directoranalytics() {
         }
       : {
           label: isAmountChart ? 'Amount' : 'Record Count',
-          data: chartData.values,
-          backgroundColor: colors,
+          data: renderedDatasetValues,
+          backgroundColor: chartType === 'area'
+            ? colors.map((color) => `${color}66`)
+            : colors,
           borderColor: borders,
           borderWidth: chartType === 'box' ? 2 : 1,
           borderRadius: chartType === 'box' ? 8 : 0,
           barPercentage: chartType === 'box' ? 0.6 : undefined,
-          tension: chartType === 'line' ? 0.3 : 0,
-          fill: chartType === 'line' ? false : undefined,
+          tension: chartType === 'line' || chartType === 'area' ? 0.3 : 0,
+          fill: chartType === 'area' ? true : chartType === 'line' ? false : undefined,
         }
     chartInstanceRef.current = new Chart(ctx, {
       type: chartTypeToRender,
       data: {
-        labels: chartData.labels.map(label => getFirstTwoWords(label)),
-        datasets: [dataset],
+        labels: renderedDisplayLabels,
+        datasets: [{
+          ...dataset,
+          fullLabels: renderedFullLabels, // Store full labels for tooltips
+        }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        indexAxis: chartType === 'funnel' ? 'y' : 'x',
         onClick: (evt, elements) => {
           if (!elements || elements.length === 0) return
           const activeElement = elements[0]
-          const label = chartData.labels[activeElement.index]
+          const label = renderedFullLabels[activeElement.index]
           handleChartClick(label)
         },
-        scales: chartTypeToRender === 'pie' || chartTypeToRender === 'treemap'
+        scales: chartTypeToRender === 'pie' || chartTypeToRender === 'doughnut' || chartTypeToRender === 'treemap'
           ? {}
           : {
               y: {
-                beginAtZero: true,
-                ticks: { color: '#374151', font: { size: 12 }, callback: (value) => (isAmountChart ? formatInCrore(Number(value)) : value) },
-                title: { display: true, text: isAmountChart ? 'Amount (cr)' : 'Count', color: '#374151' },
+                beginAtZero: chartType !== 'funnel',
+                ticks: chartType === 'funnel'
+                  ? { color: '#374151', font: { size: 12 } }
+                  : { color: '#374151', font: { size: 12 }, callback: (value) => (isAmountChart ? formatInCrore(Number(value)) : value) },
+                title: { display: true, text: chartType === 'funnel' ? 'Category' : (isAmountChart ? 'Amount (cr)' : 'Count'), color: '#374151' },
               },
               x: {
                 ticks: { 
                   color: '#374151', 
                   font: { size: 12 },
-                  callback: function(value, index) {
-                    const label = this.getLabelForValue(value)
-                    return getFirstTwoWords(label)
-                  }
+                  display: chartType !== 'funnel',
+                  callback: chartType === 'funnel'
+                    ? (value) => (isAmountChart ? formatInCrore(Number(value)) : value)
+                    : function(value) {
+                        const label = this.getLabelForValue(value)
+                        return getFirstTwoWords(label)
+                      }
                 },
-                title: { display: true, text: 'Category', color: '#374151' },
+                grid: { display: chartType !== 'funnel' },
+                title: { display: chartType !== 'funnel', text: chartType === 'funnel' ? (isAmountChart ? 'Amount (cr)' : 'Count') : 'Category', color: '#374151' },
               },
             },
         plugins: {
-          legend: { display: chartTypeToRender === 'pie' },
+          legend: { display: chartTypeToRender === 'pie' || chartTypeToRender === 'doughnut' },
           tooltip: {
             enabled: true,
             callbacks: {
               // Single tooltip line with name + value + percentage.
               label: (context) => {
                 const idx = context.dataIndex ?? 0
-                const name = chartData.labels?.[idx] ?? context.label ?? 'Unknown'
-                const v = Number(chartData.values?.[idx] ?? context.raw?.v ?? context.raw?.value ?? context.parsed?.v ?? 0)
+                // Use full label from dataset instead of truncated label
+                const fullLabel = chartInstanceRef.current.data.datasets[0]?.fullLabels?.[idx]
+                const name = fullLabel ?? renderedFullLabels?.[idx] ?? context.label ?? 'Unknown'
+                const v = Number(renderedValues?.[idx] ?? context.raw?.v ?? context.raw?.value ?? context.parsed?.v ?? 0)
                 const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
                 return `${name}: ${isAmountChart ? formatInCrore(v) : v} (${pct.toFixed(1)}%)`
               },
@@ -1910,7 +2015,7 @@ function directoranalytics() {
       .forEach((name) => {
         const normalized = normalizeValue(name)
         if (!seen.has(normalized)) {
-          seen.set(normalized, name)
+          seen.set(normalized, name.toUpperCase())
         }
       })
     return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
@@ -2045,7 +2150,7 @@ function directoranalytics() {
         dataIndex: 'project_co_ordinator',
         title: 'Project Co-ordinator',
         width: 220,
-        render: (value) => value || '-',
+        render: (value) => value ? value.toUpperCase() : '-',
       },
       {
         key: 'more',
@@ -2895,6 +3000,136 @@ function directoranalytics() {
                     )}
                   </Modal>
 
+                  <Modal
+                    title={selectedProjectName ? `Proposals for ${selectedProjectName}` : 'Not Converted to Projects'}
+                    open={notConvertedModalVisible}
+                    onCancel={() => setNotConvertedModalVisible(false)}
+                    width={1200}
+                    zIndex={9999}
+                    footer={[
+                      <Button key="close" onClick={() => setNotConvertedModalVisible(false)}>
+                        Close
+                      </Button>,
+                    ]}
+                  >
+                    <Table
+                      dataSource={getModalData()}
+                      loading={tableLoading}
+                      rowKey="id"
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        showQuickJumper: true,
+                        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} proposals`,
+                      }}
+                      columns={[
+                        {
+                          title: 'SL NO',
+                          dataIndex: 'id',
+                          key: 'id',
+                          width: 60,
+                          render: (_, __, index) => index + 1,
+                        },
+                        {
+                          title: 'Enquiry Date',
+                          dataIndex: 'enquiry_date',
+                          key: 'enquiry_date',
+                          width: 100,
+                          render: (value) => formatDate(value),
+                        },
+                        {
+                          title: 'Customer Type',
+                          dataIndex: 'customer_type',
+                          key: 'customer_type',
+                          width: 120,
+                        },
+                        {
+                          title: 'Customer Name',
+                          dataIndex: 'customer_name',
+                          key: 'customer_name',
+                          width: 150,
+                          ellipsis: true,
+                        },
+                        {
+                          title: 'Project Name',
+                          key: 'project_name',
+                          width: 180,
+                          render: (_, record) => {
+                            const projectName = record.activity && record.activity.trim() !== ''
+                              ? record.activity
+                              : (record.quote_description && record.quote_description.trim() !== ''
+                                ? record.quote_description
+                                : '-')
+                            return (
+                              <Tooltip title={projectName} placement="topLeft">
+                                <span>{projectName.length > 20 ? `${projectName.substring(0, 20)}...` : projectName}</span>
+                              </Tooltip>
+                            )
+                          },
+                        },
+                        {
+                          title: 'Proposal Given By',
+                          dataIndex: 'quotation_given_by_name',
+                          key: 'quotation_given_by_name',
+                          width: 150,
+                          ellipsis: true,
+                        },
+                        {
+                          title: 'Project Co-ordinator',
+                          key: 'project_coordinator',
+                          width: 150,
+                          render: (_, record) => {
+                            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== ''
+                              ? record.project_co_ordinator
+                              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== ''
+                                ? record.quotation_given_by_name
+                                : '-')
+                            return (
+                              <Tooltip title={coordinator} placement="topLeft">
+                                <span>{coordinator.length > 15 ? `${coordinator.substring(0, 15)}...` : coordinator}</span>
+                              </Tooltip>
+                            )
+                          },
+                        },
+                        {
+                          title: 'Quote Amount',
+                          dataIndex: 'quote_amount',
+                          key: 'quote_amount',
+                          width: 120,
+                          render: (value) => value ? formatIndianNumber(value) : '-',
+                        },
+                        {
+                          title: 'Proposal Status',
+                          dataIndex: 'proposal_status',
+                          key: 'proposal_status',
+                          width: 130,
+                          render: (value) => value ? <Tag color="blue">{value}</Tag> : '-',
+                        },
+                        {
+                          title: 'Actions',
+                          key: 'actions',
+                          width: 90,
+                          fixed: 'right',
+                          render: (_, record) => (
+                            <Space size="small">
+                              <Button
+                                size="small"
+                                type="link"
+                                onClick={() => {
+                                  setSelectedRecord(record)
+                                  setDetailModalOpen(true)
+                                  setNotConvertedModalVisible(false)
+                                }}
+                              >
+                                View
+                              </Button>
+                            </Space>
+                          ),
+                        },
+                      ]}
+                    />
+                  </Modal>
+
                   {/* Analytics Graph */}
                   <div
                     ref={graphCardRef}
@@ -2909,6 +3144,23 @@ function directoranalytics() {
                         <p className="text-slate-500 text-sm">
                           Showing {filteredData.length} records in graph form
                         </p>
+                        <div className="mt-2">
+                          <Segmented
+                            size="small"
+                            value={chartType}
+                            onChange={setChartType}
+                            options={[
+                              { value: 'bar', label: 'Bar' },
+                              { value: 'pie', label: 'Pie' },
+                              { value: 'donut', label: 'Donut' },
+                              { value: 'line', label: 'Line' },
+                              { value: 'area', label: 'Area' },
+                              { value: 'funnel', label: 'Funnel' },
+                              { value: 'box', label: 'Box' },
+                              { value: 'treemap', label: 'Treemap' },
+                            ]}
+                          />
+                        </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2" style={isGraphFullscreen ? { zIndex: 100 } : {}}>
                         {drillLevel !== 'top' && !trendCategory && (
@@ -3016,21 +3268,6 @@ function directoranalytics() {
                             Clear Trend
                           </Button>
                         )}
-                        <Select
-                          size="small"
-                          value={chartType}
-                          onChange={setChartType}
-                          getPopupContainer={(triggerNode) => triggerNode.parentElement}
-                          dropdownStyle={{ zIndex: 9999 }}
-                          options={[
-                            { value: 'bar', label: 'Bar Chart' },
-                            { value: 'pie', label: 'Pie Chart' },
-                            { value: 'line', label: 'Line Chart' },
-                            { value: 'box', label: 'Box Chart' },
-                            { value: 'treemap', label: 'Treemap' },
-                          ]}
-                          style={{ minWidth: 140 }}
-                        />
                       </div>
                     </div>
                     <div
@@ -3041,6 +3278,7 @@ function directoranalytics() {
                       }}
                     >
                       <canvas ref={chartRef} />
+
                     </div>
                   </div>
                 </div>

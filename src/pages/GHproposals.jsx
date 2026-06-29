@@ -1134,8 +1134,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
 
     if (coordinatorFilter) filtered = filtered.filter((item) => {
   const itemCoordinator = (item.project_co_ordinator || '').toString().trim().toLowerCase()
+  const itemProposalGivenBy = (item.quotation_given_by_name || '').toString().trim().toLowerCase()
   const filterCoordinator = coordinatorFilter.toString().trim().toLowerCase()
-  return itemCoordinator === filterCoordinator
+  return itemCoordinator === filterCoordinator || itemProposalGivenBy === filterCoordinator
 })
     
     if (projectCodePrefix) {
@@ -1182,7 +1183,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       } else if (statusFilter === 'pendingProjects') {
         filtered = filtered.filter(
           (item) =>
-            item.status === 'Ongoing',
+            item.status === 'Ongoing' || item.status === 'On Hold',
         )
       } else {
         // For other status filters, filter by status
@@ -1289,7 +1290,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           dataIndex: 'activity',
           title: 'Project Name',
           width: 220,
-          render: (value) => wrapWithTooltip(value, 25),
+          render: (value, record) => {
+            const projectValue = value || record.quote_description || 'No Project Name'
+            return wrapWithTooltip(projectValue, 25)
+          },
         },
         {
           key: 'customer_name',
@@ -1305,10 +1309,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           ellipsis: true,
         },
         {
-          key: 'email',
-          dataIndex: 'email',
-          title: 'Email',
-          width: 140,
+          key: 'quotation_given_by_name',
+          dataIndex: 'quotation_given_by_name',
+          title: 'Proposal Given By',
+          width: 180,
           ellipsis: true,
         },
         {
@@ -1364,7 +1368,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       width: 140,
       render: (_, record) => {
         // Don't show overdue days if project is completed
-        if (record.status === 'Completed') return '-'
+        if (record.status === 'Completed') return 'Project Completed '
 
         const overdueDays = calculateOverdueDays(
           record.delivery_date,
@@ -1410,13 +1414,22 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           dataIndex: 'project_number',
           title: 'Project Number',
           width: 140,
+          render: (value) => {
+            if (value && value.trim() !== '') {
+              return value
+            }
+            return 'Not Converted to Project'
+          },
         },
         {
           key: 'activity',
           dataIndex: 'activity',
           title: 'Project Name',
           width: 200,
-          render: (value) => wrapWithTooltip(value, 25),
+          render: (value, record) => {
+            const projectValue = value || record.quote_description || 'No Project Name'
+            return wrapWithTooltip(projectValue, 25)
+          },
         },
         {
           key: 'customer_name',
@@ -1437,6 +1450,13 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           dataIndex: 'project_co_ordinator',
           title: 'Project Co-ordinator',
           width: 180,
+          render: (value, record) => {
+            // Show project coordinator if available, otherwise show proposal given by
+            if (value && value.trim() !== '') {
+              return value
+            }
+            return record.quotation_given_by_name || '-'
+          },
         },
         {
           key: 'actions',
@@ -1694,7 +1714,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                   bordered
                   onRow={(record) => ({
                     onClick: () => openDetailModal(record),
-                    style: { cursor: 'pointer' },
+                    style: { 
+                      cursor: 'pointer',
+                      backgroundColor: record.status === 'On Hold' ? '#fff2e8' : 'transparent',
+                    },
                   })}
                 />
               </div>
@@ -1723,19 +1746,19 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           >
             View Uploads
           </Button>,
-          <Button
-            key="upload"
-            type="default"
-            disabled={!selectedRecord?.id}
-            onClick={() => {
-              if (selectedRecord?.id) {
-                closeDetailModal()
-                openUploadModalForNewProposal(selectedRecord.id)
-              }
-            }}
-          >
-            Upload
-          </Button>,
+          // <Button
+          //   key="upload"
+          //   type="default"
+          //   disabled={!selectedRecord?.id}
+          //   onClick={() => {
+          //     if (selectedRecord?.id) {
+          //       closeDetailModal()
+          //       openUploadModalForNewProposal(selectedRecord.id)
+          //     }
+          //   }}
+          // >
+          //   {/* Upload */}
+          // </Button>,
           <Button key="remarks" type="primary" onClick={() => {
             closeDetailModal()
             openRemarksModal(selectedRecord)
@@ -1918,6 +1941,65 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             </Card>
           </div>
         )}
+      </Modal>
+
+      {/* Documents Modal */}
+      <Modal
+        title="Documents"
+        open={docsModalVisible}
+        onCancel={() => setDocsModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setDocsModalVisible(false)}>Close</Button>,
+        ]}
+        width={800}
+      >
+        <Card title="Enquiry Documents" size="small" className="bg-gray-50">
+          <Table
+            size="small"
+            rowKey={(row, idx) => row?.id ?? row?.key ?? idx}
+            dataSource={projectDocs}
+            loading={docsLoading}
+            pagination={false}
+            columns={[
+              {
+                title: 'Version',
+                dataIndex: 'version',
+                key: 'version',
+                width: 80,
+                render: (v) => (v ? v : '-'),
+              },
+              {
+                title: 'Name',
+                dataIndex: 'display_name',
+                key: 'name',
+              },
+              {
+                title: 'Uploaded By',
+                dataIndex: 'uploaded_by',
+                key: 'uploaded_by',
+                width: 150,
+              },
+              {
+                title: 'Uploaded At',
+                dataIndex: 'created_at',
+                key: 'created_at',
+                width: 180,
+                render: (value) => (value ? dayjs(value).format(DISPLAY_DATE_FORMAT + ' HH:mm') : '-'),
+              },
+              {
+                title: 'View',
+                key: 'view',
+                width: 80,
+                render: (_, record) => (
+                  <Button type="link" icon={<EyeOutlined />} onClick={() => viewDocument(record)} />
+                ),
+              },
+            ]}
+          />
+          {(!docsLoading && !projectDocs.length) && (
+            <div className="text-center text-gray-500 mt-4">No enquiry documents uploaded</div>
+          )}
+        </Card>
       </Modal>
 
       {/* Upload Document Modal */}
