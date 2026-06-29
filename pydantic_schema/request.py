@@ -59,6 +59,8 @@ class ProposalBase(BaseModel):
     updated_by: Optional[str] = None
     group: Optional[str] = None
     status: Optional[str] = None
+    proposals_converted: Optional[str] = None
+    if_not_reason: Optional[str] = None
 
     class Config:
         populate_by_name = True
@@ -83,6 +85,8 @@ class CoordinatorUpdate(BaseModel):
     proposal_status: Optional[str] = None
     technical_completed_year: Optional[str] = None
     updated_by: Optional[str] = None
+    proposals_converted: Optional[str] = None
+    if_not_reason: Optional[str] = None
 
 
 # ---------------------------------------------

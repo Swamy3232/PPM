@@ -1696,6 +1696,7 @@ def get_unacknowledged_proposals_count(db: Session = Depends(get_db)) -> Dict[st
     count = db.query(func.count(Proposal.id)).filter(
         or_(
             Proposal.is_acknowledged.is_(None),
+            
         )
     ).scalar()
     
