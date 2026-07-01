@@ -16,3 +16,4 @@ minio
 python-multipart
 email-validator
 h5
+numpy
