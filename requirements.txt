@@ -9,4 +9,9 @@ uvicorn[standard]
 python-multipart
 apscheduler
 alembic
-
+uvicorn
+sqlalchemy
+psycopg2
+minio
+python-multipart
+email-validator
