@@ -9,6 +9,9 @@ from datetime import datetime
 class CustomerBase(BaseModel):
     name: str
     customer_type: Optional[str] = None
+    gst: Optional[str] = None
+    pan: Optional[str] = None
+    tan: Optional[str] = None
     address: Optional[str] = None
     email: Optional[str] = None
     phone_no: Optional[str] = None
@@ -22,6 +25,9 @@ class CustomerCreate(CustomerBase):
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
     customer_type: Optional[str] = None
+    gst: Optional[str] = None
+    pan: Optional[str] = None
+    tan: Optional[str] = None
     address: Optional[str] = None
     email: Optional[str] = None
     phone_no: Optional[str] = None

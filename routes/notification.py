@@ -52,11 +52,19 @@ def get_notifications(
     role: str,
     db: Session = Depends(get_db)
 ):
+    normalized_role = (role or '').strip().lower()
+    role_names = [normalized_role] if normalized_role else []
+
+    # Treat guest as admin-equivalent for role-based notifications.
+    if normalized_role in ['admin', 'guest', 'role']:
+        role_names = ['admin', 'guest', 'role']
+
+    filters = [Notification.user_name == user_name]
+    if role_names:
+        filters.append(Notification.user_name.in_(role_names))
+
     notifications = db.query(Notification).filter(
-        or_(
-            Notification.user_name == user_name,  # personal notifications
-            Notification.user_name == role         # role-based notifications
-        )
+        or_(*filters)
     ).order_by(Notification.created_at.desc()).all()
     response_data = []
 

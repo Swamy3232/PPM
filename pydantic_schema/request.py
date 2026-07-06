@@ -118,6 +118,7 @@ class PaymentBase(BaseModel):
     amount_claimed: Optional[str] = None
     amount_recieved: Optional[str] = None
     recieved_date: Optional[str] = None
+    description: Optional[str] = None
     tds: Optional[str] = None
     get_tds: Optional[str] = None
     ld: Optional[str] = None
@@ -126,6 +127,7 @@ class PaymentBase(BaseModel):
     project_id: Optional[int] = None
     stage_id: Optional[int] = None
     updated_by: Optional[str] = None
+    
 
 
 class PaymentCreate(PaymentBase):

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func , Boolean , TIMESTAMP
+from sqlalchemy import Column, DateTime, ARRAY, ForeignKey, Integer, String, func , Boolean , TIMESTAMP
 from sqlalchemy.orm import relationship
 from db import Base
 
@@ -120,6 +120,8 @@ class Document(Base):
     description = Column(String, nullable=True)
     url = Column(String, nullable=True)
     version = Column(String, nullable=True)
+    #attachment = Column(JSONB, nullable=True) 
+    attachment = Column(ARRAY(String), nullable=True) 
 
     project_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"))
     stage_id = Column(Integer, ForeignKey("stages.id", ondelete="SET NULL"))
@@ -150,6 +152,7 @@ class Payment(Base):
     get_tds = Column(String, nullable=True)
     ld = Column(String, nullable=True)
     bal = Column(String, nullable=True)
+    
     follow_up_status = Column(String, nullable=True)
 
     project_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"))
@@ -158,6 +161,8 @@ class Payment(Base):
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     updated_by = Column(String, nullable=True)
+    
+    
 
     proposal = relationship("Proposal", back_populates="payments")
     stage = relationship("Stage")
@@ -275,6 +280,9 @@ class Customer(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False, index=True)
     customer_type = Column(String, nullable=True)
+    gst = Column(String, nullable=True)
+    pan = Column(String, nullable=True)
+    tan = Column(String, nullable=True)
     address = Column(String, nullable=True)
     email = Column(String, nullable=True)
     phone_no = Column(String, nullable=True)

@@ -19,7 +19,7 @@ def check_delivery_notifications():
     try:
         today = date.today()
 
-        admin_users = db.query(User).filter(User.role == 'admin').all()
+        admin_users = db.query(User).filter(User.role.in_(['admin', 'guest', 'role'])).all()
         admin_names = [u.name for u in admin_users if u and u.name]
 
         # Get all incomplete proposals (not technically or financially completed)

@@ -111,7 +111,8 @@ class PaymentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     updated_by: Optional[str] = None
-
+    description: Optional[str] = None
+    
     class Config:
         from_attributes = True
 
@@ -124,6 +125,7 @@ class DocumentResponse(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     url: Optional[str] = None
+    attachment: Optional[List[str]] = None  
     project_id: Optional[int] = None
     stage_id: Optional[int] = None
     uploaded_by: Optional[str] = None

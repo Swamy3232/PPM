@@ -376,7 +376,10 @@ def get_proposals_by_name(
         'group head': 'gh',
         'centre head': 'ch',
         'scientist': 'scientist',
-        'director': 'director'
+        'director': 'director',
+        'admin': 'admin',
+        'guest': 'admin',
+        'role': 'admin',
     }
     effective_role = role_mapping.get(effective_role, effective_role)
 
@@ -474,8 +477,8 @@ def get_proposals_by_name(
             .distinct(Proposal.id)
             .all()
         )
-    elif effective_role == 'director':
-        # Director can see all proposals
+    elif effective_role in ['director', 'admin']:
+        # Director and admin-equivalent users can see all proposals.
         proposals_query = (
             db.query(Proposal)
             .filter(Proposal.is_acknowledged == True)

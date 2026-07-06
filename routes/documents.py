@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session, Aliased
+from sqlalchemy.orm import Session
 
 from db import get_db
 from models.model import Document, Proposal, Stage
@@ -45,6 +45,7 @@ async def create_document(
     uploaded_by: Optional[str] = Form(None),
     version: Optional[str] = Form(None),
     file: UploadFile = File(...),
+    attachment: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
 
@@ -53,6 +54,13 @@ async def create_document(
 
     # Upload file to MinIO
     _, url = await upload_file_to_minio(file)
+    
+    # Upload each additional attachment to MinIO
+    attachment_urls = []
+    for att in attachment:
+        if att.filename:  # skip empty file inputs
+            _, att_url = await upload_file_to_minio(att)
+            attachment_urls.append(att_url)
 
     # Save document in DB
     document = Document(
@@ -62,6 +70,7 @@ async def create_document(
         stage_id=stage_id,
         uploaded_by=uploaded_by,
         url=url,
+        attachment=attachment_urls if attachment_urls else None, 
         version=version,
     )
     db.add(document)
@@ -95,6 +104,7 @@ async def create_document(
         name=document.name,
         description=document.description,
         url=document.url,
+        attachment=document.attachment,
         project_id=document.project_id,
         stage_id=document.stage_id,
         uploaded_by=document.uploaded_by,
@@ -102,8 +112,6 @@ async def create_document(
         created_at=document.created_at,
         updated_at=document.updated_at,
     )
-
-
 
 @router.get("/", response_model=List[DocumentResponse])
 def list_documents(db: Session = Depends(get_db)) -> List[DocumentResponse]:
@@ -121,6 +129,7 @@ def list_documents(db: Session = Depends(get_db)) -> List[DocumentResponse]:
                 name=doc.name,
                 description=doc.description,
                 url=doc.url,
+                attachment=doc.attachment, 
                 project_id=doc.project_id,
                 stage_id=doc.stage_id,
                 uploaded_by=doc.uploaded_by,
@@ -149,6 +158,7 @@ def get_document(document_id: int, db: Session = Depends(get_db)) -> DocumentRes
         name=doc.name,
         description=doc.description,
         url=doc.url,
+        attachment=doc.attachment, 
         project_id=doc.project_id,
         stage_id=doc.stage_id,
         uploaded_by=doc.uploaded_by,
