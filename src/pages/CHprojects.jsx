@@ -1844,7 +1844,8 @@ function Projects() {
               teal: 'border-teal-200 text-teal-700 bg-teal-100',
               cyan: 'border-cyan-200 text-cyan-700 bg-cyan-100',
               rose: 'border-rose-200 text-rose-700 bg-rose-100',
-              slate: 'border-slate-200 text-slate-700 bg-slate-100'
+              slate: 'border-slate-200 text-slate-700 bg-slate-100',
+              fuchsia: 'border-fuchsia-200 text-fuchsia-700 bg-fuchsia-100'  
             }
             const dotColors = {
               blue: 'bg-blue-500',

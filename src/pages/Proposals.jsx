@@ -63,6 +63,8 @@ const CUSTOMER_TYPE_OPTIONS = [
 ]
 
 const DATE_FIELD_OPTIONS = [
+  { value: 'proposals_converted', label: 'Proposals Converted' },
+  { value: 'proposals_not_converted', label: 'Proposals not Converted' },
   { value: 'enquiry_date', label: 'Enquiry Date' },
   { value: 'quote_date', label: 'Quote Date' },
   { value: 'revised_negotiated_quote_date', label: 'Revised Quote Date' },
@@ -253,6 +255,7 @@ function Proposals() {
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [currentUserRole, setCurrentUserRole] = useState('')
   const [allCustomerSuggestions, setAllCustomerSuggestions] = useState([])
   const [customerOptions, setCustomerOptions] = useState([])
   const [addressOptions, setAddressOptions] = useState([])
@@ -1093,6 +1096,9 @@ function Proposals() {
         if (parsedUser && parsedUser.name) {
           setCurrentUserName(parsedUser.name)
         }
+        if (parsedUser && parsedUser.role) {
+          setCurrentUserRole(parsedUser.role)
+        }
       }
     } catch (error) {
       console.error('Failed to read user from localStorage', error)
@@ -1336,8 +1342,18 @@ function Proposals() {
       })
     }
 
-    // Apply date range filtering
-    if (selectedDateField && startDate && endDate) {
+    // Apply date range filtering or converted status filtering
+    if (selectedDateField === 'proposals_converted') {
+      filtered = filtered.filter((item) => {
+        const value = String(item.proposals_converted || '').toLowerCase().trim()
+        return value === 'yes'
+      })
+    } else if (selectedDateField === 'proposals_not_converted') {
+      filtered = filtered.filter((item) => {
+        const value = String(item.proposals_converted || '').toLowerCase().trim()
+        return value !== 'yes'
+      })
+    } else if (selectedDateField && startDate && endDate) {
       const startOfDay = startDate.startOf('day')
       const endOfDay = endDate.endOf('day')
       
@@ -1867,28 +1883,32 @@ function Proposals() {
               icon={<EyeOutlined />}
               onClick={() => openDetailModal(record)}
             />
-            <Button
-              size="small"
-              type="link"
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
-            />
-            <Popconfirm
-              title="Confirm delete"
-              description="This action cannot be undone."
-              okText="Delete"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              cancelText="Cancel"
-              onConfirm={() => handleDelete(record)}
-            >
-              <Button
-                size="small"
-                type="link"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
-              />
-            </Popconfirm>
+            {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
+              <>
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<EditOutlined />}
+                  onClick={() => openEditModal(record)}
+                />
+                <Popconfirm
+                  title="Confirm delete"
+                  description="This action cannot be undone."
+                  okText="Delete"
+                  okButtonProps={{ danger: true, loading: deletingId === record.id }}
+                  cancelText="Cancel"
+                  onConfirm={() => handleDelete(record)}
+                >
+                  <Button
+                    size="small"
+                    type="link"
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={deletingId === record.id}
+                  />
+                </Popconfirm>
+              </>
+            )}
             {record.queries && record.queries.length > 0 && (
               <Button
                 size="small"
@@ -2301,15 +2321,17 @@ function Proposals() {
                         Search & Filters
                       </Title>
                       <div className="flex gap-2">
-                        <Button
-                          type="primary"
-                          icon={<DownloadOutlined />}
-                          size="default"
-                          onClick={handleExportExcel}
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                        >
-                          Export to Excel
-                        </Button>
+                          <Button
+                            type="primary"
+                            icon={<DownloadOutlined />}
+                            size="default"
+                            onClick={handleExportExcel}
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
+                          >
+                            Export to Excel
+                          </Button>
+
+                        {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
                         <Button
                           type="default"
                           icon={<UploadOutlined />}
@@ -2318,6 +2340,7 @@ function Proposals() {
                         >
                           Import Excel
                         </Button>
+                        )}
                         <input
                           id="excel-import-input"
                           type="file"
@@ -3098,7 +3121,9 @@ function Proposals() {
                           Proposals / Projects
                         </p>
                         <div className="flex items-center gap-4 mb-4">
-                          <ActionButtons label="Proposal / Project" onAdd={openAddModal} />
+                          {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
+                            <ActionButtons label="Proposal / Project" onAdd={openAddModal} />
+                          )}
                           <Space size="middle">
                             <Button
                               type="default"

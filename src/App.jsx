@@ -63,18 +63,19 @@ function RoleProtectedLayout({ basePath }) {
 
   const user = getStoredUser()
  const userRole = (user?.role || '').toLowerCase().trim()
+ const normalizedUserRole = userRole === 'role' ? 'guest' : userRole
 
-  // Normalize role: only allow 'admin', 'gh', 'ch', 'scientist', 'director' — default to 'gh' if unknown
+  // Normalize role: only allow 'admin', 'guest', 'gh', 'ch', 'scientist', 'director' — default to 'gh' if unknown
   const normalizedRole =
-  ['admin', 'gh', 'ch', 'scientist', 'director'].includes(userRole)
-    ? userRole
+  ['admin', 'guest', 'gh', 'ch', 'scientist', 'director'].includes(normalizedUserRole)
+    ? normalizedUserRole
     : 'gh'
   // If user is trying to access a base path that doesn't match their role → redirect
   if (normalizedRole !== basePath) {
     return <Navigate to={`/${normalizedRole}/proposals`} replace />
   }
 
-  const isAdmin = normalizedRole === 'admin'
+  const isAdmin = normalizedRole === 'admin' || normalizedRole === 'guest'
 
   // Select correct page components based on the current route base path.
   // This ensures /admin uses the admin Analytics page instead of GH analytics.
@@ -99,6 +100,10 @@ function RoleProtectedLayout({ basePath }) {
     ProposalsComponent = DirectorProposals
     // ProjectsComponent = Projects
     AnalyticsComponent = DirectorAnalytics
+  } else if (basePath === 'guest') {
+    ProposalsComponent = Proposals
+    ProjectsComponent = Projects
+    AnalyticsComponent = Analytics
   }
   // 'gh' already set as default above
 
@@ -160,6 +165,8 @@ function App() {
 
           {/* Protected Role-Based Routes */}
           <Route path="/admin/*" element={<RoleProtectedLayout basePath="admin" />} />
+          <Route path="/guest/*" element={<RoleProtectedLayout basePath="guest" />} />
+          <Route path="/role/*" element={<Navigate to="/guest/proposals" replace />} />
           <Route path="/gh/*" element={<RoleProtectedLayout basePath="gh" />} />
           <Route path="/ch/*" element={<RoleProtectedLayout basePath="ch" />} />
           <Route path="/scientist/*" element={<RoleProtectedLayout basePath="scientist" />} />

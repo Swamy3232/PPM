@@ -40,6 +40,7 @@ function Configuration({ projectRows = [] }) {
   const [editingGroup, setEditingGroup] = useState(null)
   const [selectedCentre, setSelectedCentre] = useState(null)
   const [groupForm] = Form.useForm()
+  const [currentUserRole, setCurrentUserRole] = useState('')
 
   const fetchStages = useCallback(async () => {
     setStageLoading(true)
@@ -63,6 +64,22 @@ function Configuration({ projectRows = [] }) {
     }
   }, [])
 
+  const isGuest = currentUserRole?.toLowerCase().trim() === 'guest'
+
+  useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser?.role) {
+          setCurrentUserRole(parsedUser.role)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+  }, [])
+
   const fetchCentres = useCallback(async () => {
     setCentreLoading(true)
     try {
@@ -75,10 +92,10 @@ function Configuration({ projectRows = [] }) {
       const payload = await response.json()
       const normalized = Array.isArray(payload)
         ? payload.map((item, index) => ({
-            ...item,
-            key: item.id ?? index,
-            slNo: index + 1,
-          }))
+          ...item,
+          key: item.id ?? index,
+          slNo: index + 1,
+        }))
         : []
       setCentreData(normalized)
     } catch (error) {
@@ -135,9 +152,9 @@ function Configuration({ projectRows = [] }) {
       access:
         typeof stage?.access === 'string' && stage.access
           ? stage.access
-              .split(',')
-              .map((item) => item.trim())
-              .filter(Boolean)
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
           : [],
     })
     setStageModalOpen(true)
@@ -376,115 +393,51 @@ function Configuration({ projectRows = [] }) {
   }
 
   const stageColumns = [
+    { title: 'Sl no', key: 'slNo', render: (_, __, index) => index + 1 },
+    { title: 'Stage Name', dataIndex: 'name', key: 'name' },
     {
-      title: 'Sl no',
-      key: 'slNo',
-      render: (_, __, index) => index + 1,
-    },
-    {
-      title: 'Stage Name',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: 'Access',
-      dataIndex: 'access',
-      key: 'access',
-      render: (value) => {
+      title: 'Access', dataIndex: 'access', key: 'access', render: (value) => {
         if (!value) return '-'
         if (Array.isArray(value)) return value.join(', ')
         return value
-      },
+      }
     },
-    {
-      title: 'Created At',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (value) => (value ? formatDate(value) : '-'),
-    },
-    {
+    { title: 'Created At', dataIndex: 'created_at', key: 'created_at', render: (value) => (value ? formatDate(value) : '-') },
+    ...(!isGuest ? [{
       title: 'Actions',
       key: 'actions',
       render: (_, record) => (
         <Space size="small">
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => openStageModal(record)}
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Delete stage"
-            description="This action cannot be undone."
-            okText="Delete"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleDeleteStage(record)}
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
+          <Button type="link" icon={<EditOutlined />} onClick={() => openStageModal(record)}>Edit</Button>
+          <Popconfirm title="Delete stage" description="This action cannot be undone." okText="Delete" okButtonProps={{ danger: true }} onConfirm={() => handleDeleteStage(record)}>
+            <Button type="link" danger icon={<DeleteOutlined />}>Delete</Button>
           </Popconfirm>
         </Space>
       ),
-    },
+    }] : []),
   ]
 
   const groupColumns = [
-    {
-      title: 'Sl no',
-      dataIndex: 'slNo',
-      key: 'slNo',
-    },
-    {
-      title: 'Group Name',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: 'Head',
-      dataIndex: 'head',
-      key: 'head',
-    },
-    {
-      title: 'Code',
-      dataIndex: 'code',
-      key: 'code',
-    },
-    {
+    { title: 'Sl no', dataIndex: 'slNo', key: 'slNo' },
+    { title: 'Group Name', dataIndex: 'name', key: 'name' },
+    { title: 'Head', dataIndex: 'head', key: 'head' },
+    { title: 'Code', dataIndex: 'code', key: 'code' },
+    ...(!isGuest ? [{
       title: 'Actions',
       key: 'actions',
       render: (_, record) => (
         <Space size="small">
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => openGroupModal(record)}
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Delete group"
-            description="This action cannot be undone."
-            okText="Delete"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleDeleteGroup(record)}
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
+          <Button type="link" icon={<EditOutlined />} onClick={() => openGroupModal(record)}>Edit</Button>
+          <Popconfirm title="Delete group" description="This action cannot be undone." okText="Delete" okButtonProps={{ danger: true }} onConfirm={() => handleDeleteGroup(record)}>
+            <Button type="link" danger icon={<DeleteOutlined />}>Delete</Button>
           </Popconfirm>
         </Space>
       ),
-    },
+    }] : []),
   ]
 
   const centreColumns = [
-    {
-      title: 'Sl no',
-      dataIndex: 'slNo',
-      key: 'slNo',
-    },
+    { title: 'Sl no', dataIndex: 'slNo', key: 'slNo' },
     {
       title: 'Name',
       dataIndex: 'name',
@@ -495,42 +448,20 @@ function Configuration({ projectRows = [] }) {
         </Button>
       ),
     },
-    {
-      title: 'Head',
-      dataIndex: 'head',
-      key: 'head',
-    },
-    {
-      title: 'Code',
-      dataIndex: 'code',
-      key: 'code',
-    },
-    {
+    { title: 'Head', dataIndex: 'head', key: 'head' },
+    { title: 'Code', dataIndex: 'code', key: 'code' },
+    ...(!isGuest ? [{
       title: 'Actions',
       key: 'actions',
       render: (_, record) => (
         <Space size="small">
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => openCentreModal(record)}
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Delete centre"
-            description="This action cannot be undone."
-            okText="Delete"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleDeleteCentre(record)}
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
+          <Button type="link" icon={<EditOutlined />} onClick={() => openCentreModal(record)}>Edit</Button>
+          <Popconfirm title="Delete centre" description="This action cannot be undone." okText="Delete" okButtonProps={{ danger: true }} onConfirm={() => handleDeleteCentre(record)}>
+            <Button type="link" danger icon={<DeleteOutlined />}>Delete</Button>
           </Popconfirm>
         </Space>
       ),
-    },
+    }] : []),
   ]
 
   return (
@@ -539,9 +470,11 @@ function Configuration({ projectRows = [] }) {
       <div className="rounded-3xl bg-white p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <div></div>
+           {!isGuest && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openStageModal()}>
             Add Stage
           </Button>
+           )}
         </div>
 
         <Table
@@ -560,6 +493,7 @@ function Configuration({ projectRows = [] }) {
         <div className="rounded-3xl bg-white p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div></div>
+            {!isGuest && (
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -567,6 +501,7 @@ function Configuration({ projectRows = [] }) {
             >
               Add Center
             </Button>
+            )}
           </div>
 
           <Table
@@ -594,6 +529,7 @@ function Configuration({ projectRows = [] }) {
               <Button onClick={handleBackToCentres}>
                 Go Back
               </Button>
+               {!isGuest && (
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
@@ -601,6 +537,7 @@ function Configuration({ projectRows = [] }) {
               >
                 Add Group
               </Button>
+               )}
             </Space>
           </div>
 

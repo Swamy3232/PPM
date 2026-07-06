@@ -50,9 +50,9 @@ const wrapWithTooltip = (content, maxLength = 30) => {
   if (!content || content === '-' || typeof content !== 'string') {
     return content || '-'
   }
-  
+
   const displayText = content.length > maxLength ? content.substring(0, maxLength) + '...' : content
-  
+
   return (
     <Tooltip title={content} placement="topLeft">
       <span>{displayText}</span>
@@ -214,7 +214,7 @@ function ScientistProposals() {
     ongoingProjects: 0
   })
   const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false)
-  
+
   // Remarks modal state
   const [remarksModalOpen, setRemarksModalOpen] = useState(false)
   const [remarksDescription, setRemarksDescription] = useState('')
@@ -261,6 +261,9 @@ function ScientistProposals() {
   const [enquiryVersionInput, setEnquiryVersionInput] = useState('')
   const [proposalVersionInput, setProposalVersionInput] = useState('')
 
+  const [enquiryAttachments, setEnquiryAttachments] = useState([])
+  const [proposalAttachments, setProposalAttachments] = useState([])
+
   // Queries/Remarks state
   const [queriesModalOpen, setQueriesModalOpen] = useState(false)
   const [queriesData, setQueriesData] = useState([])
@@ -270,7 +273,7 @@ function ScientistProposals() {
   const [selectedQuery, setSelectedQuery] = useState(null)
   const [responseText, setResponseText] = useState('')
   const [responseLoading, setResponseLoading] = useState(false)
-  
+
   // Store unresponded query counts for each project to conditionally show Queries button
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
 
@@ -283,83 +286,85 @@ function ScientistProposals() {
       { name: 'customer_name', label: 'Customer Name', width: 120 },
       { name: 'dispatch_date', label: 'Dispatch Date', width: 100 },
     ]
-    
+
     // Add "Proposal Given By" column only for proposals (items without project number)
     if (isProposal) {
       baseFields.push({ name: 'quotation_given_by_name', label: 'Proposal Given By', width: 120 })
     }
-    
+
     baseFields.push({ name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 120 })
-    
+
     return baseFields
   }
-  
+
   const TABLE_FIELDS = [
     ...getTableFields(false), // Default for projects
-    { name: 'latest_query', label: 'Latest Query', width: 200, render: (text, record) => {
-      const allQueries = record.queries || []
-      const unrespondedQueries = allQueries.filter(q => !q.respond_to_remarks) || []
-      
-      // If no queries at all, return null (don't show anything)
-      if (allQueries.length === 0) {
-        return null
-      }
-      
-      if (unrespondedQueries.length === 0) {
-        // Show Query History button when there are queries but all are responded
-        // Check if any query is within first two days
-        const hasRecentQuery = allQueries.some(query => {
-          const queryDate = dayjs(query.updated_at)
-          const twoDaysAgo = dayjs().subtract(2, 'day').startOf('day')
-          return queryDate.isAfter(twoDaysAgo)
+    {
+      name: 'latest_query', label: 'Latest Query', width: 200, render: (text, record) => {
+        const allQueries = record.queries || []
+        const unrespondedQueries = allQueries.filter(q => !q.respond_to_remarks) || []
+
+        // If no queries at all, return null (don't show anything)
+        if (allQueries.length === 0) {
+          return null
+        }
+
+        if (unrespondedQueries.length === 0) {
+          // Show Query History button when there are queries but all are responded
+          // Check if any query is within first two days
+          const hasRecentQuery = allQueries.some(query => {
+            const queryDate = dayjs(query.updated_at)
+            const twoDaysAgo = dayjs().subtract(2, 'day').startOf('day')
+            return queryDate.isAfter(twoDaysAgo)
+          })
+
+          return (
+            <Button
+              size="small"
+              type="link"
+              onClick={(e) => {
+                e.stopPropagation()
+                openQueriesModal(record)
+              }}
+              style={{
+                color: hasRecentQuery ? '#ff4d4f' : '#1890ff',
+                fontWeight: hasRecentQuery ? 'bold' : 'normal'
+              }}
+            >
+              Query History
+            </Button>
+          )
+        }
+
+        // Sort by date (newest to oldest) and get the latest
+        const sortedQueries = unrespondedQueries.sort((a, b) => {
+          const dateA = new Date(a.updated_at)
+          const dateB = new Date(b.updated_at)
+          return dateB - dateA
         })
-        
+
+        const latestQuery = sortedQueries[0]
+        const queryDate = dayjs(latestQuery.updated_at)
+        const today = dayjs().startOf('day')
+        const yesterday = dayjs().subtract(1, 'day').startOf('day')
+        let dateLabel = queryDate.format('DD-MM-YYYY')
+
+        if (queryDate.isSame(today, 'day')) {
+          dateLabel = 'Today ' + queryDate.format('HH:mm')
+        } else if (queryDate.isSame(yesterday, 'day')) {
+          dateLabel = 'Yesterday ' + queryDate.format('HH:mm')
+        }
+
         return (
-          <Button
-            size="small"
-            type="link"
-            onClick={(e) => {
-              e.stopPropagation()
-              openQueriesModal(record)
-            }}
-            style={{
-              color: hasRecentQuery ? '#ff4d4f' : '#1890ff',
-              fontWeight: hasRecentQuery ? 'bold' : 'normal'
-            }}
-          >
-            Query History
-          </Button>
+          <div style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
+            <div>{latestQuery.remarks_description}</div>
+            <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
+              From: {latestQuery.from_} | {dateLabel}
+            </div>
+          </div>
         )
       }
-      
-      // Sort by date (newest to oldest) and get the latest
-      const sortedQueries = unrespondedQueries.sort((a, b) => {
-        const dateA = new Date(a.updated_at)
-        const dateB = new Date(b.updated_at)
-        return dateB - dateA
-      })
-      
-      const latestQuery = sortedQueries[0]
-      const queryDate = dayjs(latestQuery.updated_at)
-      const today = dayjs().startOf('day')
-      const yesterday = dayjs().subtract(1, 'day').startOf('day')
-      let dateLabel = queryDate.format('DD-MM-YYYY')
-      
-      if (queryDate.isSame(today, 'day')) {
-        dateLabel = 'Today ' + queryDate.format('HH:mm')
-      } else if (queryDate.isSame(yesterday, 'day')) {
-        dateLabel = 'Yesterday ' + queryDate.format('HH:mm')
-      }
-      
-      return (
-        <div style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
-          <div>{latestQuery.remarks_description}</div>
-          <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-            From: {latestQuery.from_} | {dateLabel}
-          </div>
-        </div>
-      )
-    }},
+    },
   ]
 
   // Scientist can only edit certain fields
@@ -391,7 +396,7 @@ function ScientistProposals() {
       const rawUser = window.localStorage.getItem('ppm_user')
       if (rawUser) {
         const parsedUser = JSON.parse(rawUser)
-        name = parsedUser.name || ''
+        name = (parsedUser.name || '').trim() 
         setCurrentUserName(name)
         setCurrentUserCenter(parsedUser.center || '')
         setCurrentUserGroup(parsedUser.group || '')
@@ -480,7 +485,7 @@ function ScientistProposals() {
       const rawUser = window.localStorage.getItem('ppm_user')
       if (!rawUser) return
       const parsedUser = JSON.parse(rawUser)
-      const name = parsedUser.name
+      const name = (parsedUser.name || '').trim()
       if (!name) return
 
       const encodedName = encodeURIComponent(name)
@@ -547,31 +552,31 @@ function ScientistProposals() {
       })
       if (response.ok) {
         const data = await response.json()
-                
+
         let filteredData = Array.isArray(data) ? data : []
-        
+
         // If user is scientist, filter by their name (trim spaces and case-insensitive)
         if (userRole === 'scientist' && currentUserName) {
           const cleanCurrentName = currentUserName.trim().toLowerCase()
           console.log('🔍 Filtering for scientist:', cleanCurrentName)
-          
+
           filteredData = filteredData.filter(item => {
             const cleanCoordinatorName = (item.project_co_ordinator || '').trim().toLowerCase()
             const cleanQuotationName = (item.quotation_given_by_name || '').trim().toLowerCase()
             const isProject = Boolean(item.project_number?.trim())
-            
-            console.log('📋 Project:', { 
-              id: item.id, 
+
+            console.log('📋 Project:', {
+              id: item.id,
               project_number: item.project_number,
               isProject,
-              coordinator: item.project_co_ordinator, 
+              coordinator: item.project_co_ordinator,
               quotation_giver: item.quotation_given_by_name,
-              cleanCoordinatorName, 
+              cleanCoordinatorName,
               cleanQuotationName,
               coordinator_matches: cleanCoordinatorName === cleanCurrentName,
               quotation_matches: cleanQuotationName === cleanCurrentName
             })
-            
+
             // For projects: only show if user is coordinator
             // For proposals/all: show if user is coordinator OR gave quotation
             if (isProject) {
@@ -580,12 +585,12 @@ function ScientistProposals() {
               return cleanCoordinatorName === cleanCurrentName || cleanQuotationName === cleanCurrentName
             }
           })
-          
+
           console.log('✅ Filtered projects count:', filteredData.length)
         } else {
           console.log('Skipping filtering - not scientist or no username')
         }
-        
+
         const count = filteredData.length
         setUnacknowledgedCount(count)
         console.log('Final unacknowledged count:', count)
@@ -605,7 +610,7 @@ function ScientistProposals() {
       if (!response.ok) throw new Error('Unable to fetch unacknowledged proposals')
       const list = await response.json()
       let normalized = (Array.isArray(list) ? list : []).map(mapApiToUi)
-      
+
       // If user is scientist, filter by their name (trim spaces and case-insensitive)
       if (userRole === 'scientist' && currentUserName) {
         const cleanCurrentName = currentUserName.trim().toLowerCase()
@@ -613,7 +618,7 @@ function ScientistProposals() {
           const cleanCoordinatorName = (item.project_co_ordinator || '').trim().toLowerCase()
           const cleanQuotationName = (item.quotation_given_by_name || '').trim().toLowerCase()
           const isProject = Boolean(item.project_number?.trim())
-          
+
           // For projects: only show if user is coordinator
           // For proposals/all: show if user is coordinator OR gave quotation
           if (isProject) {
@@ -623,7 +628,7 @@ function ScientistProposals() {
           }
         })
       }
-      
+
       setTableData(normalized)
       setFilteredData(normalized)
     } catch (error) {
@@ -707,6 +712,8 @@ function ScientistProposals() {
     setUploadDescription('')
     setEnquiryFileToUpload(null)
     setProposalFileToUpload(null)
+    setEnquiryAttachments([])
+    setProposalAttachments([])
     setShowVersionEditor(false)
 
     const enquiryStage = stageConfig.find(
@@ -748,8 +755,35 @@ function ScientistProposals() {
     setUploadModalVisible(false)
     setEnquiryFileToUpload(null)
     setProposalFileToUpload(null)
+    setEnquiryAttachments([])
+    setProposalAttachments([])
     setShowVersionEditor(false)
   }, [])
+
+  const handleAddEnquiryAttachments = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length) {
+      setEnquiryAttachments((prev) => [...prev, ...files])
+    }
+    e.target.value = '' // allow re-selecting the same file later
+  }
+
+  const handleRemoveEnquiryAttachment = (index) => {
+    setEnquiryAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleAddProposalAttachments = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length) {
+      setProposalAttachments((prev) => [...prev, ...files])
+    }
+    e.target.value = ''
+  }
+
+  const handleRemoveProposalAttachment = (index) => {
+    setProposalAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
 
   const handleUploadBothDocuments = useCallback(async () => {
     if (!uploadProjectId) {
@@ -794,7 +828,7 @@ function ScientistProposals() {
       return String(maxVersion + 1)
     }
 
-    const uploadSingleDoc = async ({ file, stageId, name, version }) => {
+    const uploadSingleDoc = async ({ file, stageId, name, version, attachment = [] }) => {
       const formData = new FormData()
       formData.append('name', name)
       formData.append('description', uploadDescription.trim())
@@ -803,6 +837,10 @@ function ScientistProposals() {
       formData.append('uploaded_by', uploader)
       formData.append('version', version)
       formData.append('file', file)
+
+      attachment.forEach((att) => {
+        formData.append('attachment', att)
+      })
 
       const res = await fetch(`${API_BASE_URL}/documents/`, {
         method: 'POST',
@@ -827,6 +865,7 @@ function ScientistProposals() {
             stageId: enquiryStage.id,
             name: 'Enquiry',
             version: enquiryVersion,
+            attachment: enquiryAttachments,
           }),
         )
       }
@@ -840,6 +879,7 @@ function ScientistProposals() {
             stageId: proposalStage.id,
             name: 'Proposal',
             version: proposalVersion,
+            attachment: proposalAttachments,
           }),
         )
       }
@@ -865,6 +905,8 @@ function ScientistProposals() {
     showVersionEditor,
     enquiryVersionInput,
     proposalVersionInput,
+    enquiryAttachments,      
+    proposalAttachments,
     closeUploadModal,
     fetchProjectDocuments,
   ])
@@ -893,18 +935,18 @@ function ScientistProposals() {
 
     try {
       console.log('Loading Excel file with react-excel-renderer:', url)
-      
+
       // Fetch the Excel file
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Excel file: ${response.status}`)
       }
-      
+
       const blob = await response.blob()
-      
+
       // Use react-excel-renderer to parse the file
       const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      
+
       ExcelRenderer(file, (err, resp) => {
         if (err) {
           console.error('ExcelRenderer error:', err)
@@ -914,18 +956,18 @@ function ScientistProposals() {
           console.log('ExcelRenderer success:', resp)
           console.log('Rows structure:', resp.rows?.[0])
           console.log('Cols structure:', resp.cols)
-          
+
           // Check if multiple sheets are available
           if (resp.sheets && resp.sheets.length > 1) {
             console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
           }
-          
+
           setExcelRendererData(resp)
           setActiveSheetIndex(0)
           setExcelRendererLoading(false)
         }
       })
-      
+
     } catch (error) {
       console.error('Error loading Excel file:', error)
       setExcelRendererError(`Error loading Excel file: ${error.message}`)
@@ -940,15 +982,15 @@ function ScientistProposals() {
 
     try {
       console.log('Loading Word document with mammoth.js:', url)
-      
+
       // Fetch the Word document
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Word document: ${response.status}`)
       }
-      
+
       const arrayBuffer = await response.arrayBuffer()
-      
+
       // Use mammoth.js to convert Word document to HTML
       const result = await mammoth.convertToHtml(
         { arrayBuffer: arrayBuffer },
@@ -963,11 +1005,11 @@ function ScientistProposals() {
           ]
         }
       )
-      
+
       console.log('Mammoth.js conversion success:', result)
       setWordDocumentContent(result.value)
       setWordDocumentLoading(false)
-      
+
     } catch (error) {
       console.error('Error loading Word document:', error)
       setWordDocumentError(`Error loading Word document: ${error.message}`)
@@ -991,7 +1033,7 @@ function ScientistProposals() {
   useEffect(() => {
     const currentUrl = viewDocumentUrl || ''
     if (!currentUrl) return
-    
+
     const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
     const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
     const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
@@ -1022,44 +1064,44 @@ function ScientistProposals() {
         headers: { accept: 'application/json' },
       })
       if (!response.ok) return
-      
+
       const allQueries = await response.json()
       if (!Array.isArray(allQueries)) return
-      
+
       // Count unresponded queries per project and attach queries to records
       const counts = {}
       const queriesByProject = {}
-      
+
       allQueries.forEach(query => {
         const projectId = String(query.project_id)
-        
+
         // Group queries by project
         if (!queriesByProject[projectId]) {
           queriesByProject[projectId] = []
         }
         queriesByProject[projectId].push(query)
-        
+
         // Count all unresponded queries for proposals view (not just queries sent TO scientist)
         if (!query.respond_to_remarks) {
           counts[projectId] = (counts[projectId] || 0) + 1
         }
       })
-      
+
       // Attach queries to table data
-      setTableData(prevData => 
+      setTableData(prevData =>
         prevData.map(record => ({
           ...record,
           queries: queriesByProject[String(record.id)] || []
         }))
       )
-      
-      setFilteredData(prevData => 
+
+      setFilteredData(prevData =>
         prevData.map(record => ({
           ...record,
           queries: queriesByProject[String(record.id)] || []
         }))
       )
-      
+
       setUnrespondedQueryCounts(counts)
     } catch (error) {
       console.error('Error fetching query counts:', error)
@@ -1081,20 +1123,20 @@ function ScientistProposals() {
     setDetailModalOpen(false)
     setSelectedRecord(null)
   }, [])
-  
+
   // Remarks modal functions
   const openRemarksModal = useCallback((record) => {
     setSelectedRecord(record)
     setRemarksModalOpen(true)
   }, [])
-  
+
   const closeRemarksModal = useCallback(() => {
     setRemarksModalOpen(false)
     setSelectedRecord(null)
     setRemarksDescription('')
     setRemarksTarget('admin')
   }, [])
-  
+
   const handleRemarksSubmit = async () => {
     if (!selectedRecord?.id) {
       message.error('No record selected')
@@ -1107,7 +1149,7 @@ function ScientistProposals() {
     }
 
     setRemarksLoading(true)
-    
+
     try {
       const payload = {
         from_: currentUserName || 'Scientist',
@@ -1119,7 +1161,7 @@ function ScientistProposals() {
 
       console.log('Sending payload:', payload)
       console.log('API URL:', `${API_BASE_URL}/Remarkss/`)
-      
+
       const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
         method: 'POST',
         headers: {
@@ -1130,7 +1172,7 @@ function ScientistProposals() {
       })
 
       console.log('Response status:', response.status)
-      
+
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
         console.error('Error response:', errorBody)
@@ -1139,12 +1181,12 @@ function ScientistProposals() {
 
       message.success('Remarks submitted successfully')
       closeRemarksModal()
-      
+
       // Refresh queries data after submitting remarks
       if (selectedProjectForQueries?.id) {
         await fetchQueriesForProject(selectedProjectForQueries.id)
       }
-      
+
     } catch (error) {
       console.error('Error submitting remarks:', error)
       message.error(error.message || 'Failed to submit remarks')
@@ -1165,14 +1207,14 @@ function ScientistProposals() {
         console.error('Failed to fetch queries - Response not ok:', response.status, response.statusText)
         throw new Error('Failed to fetch queries')
       }
-      
+
       const allQueries = await response.json()
       console.log('All queries from API:', allQueries)
-      
-      const projectQueries = Array.isArray(allQueries) 
+
+      const projectQueries = Array.isArray(allQueries)
         ? allQueries.filter(query => String(query.project_id) === String(projectId))
         : []
-      
+
       console.log(`Project ${projectId}: Found ${projectQueries.length} total queries`)
       console.log('Filtered queries:', projectQueries)
       console.log('Queries details:', projectQueries.map(q => ({
@@ -1182,15 +1224,15 @@ function ScientistProposals() {
         responded: !!q.respond_to_remarks,
         date: q.updated_at
       })))
-      
+
       // Sort queries by date (newest first) for modal display
-      const sortedQueries = projectQueries.sort((a, b) => 
+      const sortedQueries = projectQueries.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )
-      
+
       console.log('Setting queries data:', sortedQueries)
       setQueriesData(sortedQueries)
-      
+
       // Count only unresponded queries for button display
       const unrespondedCount = projectQueries.filter(query => !query.respond_to_remarks).length
       console.log(`Unresponded count: ${unrespondedCount}`)
@@ -1206,18 +1248,18 @@ function ScientistProposals() {
 
   const openQueriesModal = useCallback(async (record) => {
     console.log('openQueriesModal called with record:', record)
-    
+
     // Use existing queries data from record instead of fetching again
     const projectQueries = record.queries || []
     console.log('Using existing queries from record:', projectQueries)
-    
+
     // Check if queries exist
     if (!projectQueries || projectQueries.length === 0) {
       console.log('No queries found for this project')
       message.info('No queries found for this project')
       return
     }
-    
+
     // Sort queries by date (newest first) for modal display
     const sortedQueries = projectQueries.sort((a, b) => {
       try {
@@ -1229,14 +1271,14 @@ function ScientistProposals() {
         return 0
       }
     })
-    
+
     console.log('Setting queries data:', sortedQueries)
     setQueriesData(sortedQueries)
-    
+
     setSelectedProjectForQueries(record)
     console.log('About to set modal open to true')
     setQueriesModalOpen(true)
-    
+
     console.log('openQueriesModal completed - modal should be visible')
   }, [])
 
@@ -1276,7 +1318,7 @@ function ScientistProposals() {
       }
 
       console.log('Sending update payload:', payload)
-      
+
       const response = await fetch(`${API_BASE_URL}/Remarkss/${selectedQuery.id}`, {
         method: 'PUT',
         headers: {
@@ -1287,7 +1329,7 @@ function ScientistProposals() {
       })
 
       console.log('Response status:', response.status)
-      
+
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
         console.error('Error response:', errorBody)
@@ -1400,17 +1442,17 @@ function ScientistProposals() {
 
       try {
         const normalized = searchValue.trim().toLowerCase()
-        
+
         // Find the selected customer in allCustomerSuggestions
         const selectedCustomer = allCustomerSuggestions.find(
           (customer) => customer.name === currentName
         )
-        
+
         if (selectedCustomer && selectedCustomer.addresses) {
-          const addresses = Array.isArray(selectedCustomer.addresses) 
-            ? selectedCustomer.addresses 
+          const addresses = Array.isArray(selectedCustomer.addresses)
+            ? selectedCustomer.addresses
             : [selectedCustomer.addresses].filter(Boolean)
-          
+
           const matches = addresses
             .filter((a) => a?.toLowerCase().includes(normalized))
             .slice(0, 20)
@@ -1502,7 +1544,7 @@ function ScientistProposals() {
     payload.project_coordinator = values.quotation_given_by_name || currentUserName || ''
     payload.center = currentUserCenter || ''
     payload.group = currentUserGroup || ''
-    
+
     // Add complete user data
     const rawUser = window.localStorage.getItem('ppm_user')
     if (rawUser) {
@@ -1659,7 +1701,7 @@ function ScientistProposals() {
     console.log('Initial tableData length:', tableData.length)
     console.log('Initial filteredData length:', filteredData.length)
     console.log('Current statusFilter:', statusFilter)
-    
+
     let filtered = tableData
 
     if (searchText) {
@@ -1747,7 +1789,7 @@ function ScientistProposals() {
         const unrespondedQueries = record.queries?.filter(q => !q.respond_to_remarks) || []
         if (unrespondedQueries.length > 0) {
           // Sort queries by date and get the newest
-          const sortedQueries = unrespondedQueries.sort((x, y) => 
+          const sortedQueries = unrespondedQueries.sort((x, y) =>
             new Date(y.updated_at).getTime() - new Date(x.updated_at).getTime()
           )
           const latestQuery = sortedQueries[0]
@@ -1765,12 +1807,12 @@ function ScientistProposals() {
         console.log(`Project ${record.project_number}: No date - using oldest`)
         return new Date(0).getTime()
       }
-      
+
       const dateA = getLatestDate(a)
       const dateB = getLatestDate(b)
-      
+
       console.log(`Comparing: ${a.project_number} (${dateA}) vs ${b.project_number} (${dateB}) - Result: ${dateB - dateA}`)
-      
+
       // Sort by date (newest first) - larger timestamp should come first
       return dateB - dateA
     })
@@ -1856,10 +1898,10 @@ function ScientistProposals() {
           title: 'Project Name',
           width: 140,
           render: (_, record) => {
-            const projectName = record.activity && record.activity.trim() !== '' 
-              ? record.activity 
-              : (record.quote_description && record.quote_description.trim() !== '' 
-                ? record.quote_description 
+            const projectName = record.activity && record.activity.trim() !== ''
+              ? record.activity
+              : (record.quote_description && record.quote_description.trim() !== ''
+                ? record.quote_description
                 : '-')
             return wrapWithTooltip(projectName, 30)
           },
@@ -1885,10 +1927,10 @@ function ScientistProposals() {
           width: 120,
           ellipsis: true,
           render: (_, record) => {
-            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== '' 
-              ? record.project_co_ordinator 
-              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
-                ? record.quotation_given_by_name 
+            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== ''
+              ? record.project_co_ordinator
+              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== ''
+                ? record.quotation_given_by_name
                 : '-')
             return wrapWithTooltip(coordinator, 25)
           },
@@ -1910,10 +1952,10 @@ function ScientistProposals() {
                     openQueriesModal(record)
                   }}
                   style={{
-                    color: record.queries?.some(query => 
+                    color: record.queries?.some(query =>
                       dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                     ) ? '#ff4d4f' : '#1890ff',
-                    fontWeight: record.queries?.some(query => 
+                    fontWeight: record.queries?.some(query =>
                       dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                     ) ? 'bold' : 'normal'
                   }}
@@ -1993,10 +2035,10 @@ function ScientistProposals() {
         return {
           ...baseColumn,
           render: (_, record) => {
-            const projectName = record.activity && record.activity.trim() !== '' 
-              ? record.activity 
-              : (record.quote_description && record.quote_description.trim() !== '' 
-                ? record.quote_description 
+            const projectName = record.activity && record.activity.trim() !== ''
+              ? record.activity
+              : (record.quote_description && record.quote_description.trim() !== ''
+                ? record.quote_description
                 : '-')
             return wrapWithTooltip(projectName, 30)
           }
@@ -2007,10 +2049,10 @@ function ScientistProposals() {
         return {
           ...baseColumn,
           render: (_, record) => {
-            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== '' 
-              ? record.project_co_ordinator 
-              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== '' 
-                ? record.quotation_given_by_name 
+            const coordinator = record.project_co_ordinator && record.project_co_ordinator.trim() !== ''
+              ? record.project_co_ordinator
+              : (record.quotation_given_by_name && record.quotation_given_by_name.trim() !== ''
+                ? record.quotation_given_by_name
                 : '-')
             return wrapWithTooltip(coordinator, 25)
           }
@@ -2031,8 +2073,8 @@ function ScientistProposals() {
 
       return {
         ...baseColumn,
-        render: field.render ?? (dateFields.has(field.name) 
-          ? (value) => formatDate(value) 
+        render: field.render ?? (dateFields.has(field.name)
+          ? (value) => formatDate(value)
           : (value) => wrapWithTooltip(value, field.width ? Math.floor(field.width / 8) : 30)),
       }
     })
@@ -2093,26 +2135,26 @@ function ScientistProposals() {
           <Space size="small">
             {/* Show Queries button if there are any queries for this project */}
             {record.queries && record.queries.length > 0 && (
-                <Button
-                  size="small"
-                  type="link"
-                  icon={<MessageOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openQueriesModal(record)
-                  }}
-                  style={{
-                    color: record.queries?.some(query => 
-                      dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                    ) ? '#ff4d4f' : '#1890ff',
-                    fontWeight: record.queries?.some(query => 
-                      dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                    ) ? 'bold' : 'normal'
-                  }}
-                >
-                  Queries
-                </Button>
-              )}
+              <Button
+                size="small"
+                type="link"
+                icon={<MessageOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openQueriesModal(record)
+                }}
+                style={{
+                  color: record.queries?.some(query =>
+                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
+                  ) ? '#ff4d4f' : '#1890ff',
+                  fontWeight: record.queries?.some(query =>
+                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
+                  ) ? 'bold' : 'normal'
+                }}
+              >
+                Queries
+              </Button>
+            )}
             <Button
               size="small"
               type="link"
@@ -2562,7 +2604,7 @@ function ScientistProposals() {
           <div className="grid gap-4 md:grid-cols-2">
             {ALL_FIELDS.filter((f) => {
               if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
-              
+
               // For proposals, only allow editing proposal_status and co_ordinator_remarks
               const isProject = Boolean(editingRecord?.project_number?.toString().trim())
               if (isProject) {
@@ -2572,7 +2614,7 @@ function ScientistProposals() {
                 // This is a proposal - only allow these fields
                 return ['proposal_status', 'co_ordinator_remarks', 'updated_by'].includes(f.name)
               }
-              
+
               return true
             }).map((field) => {
               const dateFields = [
@@ -2836,201 +2878,254 @@ function ScientistProposals() {
       </Modal>
 
       <Modal
-  title={
-    <div className="flex flex-col">
-      <span className="text-lg font-semibold text-slate-800">
-        Upload Project Documents
-      </span>
-      <span className="text-xs text-slate-400">
-        Upload enquiry and/or proposal documents with version tracking
-      </span>
-    </div>
-  }
-  open={uploadModalVisible}
-  onCancel={closeUploadModal}
-  width={900}
-  styles={{ body: { padding: "16px" } }}
-  footer={[
-    <Button key="cancel" onClick={closeUploadModal}>
-      Cancel
-    </Button>,
-    <Button
-      key="upload-selected"
-      type="primary"
-      loading={uploading}
-      className="px-6"
-      onClick={handleUploadBothDocuments}
-    >
-      Upload Documents
-    </Button>,
-  ]}
->
-  <div className="space-y-4">
+        title={
+          <div className="flex flex-col">
+            <span className="text-lg font-semibold text-slate-800">
+              Upload Project Documents
+            </span>
+            <span className="text-xs text-slate-400">
+              Upload enquiry and/or proposal documents with version tracking
+            </span>
+          </div>
+        }
+        open={uploadModalVisible}
+        onCancel={closeUploadModal}
+        width={900}
+        styles={{ body: { padding: "16px" } }}
+        footer={[
+          <Button key="cancel" onClick={closeUploadModal}>
+            Cancel
+          </Button>,
+          <Button
+            key="upload-selected"
+            type="primary"
+            loading={uploading}
+            className="px-6"
+            onClick={handleUploadBothDocuments}
+          >
+            Upload Documents
+          </Button>,
+        ]}
+      >
+        <div className="space-y-4">
 
-    {/* Info Banner */}
-    <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-700">
-      You can upload either one or both documents. Versions are automatically managed.
-    </div>
+          {/* Info Banner */}
+          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-700">
+            You can upload either one or both documents. Versions are automatically managed.
+          </div>
 
-    {/* Upload Section */}
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+          {/* Upload Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
 
-      {/* Enquiry Upload */}
-      <div className="rounded-lg border border-slate-200 p-3 bg-white w-full overflow-hidden">
-        <p className="text-sm font-semibold text-slate-700 mb-2">
-          Enquiry Document
-        </p>
-        <p className="text-xs text-slate-500 mb-2">
-          Latest uploaded version: v{latestEnquiryVersion} | Next: v{latestEnquiryVersion + 1}
-        </p>
+            {/* Enquiry Upload */}
+            <div className="rounded-lg border border-slate-200 p-3 bg-white w-full overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-slate-700 mb-0">
+                  Enquiry Document
+                </p>
+                <Tooltip title="Add attachments">
+                  <label
+                    htmlFor="enquiry-attachment-input"
+                    className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white cursor-pointer hover:bg-blue-600 transition-colors"
+                  >
+                    <PlusOutlined style={{ fontSize: 12 }} />
+                  </label>
+                </Tooltip>
+                <input
+                  id="enquiry-attachment-input"
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleAddEnquiryAttachments}
+                />
+              </div>
 
-        <div className="flex justify-center">
-  <Dragger
-    multiple={false}
-    maxCount={1}
-    className="!p-4 !border-dashed !border-blue-300 rounded-lg"
-    style={{ width: "260px" }}   // 👈 controls size
-    beforeUpload={(file) => {
-      setEnquiryFileToUpload(file)
-      return false
-    }}
-    onRemove={() => setEnquiryFileToUpload(null)}
-    fileList={
-      enquiryFileToUpload
-        ? [
-            {
-              uid: enquiryFileToUpload.uid || enquiryFileToUpload.name,
-              name: getDisplayFileName(enquiryFileToUpload.name),
-              status: "done",
-              originFileObj: enquiryFileToUpload,
-            },
-          ]
-        : []
-    }
-  >
-    <div className="flex flex-col items-center text-center">
-      <InboxOutlined className="text-xl text-blue-500 mb-1" />
-      <p className="text-sm font-medium text-slate-700 mb-0">
-        Upload
-      </p>
-      <p className="text-xs text-slate-400 mb-0">
-        PDF, DOC, DOCX
-      </p>
-    </div>
-  </Dragger>
-</div>
-      </div>
+              <p className="text-xs text-slate-500 mb-2">
+                Latest uploaded version: v{latestEnquiryVersion} | Next: v{latestEnquiryVersion + 1}
+              </p>
 
-      {/* Proposal Upload */}
-      <div className="rounded-lg border border-slate-200 p-3 bg-white w-full overflow-hidden">
-        <p className="text-sm font-semibold text-slate-700 mb-2">
-          Proposal Document
-        </p>
-        <p className="text-xs text-slate-500 mb-2">
-          Latest uploaded version: v{latestProposalVersion} | Next: v{latestProposalVersion + 1}
-        </p>
+              <div className="flex justify-center">
+                <Dragger
+                  multiple={false}
+                  maxCount={1}
+                  className="!p-4 !border-dashed !border-blue-300 rounded-lg"
+                  style={{ width: "260px" }}
+                  beforeUpload={(file) => {
+                    setEnquiryFileToUpload(file)
+                    return false
+                  }}
+                  onRemove={() => setEnquiryFileToUpload(null)}
+                  fileList={
+                    enquiryFileToUpload
+                      ? [{
+                        uid: enquiryFileToUpload.uid || enquiryFileToUpload.name,
+                        name: getDisplayFileName(enquiryFileToUpload.name),
+                        status: "done",
+                        originFileObj: enquiryFileToUpload,
+                      }]
+                      : []
+                  }
+                >
+                  <div className="flex flex-col items-center text-center">
+                    <InboxOutlined className="text-xl text-blue-500 mb-1" />
+                    <p className="text-sm font-medium text-slate-700 mb-0">Upload</p>
+                    <p className="text-xs text-slate-400 mb-0">PDF, DOC, DOCX</p>
+                  </div>
+                </Dragger>
+              </div>
 
-        <div className="flex justify-center">
-  <Dragger
-    multiple={false}
-    maxCount={1}
-    className="!p-4 !border-dashed !border-blue-300 rounded-lg"
-    style={{ width: "260px" }}   // 👈 controls size
-    beforeUpload={(file) => {
-      setProposalFileToUpload(file)
-      return false
-    }}
-    onRemove={() => setProposalFileToUpload(null)}
-    fileList={
-      proposalFileToUpload
-        ? [
-            {
-              uid: proposalFileToUpload.uid || proposalFileToUpload.name,
-              name: getDisplayFileName(proposalFileToUpload.name),
-              status: "done",
-              originFileObj: proposalFileToUpload,
-            },
-          ]
-        : []
-    }
-  >
-    <div className="flex flex-col items-center text-center">
-      <InboxOutlined className="text-xl text-blue-500 mb-1" />
-      <p className="text-sm font-medium text-slate-700 mb-0">
-        Upload
-      </p>
-      <p className="text-xs text-slate-400 mb-0">
-        PDF, DOC, DOCX
-      </p>
-    </div>
-  </Dragger>
-</div>
-      </div>
-    </div>
+              {enquiryAttachments.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {enquiryAttachments.map((file, index) => (
+                    <Tag
+                      key={`${file.name}-${index}`}
+                      closable
+                      onClose={() => handleRemoveEnquiryAttachment(index)}
+                    >
+                      {getDisplayFileName(file.name, 24)}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+            </div>
 
-    <div className="flex items-center justify-between w-full">
-      <p className="text-xs text-slate-500">
-        Version auto-increments by default.
-      </p>
-      <Button type="link" onClick={() => setShowVersionEditor((prev) => !prev)}>
-        {showVersionEditor ? 'Hide Version Change' : 'Change Version'}
-      </Button>
-    </div>
+            
+            {/* Proposal Upload */}
+            <div className="rounded-lg border border-slate-200 p-3 bg-white w-full overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-slate-700 mb-0">
+                  Proposal Document
+                </p>
+                <Tooltip title="Add attachments">
+                  <label
+                    htmlFor="proposal-attachment-input"
+                    className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white cursor-pointer hover:bg-blue-600 transition-colors"
+                  >
+                    <PlusOutlined style={{ fontSize: 12 }} />
+                  </label>
+                </Tooltip>
+                <input
+                  id="proposal-attachment-input"
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleAddProposalAttachments}
+                />
+              </div>
 
-    {showVersionEditor && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-        <div>
-          <label className="text-xs text-slate-500 mb-1 block">Enquiry Version</label>
-          <Input
-            value={enquiryVersionInput}
-            onChange={(e) => setEnquiryVersionInput(e.target.value)}
-            placeholder={`Default: ${latestEnquiryVersion + 1}`}
-          />
+              <p className="text-xs text-slate-500 mb-2">
+                Latest uploaded version: v{latestProposalVersion} | Next: v{latestProposalVersion + 1}
+              </p>
+
+              <div className="flex justify-center">
+                <Dragger
+                  multiple={false}
+                  maxCount={1}
+                  className="!p-4 !border-dashed !border-blue-300 rounded-lg"
+                  style={{ width: "260px" }}
+                  beforeUpload={(file) => {
+                    setProposalFileToUpload(file)
+                    return false
+                  }}
+                  onRemove={() => setProposalFileToUpload(null)}
+                  fileList={
+                    proposalFileToUpload
+                      ? [{
+                        uid: proposalFileToUpload.uid || proposalFileToUpload.name,
+                        name: getDisplayFileName(proposalFileToUpload.name),
+                        status: "done",
+                        originFileObj: proposalFileToUpload,
+                      }]
+                      : []
+                  }
+                >
+                  <div className="flex flex-col items-center text-center">
+                    <InboxOutlined className="text-xl text-blue-500 mb-1" />
+                    <p className="text-sm font-medium text-slate-700 mb-0">Upload</p>
+                    <p className="text-xs text-slate-400 mb-0">PDF, DOC, DOCX</p>
+                  </div>
+                </Dragger>
+              </div>
+
+              {proposalAttachments.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {proposalAttachments.map((file, index) => (
+                    <Tag
+                      key={`${file.name}-${index}`}
+                      closable
+                      onClose={() => handleRemoveProposalAttachment(index)}
+                    >
+                      {getDisplayFileName(file.name, 24)}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between w-full">
+            <p className="text-xs text-slate-500">
+              Version auto-increments by default.
+            </p>
+            <Button type="link" onClick={() => setShowVersionEditor((prev) => !prev)}>
+              {showVersionEditor ? 'Hide Version Change' : 'Change Version'}
+            </Button>
+          </div>
+
+          {showVersionEditor && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Enquiry Version</label>
+                <Input
+                  value={enquiryVersionInput}
+                  onChange={(e) => setEnquiryVersionInput(e.target.value)}
+                  placeholder={`Default: ${latestEnquiryVersion + 1}`}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Proposal Version</label>
+                <Input
+                  value={proposalVersionInput}
+                  onChange={(e) => setProposalVersionInput(e.target.value)}
+                  placeholder={`Default: ${latestProposalVersion + 1}`}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Section */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+
+            {/* Description */}
+            <div className="md:col-span-2 w-full">
+              <label className="text-xs text-slate-500 mb-1 block">
+                Description (Optional)
+              </label>
+              <TextArea
+                placeholder="Add a short description about the documents..."
+                value={uploadDescription}
+                onChange={(e) => setUploadDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {/* Uploaded By */}
+            <div className="w-full">
+              <label className="text-xs text-slate-500 mb-1 block">
+                Uploaded By
+              </label>
+              <Input
+                value={uploadedBy}
+                disabled
+                className="bg-slate-100 w-full"
+              />
+            </div>
+          </div>
+
         </div>
-        <div>
-          <label className="text-xs text-slate-500 mb-1 block">Proposal Version</label>
-          <Input
-            value={proposalVersionInput}
-            onChange={(e) => setProposalVersionInput(e.target.value)}
-            placeholder={`Default: ${latestProposalVersion + 1}`}
-          />
-        </div>
-      </div>
-    )}
+      </Modal>
 
-    {/* Bottom Section */}
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-
-      {/* Description */}
-      <div className="md:col-span-2 w-full">
-        <label className="text-xs text-slate-500 mb-1 block">
-          Description (Optional)
-        </label>
-        <TextArea
-          placeholder="Add a short description about the documents..."
-          value={uploadDescription}
-          onChange={(e) => setUploadDescription(e.target.value)}
-          rows={3}
-        />
-      </div>
-
-      {/* Uploaded By */}
-      <div className="w-full">
-        <label className="text-xs text-slate-500 mb-1 block">
-          Uploaded By
-        </label>
-        <Input
-          value={uploadedBy}
-          disabled
-          className="bg-slate-100 w-full"
-        />
-      </div>
-    </div>
-
-  </div>
-</Modal>
-
-        <Modal
+      <Modal
         title="Document Viewer"
         open={!!viewDocumentUrl}
         onCancel={() => {
@@ -3103,11 +3198,10 @@ function ScientistProposals() {
                             {excelRendererData.sheets.map((sheet, index) => (
                               <button
                                 key={index}
-                                className={`px-3 py-1 text-sm border-b-2 transition-colors ${
-                                  activeSheetIndex === index
-                                    ? 'border-blue-500 text-blue-600 font-medium'
-                                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                                }`}
+                                className={`px-3 py-1 text-sm border-b-2 transition-colors ${activeSheetIndex === index
+                                  ? 'border-blue-500 text-blue-600 font-medium'
+                                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                                  }`}
                                 onClick={() => setActiveSheetIndex(index)}
                               >
                                 {sheet.name || `Sheet ${index + 1}`}
@@ -3117,14 +3211,14 @@ function ScientistProposals() {
                         )}
                       </div>
                       <div className="space-x-2">
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           onClick={() => setIsFullscreen(!isFullscreen)}
                         >
                           {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                         </Button>
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           icon={<DownloadOutlined />}
                           onClick={() => window.open(currentUrl, '_blank')}
                         >
@@ -3132,7 +3226,7 @@ function ScientistProposals() {
                         </Button>
                       </div>
                     </div>
-                    
+
                     <style>{`
                       .excel-scroll-container {
                         overflow: auto;
@@ -3174,7 +3268,7 @@ function ScientistProposals() {
                       const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
                       const currentRows = currentSheet?.rows || excelRendererData.rows || []
                       const currentCols = currentSheet?.cols || excelRendererData.cols || []
-                      
+
                       return currentRows.length > 0 ? (
                         <div className="excel-scroll-container h-full">
                           <table className="excel-table">
@@ -3189,8 +3283,8 @@ function ScientistProposals() {
                               {currentRows.map((row, rowIndex) => (
                                 <tr key={rowIndex}>
                                   {row.map((cell, cellIndex) => (
-                                    <td 
-                                      key={cellIndex} 
+                                    <td
+                                      key={cellIndex}
                                       title={cell}
                                     >
                                       {cell}
@@ -3211,7 +3305,7 @@ function ScientistProposals() {
                 )
               }
             }
-            
+
             // For Word documents, use mammoth.js
             if (ext === 'docx' || ext === 'doc') {
               if (wordDocumentLoading) {
@@ -3250,14 +3344,14 @@ function ScientistProposals() {
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
                       <div className="space-x-2">
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           onClick={() => setIsFullscreen(!isFullscreen)}
                         >
                           {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                         </Button>
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           icon={<DownloadOutlined />}
                           onClick={() => window.open(currentUrl, '_blank')}
                         >
@@ -3265,7 +3359,7 @@ function ScientistProposals() {
                         </Button>
                       </div>
                     </div>
-                    <div 
+                    <div
                       className={`overflow-auto border border-gray-300 rounded-lg p-4 ${isFullscreen ? 'h-[90vh]' : 'h-[70vh]'}`}
                       dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
                     />
@@ -3273,7 +3367,7 @@ function ScientistProposals() {
                 )
               }
             }
-            
+
             // For other Office files (PowerPoint, etc.)
             return (
               <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
@@ -3331,8 +3425,8 @@ function ScientistProposals() {
         ]}
       >
         <div className="mb-4">
-          <Button 
-            type="primary" 
+          <Button
+            type="primary"
             onClick={() => {
               if (selectedProjectForQueries) {
                 closeQueriesModal()
@@ -3362,7 +3456,7 @@ function ScientistProposals() {
               key: 'remarks_description',
               ellipsis: true,
               render: (text, record) => (
-                <span style={{ 
+                <span style={{
                   color: record.respond_to_remarks ? '#52c41a' : '#ff4d4f',
                   fontWeight: record.respond_to_remarks ? 'normal' : 'bold'
                 }}>
@@ -3380,7 +3474,7 @@ function ScientistProposals() {
                 const queryDate = dayjs(value)
                 const today = dayjs().startOf('day')
                 const yesterday = dayjs().subtract(1, 'day').startOf('day')
-                
+
                 if (queryDate.isSame(today, 'day')) {
                   return 'Today ' + queryDate.format('HH:mm')
                 } else if (queryDate.isSame(yesterday, 'day')) {
@@ -3453,12 +3547,12 @@ function ScientistProposals() {
               {selectedQuery?.remarks_description || '-'}
             </div>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-2">From:</label>
             <Input value={selectedQuery?.from_ || ''} disabled />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-2">Your Response:</label>
             <TextArea
@@ -3470,7 +3564,7 @@ function ScientistProposals() {
           </div>
         </div>
       </Modal>
-      
+
       {/* Remarks Modal */}
       <Modal
         title="Create Remarks"
@@ -3493,37 +3587,37 @@ function ScientistProposals() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">From:</label>
-            <Input 
-              value={currentUserName || 'Scientist'} 
-              disabled 
-              className="w-full" 
+            <Input
+              value={currentUserName || 'Scientist'}
+              disabled
+              className="w-full"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-2">To:</label>
-            <Input 
-              value="admin" 
-              disabled 
-              className="w-full" 
+            <Input
+              value="admin"
+              disabled
+              className="w-full"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-2">Project ID:</label>
-            <Input 
-              value={selectedRecord?.id || ''} 
-              disabled 
-              className="w-full" 
+            <Input
+              value={selectedRecord?.id || ''}
+              disabled
+              className="w-full"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium mb-2">Remarks Description:</label>
-            <Input 
-              value={remarksDescription} 
+            <Input
+              value={remarksDescription}
               onChange={(e) => setRemarksDescription(e.target.value)}
-              className="w-full" 
+              className="w-full"
             />
           </div>
         </div>

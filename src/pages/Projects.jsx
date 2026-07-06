@@ -138,13 +138,13 @@ const getProjectTheme = (projectNumber) => {
 
 function Projects() {
   const apiBase = API_BASE_URL
-  
+
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentUserName, setCurrentUserName] = useState('')
   const [stageConfig, setStageConfig] = useState([])
-  
+
   // Project details state
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
@@ -174,6 +174,7 @@ function Projects() {
   const [existingDocuments, setExistingDocuments] = useState([])
   const [suggestedVersion, setSuggestedVersion] = useState('1')
   const [documentVersion, setDocumentVersion] = useState('')
+  const [currentUserRole, setCurrentUserRole] = useState('')
 
   // Edit Document
   const [editDocumentModalVisible, setEditDocumentModalVisible] = useState(false)
@@ -224,6 +225,22 @@ function Projects() {
     fetchStageConfig()
     fetchProjectPaymentStageRows()
   }, [])
+
+  useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser?.role) {
+          setCurrentUserRole(parsedUser.role)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+  }, [])
+
+  const isGuest = currentUserRole?.toLowerCase().trim() === 'guest'
 
   const fetchProjects = async () => {
     setLoading(true)
@@ -431,17 +448,17 @@ function Projects() {
 
       const sorted = Array.isArray(data)
         ? [...data].sort((a, b) => {
-            const pa = getPosition(a)
-            const pb = getPosition(b)
+          const pa = getPosition(a)
+          const pb = getPosition(b)
 
-            const paValid = pa !== null
-            const pbValid = pb !== null
+          const paValid = pa !== null
+          const pbValid = pb !== null
 
-            if (!paValid && !pbValid) return 0
-            if (!paValid) return 1
-            if (!pbValid) return -1
-            return pa - pb
-          })
+          if (!paValid && !pbValid) return 0
+          if (!paValid) return 1
+          if (!pbValid) return -1
+          return pa - pb
+        })
         : []
       setStageData(sorted)
     } catch (error) {
@@ -512,18 +529,18 @@ function Projects() {
 
     try {
       console.log('Loading Excel file with react-excel-renderer:', url)
-      
+
       // Fetch the Excel file
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Excel file: ${response.status}`)
       }
-      
+
       const blob = await response.blob()
-      
+
       // Use react-excel-renderer to parse the file
       const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      
+
       ExcelRenderer(file, (err, resp) => {
         if (err) {
           console.error('ExcelRenderer error:', err)
@@ -533,18 +550,18 @@ function Projects() {
           console.log('ExcelRenderer success:', resp)
           console.log('Rows structure:', resp.rows?.[0])
           console.log('Cols structure:', resp.cols)
-          
+
           // Check if multiple sheets are available
           if (resp.sheets && resp.sheets.length > 1) {
             console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
           }
-          
+
           setExcelRendererData(resp)
           setActiveSheetIndex(0)
           setExcelRendererLoading(false)
         }
       })
-      
+
     } catch (error) {
       console.error('Error loading Excel file:', error)
       setExcelRendererError(`Error loading Excel file: ${error.message}`)
@@ -559,15 +576,15 @@ function Projects() {
 
     try {
       console.log('Loading Word document with mammoth.js:', url)
-      
+
       // Fetch the Word document
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Word document: ${response.status}`)
       }
-      
+
       const arrayBuffer = await response.arrayBuffer()
-      
+
       // Use mammoth.js to convert Word document to HTML
       const result = await mammoth.convertToHtml(
         { arrayBuffer: arrayBuffer },
@@ -582,11 +599,11 @@ function Projects() {
           ]
         }
       )
-      
+
       console.log('Mammoth.js conversion success:', result)
       setWordDocumentContent(result.value)
       setWordDocumentLoading(false)
-      
+
     } catch (error) {
       console.error('Error loading Word document:', error)
       setWordDocumentError(`Error loading Word document: ${error.message}`)
@@ -699,12 +716,13 @@ function Projects() {
 
         <div class="block">
           <span class="label">Delivery date:</span>
-          <span>${data?.delivery_date || ''}</span>
+          <span>${formatDDMMYYYY(data?.delivery_date)}</span>
         </div>
 
         <table>
           <thead>
             <tr>
+              <th>Description</th>
               <th>Full / Stage Payment</th>
               <th>Invoice No and Amount</th>
               <th>Invoice Date</th>
@@ -715,16 +733,16 @@ function Projects() {
           </thead>
           <tbody>
             ${paymentsRows.length > 0
-              ? paymentsRows.map((row) => `
+          ? paymentsRows.map((row) => `
                 <tr>
-                  <td></td>
+                  <td>${row.description || ''}</td>
                   <td>${row.invoice_no || ''}</td>
                   <td>${row.invoice_date || ''}</td>
                   <td>${row.amount_recieved || ''}</td>
                   <td>${row.recieved_date || ''}</td>
                   <td>${row.bal || ''}</td>
                 </tr>`).join('')
-              : `
+          : `
                 <tr>
                   <td colspan="6" style="text-align:center;color:#666;">No payment records available</td>
                 </tr>
@@ -1032,6 +1050,7 @@ function Projects() {
 
     if (payment) {
       paymentForm.setFieldsValue({
+        description: payment.description || '',
         invoice_no: payment.invoice_no?.toString() || '',
         gross_amount: payment.gross_amount?.toString() || '',
         get_amount: payment.get_amount?.toString() || '',
@@ -1062,6 +1081,7 @@ function Projects() {
       }
 
       const payload = {
+        description: values.description || '',
         invoice_no: values.invoice_no || '',
         gross_amount: values.gross_amount || '',
         get_amount: values.get_amount || '',
@@ -1137,10 +1157,10 @@ function Projects() {
         // Search – checks project_number, activity and coordinator
         const searchLower = searchText.toLowerCase().trim()
         if (searchLower) {
-          const inNumber   = p.project_number?.toString().toLowerCase().includes(searchLower)
+          const inNumber = p.project_number?.toString().toLowerCase().includes(searchLower)
           const inActivity = p.activity?.toLowerCase().includes(searchLower)
-          const inCoord    = p.project_co_ordinator?.toLowerCase().includes(searchLower)
-          if (! (inNumber || inActivity || inCoord)) return false
+          const inCoord = p.project_co_ordinator?.toLowerCase().includes(searchLower)
+          if (!(inNumber || inActivity || inCoord)) return false
         }
 
         // Center filter
@@ -1183,7 +1203,7 @@ function Projects() {
 
   // Project type order and labels
   const projectTypeOrder = ['ISP', 'GSP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'Other']
-  
+
   const projectTypeConfig = {
     ISP: { color: 'blue', label: 'ISP Projects' },
     GSP: { color: 'indigo', label: 'GSP Projects' },
@@ -1197,6 +1217,7 @@ function Projects() {
   }
 
   const getPaymentColumns = (stage) => [
+    { title: 'Description', dataIndex: 'description', width: 200 },
     { title: 'Inv #', dataIndex: 'invoice_no', width: 120 },
     { title: 'Inv Date', dataIndex: 'invoice_date', width: 110 },
     { title: 'Gross', dataIndex: 'gross_amount', width: 110 },
@@ -1227,7 +1248,8 @@ function Projects() {
         return record.updated_by
       },
     },
-    {
+
+    ...(!isGuest ? [{
       title: 'Actions',
       width: 120,
       fixed: 'right',
@@ -1239,10 +1261,16 @@ function Projects() {
           </Popconfirm>
         </Space>
       ),
-    },
+    }] : []),
   ]
 
   const formatDate = (date) => (date ? formatDateTime(date) : 'N/A')
+
+  const formatDDMMYYYY = (dateStr) => {
+    if (!dateStr) return ''
+    const d = dayjs(dateStr, ['YYYY-MM-DD', 'DD-MM-YYYY', 'DD/MM/YYYY', dayjs.ISO_8601])
+    return d.isValid() ? d.format('DD-MM-YYYY') : dateStr
+  }
 
   const uploadProps = {
     multiple: false,
@@ -1344,6 +1372,7 @@ function Projects() {
                           return <Tag color="blue">{position}</Tag>
                         })()} {stageName || 'Stage'}
                       </Title>
+                      {!isGuest && (
                       <Space>
                         {canUpload && (
                           <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
@@ -1356,6 +1385,7 @@ function Projects() {
                           // </Button>
                         )} */}
                       </Space>
+                      )}
                     </div>
 
                     {hasDocs && (
@@ -1583,9 +1613,9 @@ function Projects() {
                                     </div>
                                   </td>
                                   <td className="border border-gray-300 px-4 py-2 text-sm">
-                                    <Tag color={detail.invoice_status === 'Paid' ? 'green' : 
-                                           detail.invoice_status === 'Pending' ? 'orange' : 
-                                           detail.invoice_status === 'Generated' ? 'blue' : 'default'}>
+                                    <Tag color={detail.invoice_status === 'Paid' ? 'green' :
+                                      detail.invoice_status === 'Pending' ? 'orange' :
+                                        detail.invoice_status === 'Generated' ? 'blue' : 'default'}>
                                       {detail.invoice_status || 'Pending'}
                                     </Tag>
                                   </td>
@@ -1607,14 +1637,16 @@ function Projects() {
                             value={projectStageTitle}
                             onChange={(e) => setProjectStageTitle(e.target.value)}
                           /> */}
-                          <Button 
-                            type="primary" 
-                            size="small" 
+                           {!isGuest && (
+                          <Button
+                            type="primary"
+                            size="small"
                             icon={<PlusOutlined />}
                             onClick={() => handleOpenStageDetailModal(stage)}
                           >
                             Add Stage
                           </Button>
+                           )}
                         </div>
                         <div className="mt-3">
                           <table className="min-w-full bg-white border border-gray-200">
@@ -1671,13 +1703,16 @@ function Projects() {
                     )}
 
                     <div>
+                      {!isGuest && (
                       <div className="flex justify-between items-center mb-3">
                         {canAddPayments && (
-                          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
-                            Add Payment
-                          </Button>
+                            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
+                              Add Payment
+                            </Button>
                         )}
                       </div>
+                      )}
+
                       {hasPay && (
                         <Table
                           dataSource={stage.payments}
@@ -1708,6 +1743,9 @@ function Projects() {
         >
           <Form form={paymentForm} layout="vertical" onFinish={handleSubmitPayment}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Form.Item label="Description" name="description" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
               <Form.Item label="Invoice No" name="invoice_no" rules={[{ required: true }]}>
                 <Input />
               </Form.Item>
@@ -1818,7 +1856,7 @@ function Projects() {
                   name="status"
                   rules={[{ required: true, message: 'Please select status' }]}
                 >
-                  <Select 
+                  <Select
                     showSearch
                     allowClear
                     placeholder="Type status..."
@@ -1978,15 +2016,15 @@ function Projects() {
             <div className="flex justify-between items-center w-full">
               <span>Document Viewer</span>
               <div className="space-x-2">
-                <Button 
-                  size="small" 
-                  onClick={() => setIsFullscreen(!isFullscreen)} 
+                <Button
+                  size="small"
+                  onClick={() => setIsFullscreen(!isFullscreen)}
                   icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
                 >
                   {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                 </Button>
-                <Button 
-                  size="small" 
+                <Button
+                  size="small"
                   onClick={() => {
                     setViewDocumentUrl(null)
                     setExcelRendererData(null)
@@ -2010,13 +2048,13 @@ function Projects() {
           keyboard={false}
           footer={null}
           width={isFullscreen ? '100vw' : 1100}
-          style={{ 
+          style={{
             top: isFullscreen ? 0 : undefined,
             maxWidth: isFullscreen ? '100vw' : undefined,
             margin: isFullscreen ? 0 : undefined,
             paddingBottom: isFullscreen ? 0 : undefined
           }}
-          bodyStyle={{ 
+          bodyStyle={{
             height: isFullscreen ? 'calc(100vh - 120px)' : 'auto',
             padding: isFullscreen ? 0 : '24px'
           }}
@@ -2079,11 +2117,10 @@ function Projects() {
                               {excelRendererData.sheets.map((sheet, index) => (
                                 <button
                                   key={index}
-                                  className={`px-3 py-1 text-sm border-b-2 transition-colors ${
-                                    activeSheetIndex === index
+                                  className={`px-3 py-1 text-sm border-b-2 transition-colors ${activeSheetIndex === index
                                       ? 'border-blue-500 text-blue-600 bg-blue-50'
                                       : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                                  }`}
+                                    }`}
                                   onClick={() => setActiveSheetIndex(index)}
                                 >
                                   {sheet.name || `Sheet ${index + 1}`}
@@ -2093,22 +2130,22 @@ function Projects() {
                           )}
                         </div>
                         <div className="space-x-2">
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => window.open(currentUrl, '_blank')}
                             icon={<LinkOutlined />}
                           >
                             Download
                           </Button>
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => loadExcelWithRenderer(currentUrl)}
                           >
                             Refresh
                           </Button>
                         </div>
                       </div>
-                      
+
                       <div className={`${isFullscreen ? 'h-[calc(100vh-140px)]' : 'h-[70vh]'} border rounded p-4`}>
                         <style jsx>{`
                           .excel-scroll-container::-webkit-scrollbar {
@@ -2137,7 +2174,7 @@ function Projects() {
                           const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
                           const currentRows = currentSheet?.rows || excelRendererData.rows || []
                           const currentCols = currentSheet?.cols || excelRendererData.cols || []
-                          
+
                           return currentRows.length > 0 ? (
                             <div className="excel-scroll-container h-full">
                               <Table
@@ -2168,8 +2205,8 @@ function Projects() {
                                   }
                                 }))}
                                 pagination={false}
-                                scroll={{ 
-                                  x: 'max-content', 
+                                scroll={{
+                                  x: 'max-content',
                                   y: isFullscreen ? 'calc(100vh - 180px)' : 'calc(70vh - 120px)'
                                 }}
                                 size="small"
@@ -2196,7 +2233,7 @@ function Projects() {
                   </div>
                 )
               }
-              
+
               // For Word documents, use mammoth.js
               if (ext === 'docx' || ext === 'doc') {
                 if (wordDocumentLoading) {
@@ -2237,24 +2274,24 @@ function Projects() {
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
                         <div className="space-x-2">
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => window.open(currentUrl, '_blank')}
                             icon={<LinkOutlined />}
                           >
                             Download
                           </Button>
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => loadWordDocument(currentUrl)}
                           >
                             Refresh
                           </Button>
                         </div>
                       </div>
-                      
+
                       <div className={`${isFullscreen ? 'h-[calc(100vh-140px)]' : 'h-[70vh]'} overflow-auto border rounded p-6 bg-white`}>
-                        <div 
+                        <div
                           className="word-document-content"
                           dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
                           style={{
@@ -2275,13 +2312,13 @@ function Projects() {
                   </div>
                 )
               }
-              
+
               // For other Office files, show download option
               return (
                 <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
                   <div className="text-6xl mb-4">{
                     ext === 'pptx' || ext === 'ppt' ? ' presentation' :
-                    ' document'
+                      ' document'
                   }</div>
                   <h3 className="text-xl font-semibold">
                     {ext ? ext.toUpperCase() : 'Document'}
@@ -2381,16 +2418,15 @@ function Projects() {
                   <div>
                     <span className="font-semibold mr-2">Customer:</span>
                     <span className="inline-block min-w-[300px] align-middle">
-                      {`${allotmentData?.party_name || ''}${
-                        allotmentData?.address ? ', ' + allotmentData.address : ''
-                      }`}
+                      {`${allotmentData?.party_name || ''}${allotmentData?.address ? ', ' + allotmentData.address : ''
+                        }`}
                     </span>
                   </div>
 
 
                   <div>
                     <span className="font-semibold mr-2">Contact Person:</span>
-                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email ||''} </span>
+                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email || ''} </span>
                   </div>
                   <div>
                     <span className="font-semibold mr-2">Project Co-ordinator:</span>
@@ -2401,7 +2437,7 @@ function Projects() {
                   <div>
                     <span className="font-semibold mr-2">Email &amp; Contact details:</span>
                     <span className="inline-block min-w-[300px]  align-middle">
-                      
+
                     </span>
                   </div>
                   <div>
@@ -2431,7 +2467,7 @@ function Projects() {
                   <div>
                     <span className="font-semibold mr-2">Delivery date:</span>
                     <span className="inline-block min-w-[300px]  align-middle">
-                      {allotmentData?.delivery_date || ''}
+                      {formatDDMMYYYY(allotmentData?.delivery_date)}
                     </span>
                   </div>
                 </div>
@@ -2440,6 +2476,7 @@ function Projects() {
                   <table className="w-full border border-black text-xs">
                     <thead>
                       <tr>
+                        <th className="border border-black px-2 py-1 text-left">Description</th>
                         <th className="border border-black px-2 py-1 text-left">Full / Stage Payment</th>
                         <th className="border border-black px-2 py-1 text-left">Invoice No and Amount</th>
                         <th className="border border-black px-2 py-1 text-left">Invoice Date</th>
@@ -2452,7 +2489,7 @@ function Projects() {
                       {allotmentData?.payments && Array.isArray(allotmentData.payments) && allotmentData.payments.length > 0 ? (
                         allotmentData.payments.map((row, idx) => (
                           <tr key={row.id || idx}>
-                            <td className="border border-black px-2 py-1"></td>
+                            <td className="border border-black px-2 py-1">{row.description || ''}</td>
                             <td className="border border-black px-2 py-1">{row.invoice_no || ''}</td>
                             <td className="border border-black px-2 py-1">{row.invoice_date || ''}</td>
                             <td className="border border-black px-2 py-1">{row.amount_recieved || ''}</td>
@@ -2471,19 +2508,19 @@ function Projects() {
                   </table>
                 </div>
 
-                 <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <div style={{ 
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '24px'
-                      }}>
-                        <div style={{ fontWeight: 600 }}>Copy to:</div>
-                        <div style={{ fontWeight: 600, textAlign: 'right' ,marginLeft: '600px'}}>
-                          CH (PP&amp;BD)
-                        </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '24px'
+                    }}>
+                      <div style={{ fontWeight: 600 }}>Copy to:</div>
+                      <div style={{ fontWeight: 600, textAlign: 'right', marginLeft: '600px' }}>
+                        CH (PP&amp;BD)
                       </div>
+                    </div>
 
                     <table style={{ border: 'none', margin: 0 }}>
                       <tr>
@@ -2593,7 +2630,7 @@ function Projects() {
           {projectTypeOrder.map((type) => {
             const projects = groupedProjects[type]
             if (!projects || projects.length === 0) return null
-            
+
             const config = projectTypeConfig[type]
             const colorClasses = {
               blue: 'border-blue-200 text-blue-700 bg-blue-100',
@@ -2617,7 +2654,7 @@ function Projects() {
               rose: 'bg-rose-500',
               slate: 'bg-slate-500'
             }
-            
+
             return (
               <div key={type}>
                 <div className={`flex items-center gap-3 mb-4 pb-2 border-b-2 ${colorClasses[config.color].split(' ')[0]}`}>

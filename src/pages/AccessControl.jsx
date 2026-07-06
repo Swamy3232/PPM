@@ -21,7 +21,8 @@ export default function AccessControl() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [form] = Form.useForm();
-    
+    const [currentUserRole, setCurrentUserRole] = useState('');
+
     // Search and filter states
     const [searchText, setSearchText] = useState('');
     const [roleFilter, setRoleFilter] = useState(null);
@@ -51,6 +52,22 @@ export default function AccessControl() {
             setFilteredGroups([]);
         }
     }, [selectedCentreCode, centres, allGroups]);
+
+    useEffect(() => {
+        try {
+            const rawUser = window.localStorage.getItem('ppm_user');
+            if (rawUser) {
+                const parsedUser = JSON.parse(rawUser);
+                if (parsedUser?.role) {
+                    setCurrentUserRole(parsedUser.role);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to read user from localStorage', error);
+        }
+    }, []);
+
+    const isGuest = currentUserRole?.toLowerCase().trim() === 'guest';
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -159,7 +176,7 @@ export default function AccessControl() {
         { title: 'Role', dataIndex: 'role', key: 'role' },
         { title: 'Centre', dataIndex: 'center', key: 'center' },
         { title: 'Group', dataIndex: 'group', key: 'group' },
-        {
+        ...(!isGuest ? [{
             title: 'Action',
             key: 'action',
             render: (_, record) => (
@@ -179,7 +196,7 @@ export default function AccessControl() {
                     </Popconfirm>
                 </span>
             ),
-        },
+        }] : []),
     ];
 
     // Get unique values for filters
@@ -241,7 +258,7 @@ export default function AccessControl() {
         <div className="rounded-3xl bg-white p-6 shadow-sm">
             <div className="mb-6">
                 <Title level={3} className="!mb-4">Access Control</Title>
-                
+
                 {/* Search and Filters Section */}
                 <Card className="mb-4" size="small">
                     <Row gutter={[16, 16]}>
@@ -315,14 +332,15 @@ export default function AccessControl() {
                         </Col>
                     </Row>
                 </Card>
-                
-                <Button
-                    type="primary"
-                    onClick={handleAdd}
-                    style={{ marginBottom: 16 }}
-                >
-                    Add New User
-                </Button>
+                {!isGuest && (
+                    <Button
+                        type="primary"
+                        onClick={handleAdd}
+                        style={{ marginBottom: 16 }}
+                    >
+                        Add New User
+                    </Button>
+                )}
             </div>
 
             <Table
@@ -374,6 +392,7 @@ export default function AccessControl() {
                             <Select.Option value="CH">CH</Select.Option>
                             <Select.Option value="Scientist">Scientist</Select.Option>
                             <Select.Option value="Director">Director</Select.Option>
+                            <Select.Option value="guest">Guest</Select.Option>
                         </Select>
                     </Form.Item>
 
@@ -399,7 +418,7 @@ export default function AccessControl() {
                     <Form.Item
                         name="group"
                         label="Group"
-                        rules={[{message: 'Please select a group' }]}
+                        rules={[{ message: 'Please select a group' }]}
                     >
                         <Select
                             placeholder="Select a group (based on centre)"

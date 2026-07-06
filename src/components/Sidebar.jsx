@@ -73,11 +73,11 @@ function Sidebar() {
   const [selectedRole, setSelectedRole] = useState('');
   const isDirector = basePath === 'director'
   const isCH = basePath === 'ch'
+  const isGuest = basePath === 'guest'
+  // Treat Scientist as same as GH
+  const isGHOrScientist = basePath === 'gh' || basePath === 'scientist'
 
   useEffect(() => {
-    // Treat Scientist as same as GH
-    const isGHOrScientist = basePath === 'gh' || basePath === 'scientist'
-
     // Set initial role from localStorage
     try {
       const rawUser = window.localStorage.getItem('ppm_user')
@@ -121,15 +121,15 @@ function Sidebar() {
       })
       .catch((error) => console.error('Error fetching notifications:', error));
 
-    // Fetch unacknowledged proposals count for admin users
-    if (normalizedBasePath === 'admin') {
+    // Fetch unacknowledged proposals count for admin-equivalent users
+    if (normalizedBasePath === 'admin' || normalizedBasePath === 'guest') {
       axios.get(`${API_BASE_URL}/proposals/unacknowledged/count`)
         .then((response) => {
           setUnacknowledgedCount(response.data.unacknowledged_count || 0)
         })
         .catch((error) => console.error('Error fetching unacknowledged count:', error));
     }
-  }, [normalizedBasePath, userName, userRole]);
+  }, [normalizedBasePath, userName, userRole, isGHOrScientist]);
 
   const handleRoleSwitch = (newRole) => {
     try {
@@ -157,9 +157,6 @@ function Sidebar() {
     message.success('Logged out')
     navigate('/')
   }
-
-  // Treat Scientist the same as GH (basePath is already lowercase)
-  const isGHOrScientist = basePath === 'gh' || basePath === 'scientist'
 
   return (
     <Sider
@@ -247,7 +244,7 @@ function Sidebar() {
                 ]
               : []),  
 
-            ...(normalizedBasePath === 'admin'
+            ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
               ? [
                   {
                     key: 'master-proposals',
@@ -289,7 +286,7 @@ function Sidebar() {
             //         label: 'Financial Analytics',
             // }] : []),
 
-            ...(normalizedBasePath === 'admin'
+            ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
               ? [
                   {
                     key: 'overall-analytics',
@@ -304,7 +301,7 @@ function Sidebar() {
                 ]
               : []),
 
-              ...(normalizedBasePath === 'admin'
+              ...((normalizedBasePath === 'admin')
               ? [
                   {
                     key: 'notification',
@@ -330,7 +327,7 @@ function Sidebar() {
                 ]
               : []),
 
-              ...(normalizedBasePath === 'admin'
+              ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
               ? [
                   {
                     key: 'access-control',
@@ -339,7 +336,7 @@ function Sidebar() {
                   },
                 ]
               : []),
-              ...(normalizedBasePath ==='admin')
+              ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
               ? [
                 {
                   key: 'customers',
@@ -347,7 +344,7 @@ function Sidebar() {
                   label: 'Customers'
                 }
               ]
-              : []
+              : [])
           ]}
           className="text-base"
         />

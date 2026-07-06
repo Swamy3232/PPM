@@ -28,6 +28,9 @@ const CUSTOMER_FIELDS = [
   { name: 'id', label: 'ID', width: 80, render: (text) => text || '-' },
   { name: 'name', label: 'Name', width: 200 },
   { name: 'customer_type', label: 'Customer Type', width: 150, render: (value) => value ? <Tag color="blue">{value}</Tag> : null },
+  { name: 'gst', label: 'GST', width: 150 },
+  { name: 'pan', label: 'PAN', width: 120 },
+  { name: 'tan', label: 'TAN', width: 120 },
   { name: 'address', label: 'Address', width: 250 },
   { name: 'email', label: 'Email', width: 200 },
   { name: 'phone_no', label: 'Phone No.', width: 150 },
@@ -49,6 +52,7 @@ function Customers() {
   const [customerTypeFilter, setCustomerTypeFilter] = useState(null)
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [currentUserRole, setCurrentUserRole] = useState('')
 
   const fetchCustomers = useCallback(async () => {
     setTableLoading(true)
@@ -58,7 +62,9 @@ function Customers() {
       })
       if (!res.ok) throw new Error('Failed to fetch customers')
       const data = await res.json()
-      const mapped = data.map((item) => ({ ...item, key: item.id }))
+      const mapped = data
+        .map((item) => ({ ...item, key: item.id }))
+        .sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0))
       setTableData(mapped)
       setFilteredData(mapped)
       setCustomerCount(data.length)
@@ -69,6 +75,22 @@ function Customers() {
       setTableLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser?.role) {
+          setCurrentUserRole(parsedUser.role)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+  }, [])
+
+  const isGuest = currentUserRole?.toLowerCase().trim() === 'guest'
 
   const fetchCustomerCount = useCallback(async () => {
     try {
@@ -146,6 +168,9 @@ function Customers() {
       const payload = {
         name: values.name || '',
         customer_type: values.customer_type || '',
+        gst: values.gst?.trim() || null,
+        pan: values.pan?.trim() || null,
+        tan: values.tan?.trim() || null,
         address: values.address || '',
         email: values.email || '',
         phone_no: values.phone_no || '',
@@ -214,6 +239,9 @@ function Customers() {
         const customers = jsonData.map((row) => ({
           name: row.name || '',
           customer_type: row.customer_type || '',
+          gst: row.gst || null,
+          pan: row.pan || null,
+          tan: row.tan || null,
           address: row.address || '',
           email: row.email || '',
           phone_no: row.phone_no || '',
@@ -259,7 +287,7 @@ function Customers() {
       width: field.width,
       render: field.render,
     })),
-    {
+    ...(!isGuest ? [{
       title: 'Actions',
       key: 'actions',
       width: 150,
@@ -284,7 +312,7 @@ function Customers() {
           </Button>
         </Space>
       ),
-    },
+    }] : []),
   ]
 
   return (
@@ -329,6 +357,7 @@ function Customers() {
             </Button>
           ) : null}
         </Space>
+        {!isGuest && (
         <Space>
           <Button icon={<UploadOutlined />} onClick={handleUploadExcel}>
             Upload Excel
@@ -337,6 +366,7 @@ function Customers() {
             Add Customer
           </Button>
         </Space>
+        )}
       </div>
 
       <Table
@@ -380,6 +410,18 @@ function Customers() {
                 </Option>
               ))}
             </Select>
+          </Form.Item>
+
+          <Form.Item name="gst" label="GST">
+            <Input placeholder="Enter GST number" />
+          </Form.Item>
+
+          <Form.Item name="pan" label="PAN">
+            <Input placeholder="Enter PAN number" />
+          </Form.Item>
+
+          <Form.Item name="tan" label="TAN">
+            <Input placeholder="Enter TAN number" />
           </Form.Item>
 
           <Form.Item name="address" label="Address">
@@ -432,7 +474,7 @@ function Customers() {
         </Upload>
         <div style={{ marginTop: '16px' }}>
           <Text type="secondary">
-            Upload an Excel file with columns: name, customer_type, address, email, phone_no, alternate_contact_details
+            Upload an Excel file with columns: name, customer_type, gst, pan, tan, address, email, phone_no, alternate_contact_details
           </Text>
         </div>
       </Modal>
