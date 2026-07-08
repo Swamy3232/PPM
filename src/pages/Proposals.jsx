@@ -11,6 +11,7 @@ import {
   CalendarOutlined,
   MessageOutlined,
   UploadOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons'
 import {
   AutoComplete,
@@ -34,6 +35,7 @@ import {
   Row,
   Col,
   Statistic,
+  Dropdown,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import { ExcelRenderer } from 'react-excel-renderer'
@@ -45,6 +47,11 @@ import '../App.css'
 import { API_BASE_URL } from '../config/api.js'
 import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/date.js'
 import { Checkbox } from 'antd';
+import {
+  openAcknowledgmentModal,
+  closeAcknowledgmentModal,
+  handleAcknowledgmentSubmit,
+} from '../utils/acknowledgment.js'
 
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
@@ -304,6 +311,12 @@ function Proposals() {
 
   // Unresponded query counts for Query History button logic
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
+
+  // Acknowledgment modal state
+  const [acknowledgmentModalOpen, setAcknowledgmentModalOpen] = useState(false)
+  const [selectedProposalForAcknowledgment, setSelectedProposalForAcknowledgment] = useState(null)
+  const [acknowledgmentLoading, setAcknowledgmentLoading] = useState(false)
+  const [acknowledgmentForm] = Form.useForm()
 
   const fetchProjectDocuments = useCallback(async (projectId) => {
     setDocsLoading(true)
@@ -2018,6 +2031,37 @@ function Proposals() {
               >
                 Queries
               </Button>
+            )}
+            {isProposalConverted(record.proposals_converted) && (
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'acknowledgment',
+                      label: 'Acknowledgment Generator',
+                      onClick: (e) => {
+                        e.domEvent.stopPropagation()
+                        openAcknowledgmentModal(
+                          record,
+                          acknowledgmentForm,
+                          setSelectedProposalForAcknowledgment,
+                          setAcknowledgmentModalOpen
+                        )
+                      },
+                    },
+                  ],
+                }}
+                trigger={['click']}
+              >
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<FileTextOutlined />}
+                  onClick={(e) => e.stopPropagation()}
+                >
+            
+                </Button>
+              </Dropdown>
             )}
           </Space>
         ),
@@ -4602,6 +4646,70 @@ function Proposals() {
             />
           </div>
         </div>
+      </Modal>
+
+      {/* Acknowledgment Modal */}
+      <Modal
+        title="Generate Acknowledgment"
+        open={acknowledgmentModalOpen}
+        onCancel={() => closeAcknowledgmentModal(setAcknowledgmentModalOpen, setSelectedProposalForAcknowledgment, acknowledgmentForm)}
+        width={600}
+        footer={[
+          <Button key="cancel" onClick={() => closeAcknowledgmentModal(setAcknowledgmentModalOpen, setSelectedProposalForAcknowledgment, acknowledgmentForm)}>Cancel</Button>,
+          <Button key="submit" type="primary" loading={acknowledgmentLoading} onClick={() => acknowledgmentForm.submit()}>
+            Generate
+          </Button>,
+        ]}
+      >
+        <Form
+          form={acknowledgmentForm}
+          layout="vertical"
+          onFinish={(values) => handleAcknowledgmentSubmit(
+            values,
+            selectedProposalForAcknowledgment,
+            setAcknowledgmentLoading,
+            () => closeAcknowledgmentModal(setAcknowledgmentModalOpen, setSelectedProposalForAcknowledgment, acknowledgmentForm)
+          )}
+          style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
+          <div>
+            <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+              Kind Attn:
+            </label>
+            <Form.Item
+              name="kind_attn"
+              style={{ marginBottom: 0 }}
+            >
+              <Input placeholder="Enter attention person name" />
+            </Form.Item>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+              Purchase Order No:
+            </label>
+            <Form.Item
+              name="purchase_order_no"
+              style={{ marginBottom: 0 }}
+            >
+              <Input placeholder="Enter purchase order number" />
+            </Form.Item>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+              Purchase Order Date:
+            </label>
+            <Form.Item
+              name="purchase_order_date"
+              style={{ marginBottom: 0 }}
+            >
+              <DatePicker
+                style={{ width: '100%' }}
+                format={DISPLAY_DATE_FORMAT}
+                placeholder="Select purchase order date"
+              />
+            </Form.Item>
+          </div>
+        </Form>
       </Modal>
     </>
   )
