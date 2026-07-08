@@ -72,6 +72,7 @@ const CUSTOMER_TYPE_OPTIONS = [
 const DATE_FIELD_OPTIONS = [
   { value: 'proposals_converted', label: 'Proposals Converted' },
   { value: 'proposals_not_converted', label: 'Proposals not Converted' },
+  { value: 'ongoing_projects', label: 'Ongoing Projects' },
   { value: 'enquiry_date', label: 'Enquiry Date' },
   { value: 'quote_date', label: 'Quote Date' },
   { value: 'revised_negotiated_quote_date', label: 'Revised Quote Date' },
@@ -1419,6 +1420,11 @@ function Proposals() {
       filtered = filtered.filter((item) => {
         const value = String(item.proposals_converted || '').toLowerCase().trim()
         return value !== 'yes'
+      })
+    } else if (selectedDateField === 'ongoing_projects') {
+      filtered = filtered.filter((item) => {
+        const status = String(item.status || '').toLowerCase().trim()
+        return status === 'ongoing' || status === 'on hold'
       })
     } else if (selectedDateField && startDate && endDate) {
       const startOfDay = startDate.startOf('day')

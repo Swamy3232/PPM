@@ -187,6 +187,14 @@ const isProposalConverted = (proposalsConverted) => {
   return convertedValue === 'yes'
 }
 
+const isProposalNotConverted = (proposalsConverted, ifNotReason) => {
+  if (!proposalsConverted) return false
+  const convertedValue = String(proposalsConverted).toLowerCase().trim()
+  const isNo = convertedValue === 'no'
+  const reasonIsBlank = !ifNotReason || String(ifNotReason).trim() === ''
+  return isNo && reasonIsBlank
+}
+
 function ScientistProposals() {
   const [form] = Form.useForm()
   const [coordinatorForm] = Form.useForm()
@@ -375,6 +383,7 @@ function ScientistProposals() {
     'updated_by',
     'closer_report',
     'proposal_status',
+    'if_not_reason',
   ]
 
   // Map API response to UI format
@@ -1605,6 +1614,7 @@ function ScientistProposals() {
       technical_completed_year: values.technical_completed_year || null,
       closer_report: values.closer_report || '',
       updated_by: values.updated_by || currentUserName || '',
+      if_not_reason: values.if_not_reason || '',
     }
     const isProject = Boolean(editingRecord?.project_number?.toString().trim())
     if (!isProject) {
@@ -1667,6 +1677,10 @@ function ScientistProposals() {
       (item) => item.status === 'On Hold',
     ).length
 
+     const convertedNo = tableData.filter(
+      (item) => isProposalNotConverted(item.proposals_converted, item.if_not_reason),
+    ).length
+
     // Calculate project code breakdown
     const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
@@ -1692,6 +1706,7 @@ function ScientistProposals() {
       financiallyNotCompleted,
       pendingProjects,
       onHoldProjects,
+      convertedNo,
       projectCodeBreakdown,
     }
   }, [tableData])
@@ -1761,7 +1776,12 @@ function ScientistProposals() {
           (item) => item.status === 'Ongoing' || item.status === 'On Hold',
         )
         console.log('After pendingProjects filter:', filtered.length, 'items')
-      } else {
+      } else if (statusFilter === 'convertedNo') {
+        // Proposals explicitly marked as NOT converted ("No")
+        filtered = filtered.filter((item) => isProposalNotConverted(item.proposals_converted, item.if_not_reason))
+        console.log('After convertedNo filter:', filtered.length, 'items')
+      }
+      else {
         // For other status filters, filter by status
         filtered = filtered.filter((item) => {
           const status = (item.status || '').toString().trim()
@@ -1882,7 +1902,7 @@ function ScientistProposals() {
   }
 
   const columns = useMemo(() => {
-    if (statusFilter === 'proposals') {
+    if (statusFilter === 'proposals' || statusFilter === 'convertedNo') {
       return [
         {
           key: 'id',
@@ -1957,6 +1977,14 @@ function ScientistProposals() {
             return wrapWithTooltip(coordinator, 25)
           },
         },
+        ...(statusFilter === 'convertedNo' ? [{
+          key: 'if_not_reason',
+          dataIndex: 'if_not_reason',
+          title: 'If Not Reason',
+          width: 200,
+          ellipsis: true,
+          render: (value) => wrapWithTooltip(value, 40),
+        }] : []),
         {
           key: 'actions',
           title: 'Actions',
@@ -2218,6 +2246,16 @@ function ScientistProposals() {
               label: 'Total Proposals Submitted',
               children: (
                 <div className="space-y-6">
+                  <div className="flex justify-end">
+                    <Button
+                      danger
+                      type={statusFilter === 'convertedNo' ? 'primary' : 'default'}
+                      disabled={!statistics.convertedNo}
+                      onClick={() => setStatusFilter('convertedNo')}
+                    >
+                      Reason Required ({statistics.convertedNo})
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
                     <Card
                       className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer"
@@ -2641,14 +2679,20 @@ function ScientistProposals() {
             {ALL_FIELDS.filter((f) => {
               if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
 
-              // For proposals, only allow editing proposal_status and co_ordinator_remarks
+              // For proposals, only allow editing proposal_status, co_ordinator_remarks, and if_not_reason
               const isProject = Boolean(editingRecord?.project_number?.toString().trim())
               if (isProject) {
-                // This is a project - don't show proposal_status
-                if (f.name === 'proposal_status') return false
+                // This is a project - don't show proposal_status and if_not_reason
+                if (f.name === 'proposal_status' || f.name === 'if_not_reason') return false
               } else {
                 // This is a proposal - only allow these fields
-                return ['proposal_status', 'co_ordinator_remarks', 'updated_by'].includes(f.name)
+                const allowedFields = ['proposal_status', 'co_ordinator_remarks', 'updated_by', 'if_not_reason']
+                if (!allowedFields.includes(f.name)) return false
+                // Only show if_not_reason when proposals_converted = "NO"
+                if (f.name === 'if_not_reason') {
+                  const proposalsConverted = editingRecord?.proposals_converted
+                  if (!isProposalNotConverted(proposalsConverted)) return false
+                }
               }
 
               return true
