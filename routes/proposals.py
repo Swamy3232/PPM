@@ -122,6 +122,15 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
                 status_code=400,
                 detail=f"Project Number '{data['project_number']}' already exists. Please use a unique project number."
             )
+    
+     # Check if quote_reference already exists
+    if data.get("quote_reference"):
+        existing_quote_ref = db.query(Proposal).filter(Proposal.quote_reference == data["quote_reference"]).first()
+        if existing_quote_ref:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Quote Reference '{data['quote_reference']}' already exists. Please use a unique quote reference."
+            )
 
     if getattr(payload, "revised_negotiated", None) is not None:
         data["revised_negotiated"] = payload.revised_negotiated
