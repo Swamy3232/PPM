@@ -16,3 +16,4 @@ minio
 python-multipart
 email-validator
 pandas
+python-docx
