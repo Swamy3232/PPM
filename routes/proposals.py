@@ -1068,6 +1068,7 @@ def coordinator_update(payload: CoordinatorUpdate, db: Session = Depends(get_db)
     # Apply updates
     proposal.co_ordinator_remarks = payload.co_ordinator_remarks
     proposal.extended_delivery_date = payload.extended_delivery_date
+    proposal.if_not_reason = payload.if_not_reason
 
     # ⭐ NEW FIELD HERE
     proposal.updated_by = payload.updated_by
@@ -1713,3 +1714,58 @@ def get_unacknowledged_proposals_count(db: Session = Depends(get_db)) -> Dict[st
     ).scalar()
     
     return {"unacknowledged_count": count or 0}
+
+# ------------------------------
+# GET NOT-CONVERTED PROPOSALS FOR A SPECIFIC SCIENTIST (LOGGED-IN USER)
+# ------------------------------
+@router.get("/not-converted/by-scientist/{name}")
+def get_not_converted_proposals_for_scientist(name: str, db: Session = Depends(get_db)):
+    """
+    Get all proposals where proposals_converted = 'No', for a specific scientist.
+    `name` is the logged-in scientist's name, passed automatically by the
+    frontend from the session.
+
+    Validates that the name corresponds to an actual user with role = 'scientist',
+    and matches proposals where that scientist is the assigned project_co_ordinator.
+    """
+    from models.user_model import User
+    import re
+
+    name_clean = re.sub(r'\s+', ' ', name.strip()).lower()
+
+    # Validate the user exists and is a scientist
+    user = db.query(User).filter(func.lower(User.name) == name_clean).first()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User '{name}' not found")
+    if user.role and user.role.lower() != 'scientist':
+        raise HTTPException(status_code=403, detail=f"User '{name}' is not a scientist")
+
+    proposals = (
+        db.query(Proposal)
+        .filter(
+            func.lower(Proposal.proposals_converted) == "no",
+            or_(                                                     # condition 2
+            Proposal.if_not_reason.is_(None),
+            func.trim(Proposal.if_not_reason) == "",
+        ),
+            func.lower(Proposal.project_co_ordinator).contains(name_clean),
+        )
+        .order_by(desc(Proposal.id))
+        .all()
+    )
+
+    result = []
+    for proposal in proposals:
+        proposal_data = {
+            key: value
+            for key, value in proposal.__dict__.items()
+            if not key.startswith("_")
+        }
+        payments = db.query(Payment).filter(Payment.project_id == proposal.id).all()
+        proposal_data["payments"] = [
+            {k: v for k, v in p.__dict__.items() if not k.startswith("_")}
+            for p in payments
+        ]
+        result.append(proposal_data)
+
+    return result
