@@ -353,13 +353,13 @@ function directoranalytics() {
   const [queriesData, setQueriesData] = useState([])
   const [queriesLoading, setQueriesLoading] = useState(false)
   const [selectedProjectForQueries, setSelectedProjectForQueries] = useState(null)
-  
+
   // Response modal state
   const [responseModalOpen, setResponseModalOpen] = useState(false)
   const [selectedQuery, setSelectedQuery] = useState(null)
   const [responseText, setResponseText] = useState('')
   const [responseLoading, setResponseLoading] = useState(false)
-  
+
   // Unresponded query counts for Query History button logic
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
 
@@ -429,17 +429,17 @@ function directoranalytics() {
       }
       const allQueries = await response.json()
       console.log('All queries from API:', allQueries)
-      
+
       // Filter queries TO admin (not from admin) AND for this specific project
-      const adminQueries = Array.isArray(allQueries) 
-        ? allQueries.filter(query => 
-            String(query.to) === 'admin' && 
-            String(query.project_id) === String(projectId)
-          )
+      const adminQueries = Array.isArray(allQueries)
+        ? allQueries.filter(query =>
+          String(query.to) === 'admin' &&
+          String(query.project_id) === String(projectId)
+        )
         : []
       console.log(`Project ${projectId}: Found ${adminQueries.length} admin queries`)
-      
-      const sortedQueries = adminQueries.sort((a, b) => 
+
+      const sortedQueries = adminQueries.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )
       console.log('Setting queries data:', sortedQueries)
@@ -460,14 +460,14 @@ function directoranalytics() {
     // Use existing queries data from record instead of fetching again (like ScientistProposals.jsx)
     const projectQueries = record.queries || []
     console.log('Using existing queries from record:', projectQueries)
-    
+
     // Check if queries exist
     if (!projectQueries || projectQueries.length === 0) {
       console.log('No queries found for this project')
       message.info('No queries found for this project')
       return
     }
-    
+
     // Sort queries by date (newest first) for modal display
     const sortedQueries = projectQueries.sort((a, b) => {
       try {
@@ -514,7 +514,7 @@ function directoranalytics() {
     }
 
     setResponseLoading(true)
-    
+
     try {
       const payload = {
         from_: selectedQuery.from_,     // Keep same from as original query
@@ -526,7 +526,7 @@ function directoranalytics() {
 
       console.log('Sending response payload:', payload)
       console.log('API URL:', `${API_BASE_URL}/Remarkss/`)
-      
+
       const response = await fetch(`${API_BASE_URL}/Remarkss/${selectedQuery.id}`, {
         method: 'PUT',
         headers: {
@@ -535,7 +535,7 @@ function directoranalytics() {
         },
         body: JSON.stringify(payload)
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.detail || 'Failed to submit response')
@@ -543,12 +543,12 @@ function directoranalytics() {
 
       message.success('Response submitted successfully')
       closeResponseModal()
-      
+
       // Refresh queries data
       if (selectedProjectForQueries) {
         await fetchQueriesForProject(selectedProjectForQueries.id)
       }
-      
+
       // Refresh all queries
       const allQueriesResponse = await fetch(`${API_BASE_URL}/Remarkss/`, {
         headers: { accept: 'application/json' },
@@ -559,7 +559,7 @@ function directoranalytics() {
       }
       const fetchEvent = new Event('refresh-proposals')
       window.dispatchEvent(fetchEvent)
-      
+
     } catch (error) {
       console.error('Error submitting response:', error)
       message.error(error.message || 'Failed to submit response')
@@ -715,15 +715,15 @@ function directoranalytics() {
       // Attach filtered queries to each proposal
       const proposalsWithQueries = normalized.map(proposal => {
         // Filter queries for this specific project (show all queries, not just TO admin)
-        const projectQueries = Array.isArray(allQueries) 
-          ? allQueries.filter(query => 
-              String(query.project_id) === String(proposal.id)
-            )
+        const projectQueries = Array.isArray(allQueries)
+          ? allQueries.filter(query =>
+            String(query.project_id) === String(proposal.id)
+          )
           : []
         // console.log(`Proposal ${proposal.id}: Found ${projectQueries.length} queries`)
         return { ...proposal, queries: projectQueries }
       })
-      
+
       console.log('Proposals with admin queries loaded:', proposalsWithQueries.map(p => ({
         id: p.id,
         project_number: p.project_number,
@@ -1194,20 +1194,20 @@ function directoranalytics() {
       filtered = filtered.filter((item) => {
         const dateValue = item[selectedDateField]
         if (!dateValue) return false
-        
+
         const itemDate = dayjs(dateValue)
         if (!itemDate.isValid()) return false
-        
+
         const start = dateRange[0].startOf('day')
         const end = dateRange[1].endOf('day')
-        
+
         return itemDate.isSameOrAfter(start) && itemDate.isSameOrBefore(end)
       })
     }
 
     if (projectNumberFilter && projectNumberFilter.length > 0) {
       filtered = filtered.filter((item) =>
-        item.project_number && projectNumberFilter.some(filter => 
+        item.project_number && projectNumberFilter.some(filter =>
           item.project_number.toUpperCase().startsWith(filter.toUpperCase())
         )
       )
@@ -1235,7 +1235,7 @@ function directoranalytics() {
     }
 
     if (centreFilter && centreFilter.length > 0) {
-      filtered = filtered.filter((item) => 
+      filtered = filtered.filter((item) =>
         item.center && centreFilter.includes(item.center)
       )
     }
@@ -1393,15 +1393,15 @@ function directoranalytics() {
     if (trendCategory) {
       const years = {}
       const currentYear = dayjs().year()
-      
+
       // Get all years from 2010 to current year + 1
       for (let year = 2010; year <= currentYear + 1; year++) {
         years[year] = 0
       }
-      
+
       // Filter data based on trend category
       const trendItems = filteredData.filter((item) => matchCategory(item, trendCategory))
-      
+
       // Aggregate by year
       trendItems.forEach((item) => {
         let year = null
@@ -1436,14 +1436,14 @@ function directoranalytics() {
           years[year] += chartMetric === 'amount' ? getFinancialValue(item) : 1
         }
       })
-      
+
       const sortedYears = Object.keys(years).sort((a, b) => parseInt(a) - parseInt(b))
       const labels = sortedYears
       const values = sortedYears.map(year => years[year])
-      
+
       const categoryLabel = CATEGORIES.find(c => c.key === trendCategory)?.label || trendCategory
       const metricLabel = chartMetric === 'amount' ? 'Amount' : 'Count'
-      
+
       console.log('Trend calculation:', {
         trendCategory,
         chartMetric,
@@ -1453,7 +1453,7 @@ function directoranalytics() {
         labels,
         values,
       })
-      
+
       return {
         labels,
         values,
@@ -1578,7 +1578,7 @@ function directoranalytics() {
   const availableFinancialYears = useMemo(() => {
     const years = new Set()
     const currentYear = dayjs().year()
-    
+
     // Always use tableData to show all available years, regardless of filters
     tableData.forEach((item) => {
       // Use order_date for financial year calculation
@@ -1746,30 +1746,30 @@ function directoranalytics() {
         ? 'line'
         : chartType === 'donut'
           ? 'doughnut'
-        : chartType === 'funnel'
-          ? 'bar'
-        : chartType
+          : chartType === 'funnel'
+            ? 'bar'
+            : chartType
     const ctx = chartRef.current.getContext('2d')
     const renderedItems = chartType === 'funnel'
       ? chartData.labels
-          .map((label, idx) => ({
-            label,
-            value: Number(chartData.values[idx] ?? 0),
-          }))
-          .sort((a, b) => b.value - a.value)
-      : chartData.labels.map((label, idx) => ({
+        .map((label, idx) => ({
           label,
           value: Number(chartData.values[idx] ?? 0),
         }))
+        .sort((a, b) => b.value - a.value)
+      : chartData.labels.map((label, idx) => ({
+        label,
+        value: Number(chartData.values[idx] ?? 0),
+      }))
     const renderedFullLabels = renderedItems.map((item) => item.label)
     const renderedDisplayLabels = renderedFullLabels.map((label) => getFirstTwoWords(label))
     const renderedValues = renderedItems.map((item) => item.value)
     const maxRenderedValue = renderedValues.length ? Math.max(...renderedValues) : 0
     const renderedDatasetValues = chartType === 'funnel'
       ? renderedValues.map((v) => {
-          const offset = (maxRenderedValue - v) / 2
-          return [offset, offset + v]
-        })
+        const offset = (maxRenderedValue - v) / 2
+        return [offset, offset + v]
+      })
       : renderedValues
     const totalValue = renderedValues.reduce((acc, v) => acc + Number(v || 0), 0)
     const isAmountChart = chartMetric === 'amount'
@@ -1805,7 +1805,7 @@ function directoranalytics() {
           canvasCtx.shadowBlur = isTreemap ? 3 : 1
           // Use white labels for all charts except line charts, which use black.
           canvasCtx.fillStyle = isLineChart ? '#1f2937' : '#ffffff'
-          
+
           // Two-line label: name on top, value + percentage below.
           canvasCtx.fillText(line1, x, y - 8)
           canvasCtx.font = '700 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
@@ -1870,51 +1870,51 @@ function directoranalytics() {
     )
     const dataset = chartType === 'treemap'
       ? {
-          tree: chartData.labels.map((label, idx) => ({
-            label,
-            value: Number(chartData.values[idx] ?? 0),
-          })),
-          key: 'value',
-          // Pack tiles tightly; otherwise many small tiles become effectively invisible.
-          spacing: 0,
-          borderWidth: 0.5,
-          backgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
-          borderColor: (ctx) => borders[ctx.dataIndex % borders.length],
-          hoverBackgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
-          hoverBorderColor: (ctx) => borders[ctx.dataIndex % borders.length],
-          labels: {
-            display: true,
-            color: '#ffffff',
-            font: { size: 10, weight: '700' },
-            padding: 1,
-            overflow: 'fit',
-            position: 'middle',
-            // Show value + percentage so user doesn't need hover.
-            formatter: (ctx) => {
-              if (ctx.type !== 'data') return ''
-              const v = Number(ctx.raw?.v ?? ctx.raw?.value ?? 0)
-              // chartjs-chart-treemap doesn't reliably expose our custom leaf label on ctx.raw.
-              // Use dataIndex to map back to the source label array.
-              const name = truncate(chartData.labels?.[ctx.dataIndex] ?? ctx.label)
-              const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
-              // Keep it to 2 lines: name on top, value + percentage below.
-              return [name, `${isAmountChart ? formatInCrore(v) : v} (${pct.toFixed(1)}%)`]
-            },
+        tree: chartData.labels.map((label, idx) => ({
+          label,
+          value: Number(chartData.values[idx] ?? 0),
+        })),
+        key: 'value',
+        // Pack tiles tightly; otherwise many small tiles become effectively invisible.
+        spacing: 0,
+        borderWidth: 0.5,
+        backgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
+        borderColor: (ctx) => borders[ctx.dataIndex % borders.length],
+        hoverBackgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
+        hoverBorderColor: (ctx) => borders[ctx.dataIndex % borders.length],
+        labels: {
+          display: true,
+          color: '#ffffff',
+          font: { size: 10, weight: '700' },
+          padding: 1,
+          overflow: 'fit',
+          position: 'middle',
+          // Show value + percentage so user doesn't need hover.
+          formatter: (ctx) => {
+            if (ctx.type !== 'data') return ''
+            const v = Number(ctx.raw?.v ?? ctx.raw?.value ?? 0)
+            // chartjs-chart-treemap doesn't reliably expose our custom leaf label on ctx.raw.
+            // Use dataIndex to map back to the source label array.
+            const name = truncate(chartData.labels?.[ctx.dataIndex] ?? ctx.label)
+            const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
+            // Keep it to 2 lines: name on top, value + percentage below.
+            return [name, `${isAmountChart ? formatInCrore(v) : v} (${pct.toFixed(1)}%)`]
           },
-        }
+        },
+      }
       : {
-          label: isAmountChart ? 'Amount' : 'Record Count',
-          data: renderedDatasetValues,
-          backgroundColor: chartType === 'area'
-            ? colors.map((color) => `${color}66`)
-            : colors,
-          borderColor: borders,
-          borderWidth: chartType === 'box' ? 2 : 1,
-          borderRadius: chartType === 'box' ? 8 : 0,
-          barPercentage: chartType === 'box' ? 0.6 : undefined,
-          tension: chartType === 'line' || chartType === 'area' ? 0.3 : 0,
-          fill: chartType === 'area' ? true : chartType === 'line' ? false : undefined,
-        }
+        label: isAmountChart ? 'Amount' : 'Record Count',
+        data: renderedDatasetValues,
+        backgroundColor: chartType === 'area'
+          ? colors.map((color) => `${color}66`)
+          : colors,
+        borderColor: borders,
+        borderWidth: chartType === 'box' ? 2 : 1,
+        borderRadius: chartType === 'box' ? 8 : 0,
+        barPercentage: chartType === 'box' ? 0.6 : undefined,
+        tension: chartType === 'line' || chartType === 'area' ? 0.3 : 0,
+        fill: chartType === 'area' ? true : chartType === 'line' ? false : undefined,
+      }
     chartInstanceRef.current = new Chart(ctx, {
       type: chartTypeToRender,
       data: {
@@ -1937,29 +1937,29 @@ function directoranalytics() {
         scales: chartTypeToRender === 'pie' || chartTypeToRender === 'doughnut' || chartTypeToRender === 'treemap'
           ? {}
           : {
-              y: {
-                beginAtZero: chartType !== 'funnel',
-                ticks: chartType === 'funnel'
-                  ? { color: '#374151', font: { size: 12 } }
-                  : { color: '#374151', font: { size: 12 }, callback: (value) => (isAmountChart ? formatInCrore(Number(value)) : value) },
-                title: { display: true, text: chartType === 'funnel' ? 'Category' : (isAmountChart ? 'Amount (cr)' : 'Count'), color: '#374151' },
-              },
-              x: {
-                ticks: { 
-                  color: '#374151', 
-                  font: { size: 12 },
-                  display: chartType !== 'funnel',
-                  callback: chartType === 'funnel'
-                    ? (value) => (isAmountChart ? formatInCrore(Number(value)) : value)
-                    : function(value) {
-                        const label = this.getLabelForValue(value)
-                        return getFirstTwoWords(label)
-                      }
-                },
-                grid: { display: chartType !== 'funnel' },
-                title: { display: chartType !== 'funnel', text: chartType === 'funnel' ? (isAmountChart ? 'Amount (cr)' : 'Count') : 'Category', color: '#374151' },
-              },
+            y: {
+              beginAtZero: chartType !== 'funnel',
+              ticks: chartType === 'funnel'
+                ? { color: '#374151', font: { size: 12 } }
+                : { color: '#374151', font: { size: 12 }, callback: (value) => (isAmountChart ? formatInCrore(Number(value)) : value) },
+              title: { display: true, text: chartType === 'funnel' ? 'Category' : (isAmountChart ? 'Amount (cr)' : 'Count'), color: '#374151' },
             },
+            x: {
+              ticks: {
+                color: '#374151',
+                font: { size: 12 },
+                display: chartType !== 'funnel',
+                callback: chartType === 'funnel'
+                  ? (value) => (isAmountChart ? formatInCrore(Number(value)) : value)
+                  : function (value) {
+                    const label = this.getLabelForValue(value)
+                    return getFirstTwoWords(label)
+                  }
+              },
+              grid: { display: chartType !== 'funnel' },
+              title: { display: chartType !== 'funnel', text: chartType === 'funnel' ? (isAmountChart ? 'Amount (cr)' : 'Count') : 'Category', color: '#374151' },
+            },
+          },
         plugins: {
           legend: { display: chartTypeToRender === 'pie' || chartTypeToRender === 'doughnut' },
           tooltip: {
@@ -2234,12 +2234,15 @@ function directoranalytics() {
     },
   ]
 
+  // Project code prefixes constant
+  const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
+
   // Calculate statistics
   const statistics = useMemo(() => {
     const totalProposals = tableData.filter(
       (item) => !item.project_number || item.project_number.trim() === '',
     ).length
-    
+
     const totalProjects = tableData.filter(
       (item) => item.project_number && item.project_number.trim() !== '',
     ).length
@@ -2270,7 +2273,6 @@ function directoranalytics() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2285,6 +2287,76 @@ function directoranalytics() {
       }
     })
 
+    // Technically Completed breakdown
+    const technicallyCompletedBreakdown = {}
+    tableData.forEach((item) => {
+      if (item.technical_completed_year && item.technical_completed_year.trim() !== '') {
+        if (item.project_number) {
+          const prefix = PROJECT_PREFIXES.find((p) =>
+            item.project_number.toUpperCase().startsWith(p),
+          )
+          if (prefix) {
+            technicallyCompletedBreakdown[prefix] = (technicallyCompletedBreakdown[prefix] || 0) + 1
+          } else {
+            technicallyCompletedBreakdown.Other = (technicallyCompletedBreakdown.Other || 0) + 1
+          }
+        }
+      }
+    })
+
+    // Financially Not Completed breakdown
+    const financiallyNotCompletedBreakdown = {}
+    tableData.forEach((item) => {
+      if (item.technical_completed_year && item.technical_completed_year.trim() !== '' &&
+          (!item.financial_completed_year || item.financial_completed_year.trim() === '')) {
+        if (item.project_number) {
+          const prefix = PROJECT_PREFIXES.find((p) =>
+            item.project_number.toUpperCase().startsWith(p),
+          )
+          if (prefix) {
+            financiallyNotCompletedBreakdown[prefix] = (financiallyNotCompletedBreakdown[prefix] || 0) + 1
+          } else {
+            financiallyNotCompletedBreakdown.Other = (financiallyNotCompletedBreakdown.Other || 0) + 1
+          }
+        }
+      }
+    })
+
+    // Financially Completed breakdown
+    const financiallyCompletedBreakdown = {}
+    tableData.forEach((item) => {
+      if (item.technical_completed_year && item.technical_completed_year.trim() !== '' &&
+          item.financial_completed_year && item.financial_completed_year.trim() !== '') {
+        if (item.project_number) {
+          const prefix = PROJECT_PREFIXES.find((p) =>
+            item.project_number.toUpperCase().startsWith(p),
+          )
+          if (prefix) {
+            financiallyCompletedBreakdown[prefix] = (financiallyCompletedBreakdown[prefix] || 0) + 1
+          } else {
+            financiallyCompletedBreakdown.Other = (financiallyCompletedBreakdown.Other || 0) + 1
+          }
+        }
+      }
+    })
+
+    // Ongoing Projects breakdown
+    const ongoingProjectsBreakdown = {}
+    tableData.forEach((item) => {
+      if (item.status === 'Ongoing') {
+        if (item.project_number) {
+          const prefix = PROJECT_PREFIXES.find((p) =>
+            item.project_number.toUpperCase().startsWith(p),
+          )
+          if (prefix) {
+            ongoingProjectsBreakdown[prefix] = (ongoingProjectsBreakdown[prefix] || 0) + 1
+          } else {
+            ongoingProjectsBreakdown.Other = (ongoingProjectsBreakdown.Other || 0) + 1
+          }
+        }
+      }
+    })
+
     return {
       allCount: totalProposals + totalProjects,
       totalProposals,
@@ -2294,6 +2366,10 @@ function directoranalytics() {
       financiallyNotCompleted,
       pendingProjects,
       projectCodeBreakdown,
+      technicallyCompletedBreakdown,
+      financiallyNotCompletedBreakdown,
+      financiallyCompletedBreakdown,
+      ongoingProjectsBreakdown,
     }
   }, [tableData])
 
@@ -2309,7 +2385,7 @@ function directoranalytics() {
               children: (
                 <div className="space-y-6">
                   {/* Statistics Cards */}
-<div className="grid grid-cols-1 gap-4 md:grid-cols-6">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
                     <Card
                       className="bg-gradient-to-br from-slate-500 to-slate-700 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                       onClick={() => setStatusFilter(null)}
@@ -2329,7 +2405,8 @@ function directoranalytics() {
                       />
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="
+bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                       onClick={() => {
                         setStatusFilter('proposals')
                         setProjectNumberFilter([])
@@ -2338,7 +2415,7 @@ function directoranalytics() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                             Pending
+                            Pending
                           </span>
                         }
                         value={statistics.totalProposals}
@@ -2396,6 +2473,18 @@ function directoranalytics() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.technicallyCompletedBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.technicallyCompletedBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
@@ -2414,6 +2503,18 @@ function directoranalytics() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.financiallyNotCompletedBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.financiallyNotCompletedBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
@@ -2432,9 +2533,21 @@ function directoranalytics() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.financiallyCompletedBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.financiallyCompletedBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                       onClick={() => setStatusFilter('pendingProjects')}
                     >
                       <Statistic
@@ -2450,6 +2563,18 @@ function directoranalytics() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.ongoingProjectsBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.ongoingProjectsBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </Card>
                   </div>
 
@@ -3866,24 +3991,24 @@ function directoranalytics() {
                         : []
                     }
                   >
-                    <Select 
-                      allowClear 
+                    <Select
+                      allowClear
                       disabled={!selectedCentreId}
                       onChange={(groupValue) => {
                         // Find the selected center and group
                         const selectedCenterCode = form.getFieldValue('center')
                         const selectedCenter = centres.find(c => c.code === selectedCenterCode)
                         const selectedGroup = filteredGroups.find(g => g.code === groupValue)
-                        
+
                         if (selectedCenter && selectedGroup) {
                           // Find all users matching the center and group
-                          const matchingUsers = users.filter(user => 
+                          const matchingUsers = users.filter(user =>
                             user.center === selectedCenterCode && user.group === groupValue
                           )
-                          
+
                           // Update available coordinators list
                           setAvailableCoordinators(matchingUsers)
-                          
+
                           // If there's only one coordinator, auto-select them
                           if (matchingUsers.length === 1) {
                             form.setFieldsValue({ project_co_ordinator: matchingUsers[0].name })
@@ -3896,7 +4021,7 @@ function directoranalytics() {
                           setAvailableCoordinators([])
                           form.setFieldsValue({ project_co_ordinator: '' })
                         }
-                        
+
                         // Re-fetch users to get the updated list for the new center/group
                         setTimeout(() => fetchUsers(), 100) // Small delay to ensure form is updated first
                       }}
@@ -3977,7 +4102,7 @@ function directoranalytics() {
                 const uniqueCoordinators = availableCoordinators.filter((user, index, self) =>
                   index === self.findIndex((u) => u.name === user.name)
                 )
-                
+
                 return (
                   <Form.Item
                     key={field.name}
@@ -3986,11 +4111,11 @@ function directoranalytics() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please select ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please select ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                   >
@@ -4067,7 +4192,7 @@ function directoranalytics() {
               key: 'remarks_description',
               ellipsis: true,
               render: (text, record) => (
-                <span style={{ 
+                <span style={{
                   color: record.respond_to_remarks ? '#52c41a' : '#ff4d4f',
                   fontWeight: record.respond_to_remarks ? 'normal' : 'bold'
                 }}>
@@ -4085,7 +4210,7 @@ function directoranalytics() {
                 const queryDate = dayjs(value)
                 const today = dayjs().startOf('day')
                 const yesterday = dayjs().subtract(1, 'day').startOf('day')
-                
+
                 if (queryDate.isSame(today, 'day')) {
                   return 'Today ' + queryDate.format('HH:mm')
                 } else if (queryDate.isSame(yesterday, 'day')) {
