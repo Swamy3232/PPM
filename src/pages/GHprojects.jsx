@@ -125,13 +125,13 @@ const getProjectTheme = (projectNumber) => {
 
 function GHprojects() {
   const apiBase = API_BASE_URL
-  
+
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentUserName, setCurrentUserName] = useState('')
   const [stageConfig, setStageConfig] = useState([])
-  
+
   // Project details state
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
@@ -161,6 +161,7 @@ function GHprojects() {
   const [description, setDescription] = useState('')
   const [existingDocuments, setExistingDocuments] = useState([])
   const [suggestedVersion, setSuggestedVersion] = useState('1')
+  const [attachments, setAttachments] = useState([])
 
   // Edit Document
   const [editDocumentModalVisible, setEditDocumentModalVisible] = useState(false)
@@ -352,17 +353,17 @@ function GHprojects() {
 
       const sorted = Array.isArray(data)
         ? [...data].sort((a, b) => {
-            const pa = getPosition(a)
-            const pb = getPosition(b)
+          const pa = getPosition(a)
+          const pb = getPosition(b)
 
-            const paValid = pa !== null
-            const pbValid = pb !== null
+          const paValid = pa !== null
+          const pbValid = pb !== null
 
-            if (!paValid && !pbValid) return 0
-            if (!paValid) return 1
-            if (!pbValid) return -1
-            return pa - pb
-          })
+          if (!paValid && !pbValid) return 0
+          if (!paValid) return 1
+          if (!pbValid) return -1
+          return pa - pb
+        })
         : []
       setStageData(sorted)
     } catch (error) {
@@ -393,18 +394,18 @@ function GHprojects() {
 
     try {
       console.log('Loading Excel file with react-excel-renderer:', url)
-      
+
       // Fetch the Excel file
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Excel file: ${response.status}`)
       }
-      
+
       const blob = await response.blob()
-      
+
       // Use react-excel-renderer to parse the file
       const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      
+
       ExcelRenderer(file, (err, resp) => {
         if (err) {
           console.error('ExcelRenderer error:', err)
@@ -414,18 +415,18 @@ function GHprojects() {
           console.log('ExcelRenderer success:', resp)
           console.log('Rows structure:', resp.rows?.[0])
           console.log('Cols structure:', resp.cols)
-          
+
           // Check if multiple sheets are available
           if (resp.sheets && resp.sheets.length > 1) {
             console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
           }
-          
+
           setExcelRendererData(resp)
           setActiveSheetIndex(0)
           setExcelRendererLoading(false)
         }
       })
-      
+
     } catch (error) {
       console.error('Error loading Excel file:', error)
       setExcelRendererError(`Error loading Excel file: ${error.message}`)
@@ -440,15 +441,15 @@ function GHprojects() {
 
     try {
       console.log('Loading Word document with mammoth.js:', url)
-      
+
       // Fetch the Word document
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Word document: ${response.status}`)
       }
-      
+
       const arrayBuffer = await response.arrayBuffer()
-      
+
       // Use mammoth.js to convert Word document to HTML
       const result = await mammoth.convertToHtml(
         { arrayBuffer: arrayBuffer },
@@ -463,11 +464,11 @@ function GHprojects() {
           ]
         }
       )
-      
+
       console.log('Mammoth.js conversion success:', result)
       setWordDocumentContent(result.value)
       setWordDocumentLoading(false)
-      
+
     } catch (error) {
       console.error('Error loading Word document:', error)
       setWordDocumentError(`Error loading Word document: ${error.message}`)
@@ -652,7 +653,7 @@ function GHprojects() {
           </thead>
           <tbody>
             ${paymentsRows.length > 0
-              ? paymentsRows.map((row) => `
+          ? paymentsRows.map((row) => `
                 <tr>
                   <td></td>
                   <td>${row.invoice_no || ''}</td>
@@ -661,7 +662,7 @@ function GHprojects() {
                   <td>${row.recieved_date || ''}</td>
                   <td>${row.bal || ''}</td>
                 </tr>`).join('')
-              : `
+          : `
                 <tr>
                   <td colspan="6" style="text-align:center;color:#666;">No payment records available</td>
                 </tr>
@@ -745,6 +746,7 @@ function GHprojects() {
     setDocumentName((stage.stage_name || 'Document').toString())
     setUploadedBy(currentUserName || '')
     setDescription('')
+    setAttachments([])
 
     // Fetch existing documents for this stage and project
     try {
@@ -787,6 +789,19 @@ function GHprojects() {
     setFileToUpload(null)
     setExistingDocuments([])
     setSuggestedVersion('1')
+    setAttachments([])
+  }
+
+  const handleAddAttachments = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length) {
+      setAttachments((prev) => [...prev, ...files])
+    }
+    e.target.value = ''
+  }
+
+  const handleRemoveAttachment = (index) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleOpenEditDocumentModal = (doc) => {
@@ -862,6 +877,10 @@ function GHprojects() {
     formData.append('uploaded_by', uploader)
     formData.append('version', documentVersion || suggestedVersion)
     formData.append('file', fileToUpload)
+
+    attachments.forEach((att) => {
+      formData.append('attachment', att)
+    })
 
     try {
       const res = await fetch(`${apiBase}/documents/`, {
@@ -1173,10 +1192,10 @@ function GHprojects() {
         // Search – checks project_number, activity and coordinator
         const searchLower = searchText.toLowerCase().trim()
         if (searchLower) {
-          const inNumber   = p.project_number?.toString().toLowerCase().includes(searchLower)
+          const inNumber = p.project_number?.toString().toLowerCase().includes(searchLower)
           const inActivity = p.activity?.toLowerCase().includes(searchLower)
-          const inCoord    = p.project_co_ordinator?.toLowerCase().includes(searchLower)
-          if (! (inNumber || inActivity || inCoord)) return false
+          const inCoord = p.project_co_ordinator?.toLowerCase().includes(searchLower)
+          if (!(inNumber || inActivity || inCoord)) return false
         }
 
         // Coordinator filter
@@ -1227,7 +1246,7 @@ function GHprojects() {
 
   // Project type order and labels
   const projectTypeOrder = ['ISP', 'GSP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'Other']
-  
+
   const projectTypeConfig = {
     ISP: { color: 'blue', label: 'ISP Projects' },
     GSP: { color: 'indigo', label: 'GSP Projects' },
@@ -1253,7 +1272,7 @@ function GHprojects() {
     { title: 'LD', dataIndex: 'ld', width: 90 },
     { title: 'Balance', dataIndex: 'bal', width: 90 },
     { title: 'Status', dataIndex: 'follow_up_status', width: 150 },
-    
+
   ]
 
   const formatDate = (date) => (date ? formatDateTime(date) : 'N/A')
@@ -1301,7 +1320,7 @@ function GHprojects() {
               onClick={handleBackToProjects}
               size="large"
             >
-              
+
             </Button>
             <div>
               <Title level={3} className="!mb-0">
@@ -1397,13 +1416,38 @@ function GHprojects() {
                                   {doc.name ? `${doc.name.substring(0, 30)}${doc.name.length > 30 ? '...' : ''}` : 'Document'} - Version {doc.version || 'N/A'}
                                 </Text>
                                 {doc.description && (
-  <Text className="block text-xs mt-1 font-bold text-black">
-    {doc.description}
-  </Text>
-)}
+                                  <Text className="block text-xs mt-1 font-bold text-black">
+                                    {doc.description}
+                                  </Text>
+                                )}
                                 <div className="text-xs text-gray-500 mt-1">
                                   <UserOutlined /> {doc.uploaded_by || 'Unknown'} • <CalendarOutlined /> {formatDate(doc.updated_at)}
                                 </div>
+                                {Array.isArray(doc.attachment) && doc.attachment.length > 0 && (
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {doc.attachment.map((url, idx) => (
+                                      <Button
+                                        key={idx}
+                                        type="link"
+                                        size="small"
+                                        icon={<LinkOutlined />}
+                                        style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                                        onClick={() => {
+                                          const urlNoQuery = url.split('#')[0].split('?')[0]
+                                          const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+                                          if (ext === 'xlsx' || ext === 'xls') {
+                                            loadExcelWithRenderer(url)
+                                          } else if (ext === 'docx' || ext === 'doc') {
+                                            loadWordDocument(url)
+                                          }
+                                          setViewDocumentUrl(url)
+                                        }}
+                                      >
+                                        Attachment {idx + 1}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               <div className="absolute bottom-2 right-2 flex items-center gap-1">
                                 <Text type="secondary" className="text-xs">v{doc.version || 'N/A'}</Text>
@@ -1481,7 +1525,7 @@ function GHprojects() {
                       </div>
                     )}
 
-                    
+
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
                         {canAddRemarks && (
@@ -1563,9 +1607,9 @@ function GHprojects() {
                                     </div>
                                   </td>
                                   <td className="border border-gray-300 px-4 py-2 text-sm">
-                                    <Tag color={detail.invoice_status === 'Paid' ? 'green' : 
-                                           detail.invoice_status === 'Pending' ? 'orange' : 
-                                           detail.invoice_status === 'Generated' ? 'blue' : 'default'}>
+                                    <Tag color={detail.invoice_status === 'Paid' ? 'green' :
+                                      detail.invoice_status === 'Pending' ? 'orange' :
+                                        detail.invoice_status === 'Generated' ? 'blue' : 'default'}>
                                       {detail.invoice_status || 'Pending'}
                                     </Tag>
                                   </td>
@@ -1587,9 +1631,9 @@ function GHprojects() {
                             value={projectStageTitle}
                             onChange={(e) => setProjectStageTitle(e.target.value)}
                           /> */}
-                          <Button 
-                            type="primary" 
-                            size="small" 
+                          <Button
+                            type="primary"
+                            size="small"
                             icon={<PlusOutlined />}
                             onClick={() => handleOpenStageDetailModal(stage)}
                           >
@@ -1781,7 +1825,7 @@ function GHprojects() {
               name="status"
               rules={[{ required: true, message: 'Please select status' }]}
             >
-              <Select 
+              <Select
                 showSearch
                 allowClear
                 placeholder="Select or type status..."
@@ -1825,6 +1869,37 @@ function GHprojects() {
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">Click or drag file to this area</p>
             </Dragger>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Text strong className="text-sm">Attachments (optional)</Text>
+                <label
+                  htmlFor="gh-project-attachment-input"
+                  className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white cursor-pointer hover:bg-blue-600 transition-colors"
+                >
+                  <PlusOutlined style={{ fontSize: 12 }} />
+                </label>
+                <input
+                  id="gh-project-attachment-input"
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleAddAttachments}
+                />
+              </div>
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {attachments.map((file, index) => (
+                    <Tag
+                      key={`${file.name}-${index}`}
+                      closable
+                      onClose={() => handleRemoveAttachment(index)}
+                    >
+                      {file.name.length > 24 ? file.name.slice(0, 21) + '...' : file.name}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+            </div>
             <Input placeholder="Document Name *" value={documentName} disabled />
             <div>
               <Input
@@ -1904,15 +1979,15 @@ function GHprojects() {
             <div className="flex justify-between items-center w-full">
               <span>Document Viewer</span>
               <div className="space-x-2">
-                <Button 
-                  size="small" 
-                  onClick={() => setIsFullscreen(!isFullscreen)} 
+                <Button
+                  size="small"
+                  onClick={() => setIsFullscreen(!isFullscreen)}
                   icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
                 >
                   {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                 </Button>
-                <Button 
-                  size="small" 
+                <Button
+                  size="small"
                   onClick={() => {
                     setViewDocumentUrl(null)
                     setExcelRendererData(null)
@@ -1936,13 +2011,13 @@ function GHprojects() {
           keyboard={false}
           footer={null}
           width={isFullscreen ? '100vw' : 1100}
-          style={{ 
+          style={{
             top: isFullscreen ? 0 : undefined,
             maxWidth: isFullscreen ? '100vw' : undefined,
             margin: isFullscreen ? 0 : undefined,
             paddingBottom: isFullscreen ? 0 : undefined
           }}
-          bodyStyle={{ 
+          bodyStyle={{
             height: isFullscreen ? 'calc(100vh - 120px)' : 'auto',
             padding: isFullscreen ? 0 : '24px'
           }}
@@ -2005,11 +2080,10 @@ function GHprojects() {
                               {excelRendererData.sheets.map((sheet, index) => (
                                 <button
                                   key={index}
-                                  className={`px-3 py-1 text-sm border-b-2 transition-colors ${
-                                    activeSheetIndex === index
-                                      ? 'border-blue-500 text-blue-600 bg-blue-50'
-                                      : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                                  }`}
+                                  className={`px-3 py-1 text-sm border-b-2 transition-colors ${activeSheetIndex === index
+                                    ? 'border-blue-500 text-blue-600 bg-blue-50'
+                                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                    }`}
                                   onClick={() => setActiveSheetIndex(index)}
                                 >
                                   {sheet.name || `Sheet ${index + 1}`}
@@ -2019,22 +2093,22 @@ function GHprojects() {
                           )}
                         </div>
                         <div className="space-x-2">
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => window.open(currentUrl, '_blank')}
                             icon={<LinkOutlined />}
                           >
                             Download
                           </Button>
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => loadExcelWithRenderer(currentUrl)}
                           >
                             Refresh
                           </Button>
                         </div>
                       </div>
-                      
+
                       <div className={`${isFullscreen ? 'h-[calc(100vh-140px)]' : 'h-[70vh]'} border rounded p-4`}>
                         <style jsx>{`
                           .excel-scroll-container::-webkit-scrollbar {
@@ -2063,7 +2137,7 @@ function GHprojects() {
                           const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
                           const currentRows = currentSheet?.rows || excelRendererData.rows || []
                           const currentCols = currentSheet?.cols || excelRendererData.cols || []
-                          
+
                           return currentRows.length > 0 ? (
                             <div className="excel-scroll-container h-full">
                               <Table
@@ -2094,8 +2168,8 @@ function GHprojects() {
                                   }
                                 }))}
                                 pagination={false}
-                                scroll={{ 
-                                  x: 'max-content', 
+                                scroll={{
+                                  x: 'max-content',
                                   y: isFullscreen ? 'calc(100vh - 180px)' : 'calc(70vh - 120px)'
                                 }}
                                 size="small"
@@ -2122,7 +2196,7 @@ function GHprojects() {
                   </div>
                 )
               }
-              
+
               // For Word documents, use mammoth.js
               if (ext === 'docx' || ext === 'doc') {
                 if (wordDocumentLoading) {
@@ -2163,24 +2237,24 @@ function GHprojects() {
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
                         <div className="space-x-2">
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => window.open(currentUrl, '_blank')}
                             icon={<LinkOutlined />}
                           >
                             Download
                           </Button>
-                          <Button 
-                            size="small" 
+                          <Button
+                            size="small"
                             onClick={() => loadWordDocument(currentUrl)}
                           >
                             Refresh
                           </Button>
                         </div>
                       </div>
-                      
+
                       <div className={`${isFullscreen ? 'h-[calc(100vh-140px)]' : 'h-[70vh]'} overflow-auto border rounded p-6 bg-white`}>
-                        <div 
+                        <div
                           className="word-document-content"
                           dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
                           style={{
@@ -2201,13 +2275,13 @@ function GHprojects() {
                   </div>
                 )
               }
-              
+
               // For other Office files, show download option
               return (
                 <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
                   <div className="text-6xl mb-4">{
                     ext === 'pptx' || ext === 'ppt' ? ' presentation' :
-                    ' document'
+                      ' document'
                   }</div>
                   <h3 className="text-xl font-semibold">
                     {ext ? ext.toUpperCase() : 'Document'}
@@ -2307,16 +2381,15 @@ function GHprojects() {
                   <div>
                     <span className="font-semibold mr-2">Customer:</span>
                     <span className="inline-block min-w-[300px] align-middle">
-                      {`${allotmentData?.party_name || ''}${
-                        allotmentData?.address ? ', ' + allotmentData.address : ''
-                      }`}
+                      {`${allotmentData?.party_name || ''}${allotmentData?.address ? ', ' + allotmentData.address : ''
+                        }`}
                     </span>
                   </div>
 
 
                   <div>
                     <span className="font-semibold mr-2">Contact Person:</span>
-                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email ||''} </span>
+                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email || ''} </span>
                   </div>
                   <div>
                     <span className="font-semibold mr-2">Email Reference:</span>
@@ -2407,7 +2480,7 @@ function GHprojects() {
                   <div>
                     <div className="font-semibold mb-6">Copy to:</div>
                     <div className="inline-flex [column-gap:8.5rem]">
-                      <span style={{marginLeft:'10px'}}>GH (P&S)</span>
+                      <span style={{ marginLeft: '10px' }}>GH (P&S)</span>
                       <span>Sr. CAO</span>
                       <span>GH (C-{allotmentData?.center || ''})</span>
                       <span>CH (C-{allotmentData?.center || ''})</span>
@@ -2521,7 +2594,7 @@ function GHprojects() {
           {projectTypeOrder.map((type) => {
             const projects = groupedProjects[type]
             if (!projects || projects.length === 0) return null
-            
+
             const config = projectTypeConfig[type]
             const colorClasses = {
               blue: 'border-blue-200 text-blue-700 bg-blue-100',
@@ -2545,7 +2618,7 @@ function GHprojects() {
               rose: 'bg-rose-500',
               slate: 'bg-slate-500'
             }
-            
+
             return (
               <div key={type}>
                 <div className={`flex items-center gap-3 mb-4 pb-2 border-b-2 ${colorClasses[config.color].split(' ')[0]}`}>

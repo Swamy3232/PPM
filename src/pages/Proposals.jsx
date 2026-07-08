@@ -121,15 +121,15 @@ const PROPOSAL_FIELDS = [
   { name: 'center', label: 'Centre', width: 150 },
   { name: 'group', label: 'Group', width: 150 },
   { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
-   { name: 'proposals_converted', label: 'Proposals Converted', width: 180, input: 'select' },
-   { name: 'if_not_reason', label: 'If Not Reason', width: 200, input: 'textarea' },
-  
+  { name: 'proposals_converted', label: 'Proposals Converted', width: 180, input: 'select' },
+  { name: 'if_not_reason', label: 'If Not Reason', width: 200, input: 'textarea' },
+
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'small_value_project', label: 'Small Value Project', width: 180, input: 'checkbox' },
   { name: 'project_allotment_date', label: 'Project Allotment Date', width: 180 },
-  
- 
-  
+
+
+
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -184,12 +184,12 @@ const mapUiToApi = (values) => {
   FORM_FIELDS.forEach((field) => {
     const apiName = getApiName(field.name)
     let value = values[field.name] ?? ''
-    
+
     // Ensure small_value_project is always sent as a string
     if (field.name === 'small_value_project') {
       value = value ? 'true' : 'false'
     }
-    
+
     payload[apiName] = value
   })
   return payload
@@ -295,13 +295,13 @@ function Proposals() {
   const [queriesData, setQueriesData] = useState([])
   const [queriesLoading, setQueriesLoading] = useState(false)
   const [selectedProjectForQueries, setSelectedProjectForQueries] = useState(null)
-  
+
   // Response modal state
   const [responseModalOpen, setResponseModalOpen] = useState(false)
   const [selectedQuery, setSelectedQuery] = useState(null)
   const [responseText, setResponseText] = useState('')
   const [responseLoading, setResponseLoading] = useState(false)
-  
+
   // Unresponded query counts for Query History button logic
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
 
@@ -355,17 +355,17 @@ function Proposals() {
       }
       const allQueries = await response.json()
       console.log('All queries from API:', allQueries)
-      
+
       // Filter queries TO admin (not from admin) AND for this specific project
-      const adminQueries = Array.isArray(allQueries) 
-        ? allQueries.filter(query => 
-            String(query.to) === 'admin' && 
-            String(query.project_id) === String(projectId)
-          )
+      const adminQueries = Array.isArray(allQueries)
+        ? allQueries.filter(query =>
+          String(query.to) === 'admin' &&
+          String(query.project_id) === String(projectId)
+        )
         : []
       console.log(`Project ${projectId}: Found ${adminQueries.length} admin queries`)
-      
-      const sortedQueries = adminQueries.sort((a, b) => 
+
+      const sortedQueries = adminQueries.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       )
       console.log('Setting queries data:', sortedQueries)
@@ -386,14 +386,14 @@ function Proposals() {
     // Use existing queries data from record instead of fetching again (like ScientistProposals.jsx)
     const projectQueries = record.queries || []
     console.log('Using existing queries from record:', projectQueries)
-    
+
     // Check if queries exist
     if (!projectQueries || projectQueries.length === 0) {
       console.log('No queries found for this project')
       message.info('No queries found for this project')
       return
     }
-    
+
     // Sort queries by date (newest first) for modal display
     const sortedQueries = projectQueries.sort((a, b) => {
       try {
@@ -440,7 +440,7 @@ function Proposals() {
     }
 
     setResponseLoading(true)
-    
+
     try {
       const payload = {
         from_: selectedQuery.from_,     // Keep same from as original query
@@ -452,7 +452,7 @@ function Proposals() {
 
       console.log('Sending response payload:', payload)
       console.log('API URL:', `${API_BASE_URL}/Remarkss/`)
-      
+
       const response = await fetch(`${API_BASE_URL}/Remarkss/${selectedQuery.id}`, {
         method: 'PUT',
         headers: {
@@ -461,7 +461,7 @@ function Proposals() {
         },
         body: JSON.stringify(payload)
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.detail || 'Failed to submit response')
@@ -469,12 +469,12 @@ function Proposals() {
 
       message.success('Response submitted successfully')
       closeResponseModal()
-      
+
       // Refresh queries data
       if (selectedProjectForQueries) {
         await fetchQueriesForProject(selectedProjectForQueries.id)
       }
-      
+
       // Refresh all queries
       const allQueriesResponse = await fetch(`${API_BASE_URL}/Remarkss/`, {
         headers: { accept: 'application/json' },
@@ -485,7 +485,7 @@ function Proposals() {
       }
       const fetchEvent = new Event('refresh-proposals')
       window.dispatchEvent(fetchEvent)
-      
+
     } catch (error) {
       console.error('Error submitting response:', error)
       message.error(error.message || 'Failed to submit response')
@@ -645,15 +645,15 @@ function Proposals() {
       // Attach filtered queries to each proposal
       const proposalsWithQueries = normalized.map(proposal => {
         // Filter queries for this specific project (show all queries, not just TO admin)
-        const projectQueries = Array.isArray(allQueries) 
-          ? allQueries.filter(query => 
-              String(query.project_id) === String(proposal.id)
-            )
+        const projectQueries = Array.isArray(allQueries)
+          ? allQueries.filter(query =>
+            String(query.project_id) === String(proposal.id)
+          )
           : []
         // console.log(`Proposal ${proposal.id}: Found ${projectQueries.length} queries`)
         return { ...proposal, queries: projectQueries }
       })
-      
+
       console.log('Proposals with admin queries loaded:', proposalsWithQueries.map(p => ({
         id: p.id,
         project_number: p.project_number,
@@ -761,18 +761,18 @@ function Proposals() {
 
     try {
       console.log('Loading Excel file with react-excel-renderer:', url)
-      
+
       // Fetch the Excel file
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Excel file: ${response.status}`)
       }
-      
+
       const blob = await response.blob()
-      
+
       // Use react-excel-renderer to parse the file
       const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      
+
       ExcelRenderer(file, (err, resp) => {
         if (err) {
           console.error('ExcelRenderer error:', err)
@@ -782,18 +782,18 @@ function Proposals() {
           console.log('ExcelRenderer success:', resp)
           console.log('Rows structure:', resp.rows?.[0])
           console.log('Cols structure:', resp.cols)
-          
+
           // Check if multiple sheets are available
           if (resp.sheets && resp.sheets.length > 1) {
             console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
           }
-          
+
           setExcelRendererData(resp)
           setActiveSheetIndex(0)
           setExcelRendererLoading(false)
         }
       })
-      
+
     } catch (error) {
       console.error('Error loading Excel file:', error)
       setExcelRendererError(`Error loading Excel file: ${error.message}`)
@@ -808,15 +808,15 @@ function Proposals() {
 
     try {
       console.log('Loading Word document with mammoth.js:', url)
-      
+
       // Fetch the Word document
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Word document: ${response.status}`)
       }
-      
+
       const arrayBuffer = await response.arrayBuffer()
-      
+
       // Use mammoth.js to convert Word document to HTML
       const result = await mammoth.convertToHtml(
         { arrayBuffer: arrayBuffer },
@@ -831,11 +831,11 @@ function Proposals() {
           ]
         }
       )
-      
+
       console.log('Mammoth.js conversion success:', result)
       setWordDocumentContent(result.value)
       setWordDocumentLoading(false)
-      
+
     } catch (error) {
       console.error('Error loading Word document:', error)
       setWordDocumentError(`Error loading Word document: ${error.message}`)
@@ -855,7 +855,7 @@ function Proposals() {
   useEffect(() => {
     const currentUrl = viewDocumentUrl || ''
     if (!currentUrl) return
-    
+
     const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
     const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
     const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
@@ -1062,6 +1062,35 @@ function Proposals() {
     [allCustomerSuggestions, fetchCustomerSuggestions],
   )
 
+  const handleShowDuplicateQuoteRefs = () => {
+    const seen = new Map()
+    const duplicates = new Set()
+
+    tableData.forEach((item) => {
+      const ref = (item.quote_reference || '').trim().toLowerCase()
+      if (!ref) return
+      if (seen.has(ref)) {
+        duplicates.add(ref)
+      } else {
+        seen.set(ref, true)
+      }
+    })
+
+    if (duplicates.size === 0) {
+      message.info('No duplicate Quote References found')
+      setFilteredData(tableData)
+      return
+    }
+
+    const duplicateRows = tableData.filter((item) => {
+      const ref = (item.quote_reference || '').trim().toLowerCase()
+      return ref && duplicates.has(ref)
+    })
+
+    setFilteredData(duplicateRows)
+    message.warning(`Found ${duplicateRows.length} proposals with duplicate Quote References`)
+  }
+
   const handleCustomerSelect = useCallback(
     (value, option) => {
       const customer = option?.customer
@@ -1168,17 +1197,17 @@ function Proposals() {
             setAvailableCoordinators([])
           }
         } else {
-          const matchingUsers = users.filter(user => 
+          const matchingUsers = users.filter(user =>
             user.center === centerCodeFromRecord && user.group === groupCodeFromRecord
           )
-          
+
           // Include center head if not already in the list
           const center = centres.find(c => c.code === centerCodeFromRecord)
           const centerHead = center?.head
           if (centerHead && !matchingUsers.some(u => u.name === centerHead)) {
             matchingUsers.push({ name: centerHead, id: `head-${center.id}` })
           }
-          
+
           setAvailableCoordinators(matchingUsers)
         }
       } else {
@@ -1201,6 +1230,23 @@ function Proposals() {
 
   const handleSubmit = async (values) => {
     setSubmitLoading(true)
+
+    // Extra safety check before hitting the API
+    const trimmedRef = (values.quote_reference || '').trim().toLowerCase()
+    if (trimmedRef) {
+      const duplicate = tableData.find((item) => {
+        if (!item.quote_reference) return false
+        if (editingRecord && item.id === editingRecord.id) return false
+        return item.quote_reference.trim().toLowerCase() === trimmedRef
+      })
+      if (duplicate) {
+        message.error(
+          `Quote Reference '${values.quote_reference}' already exists. Please use a unique Quote Reference.`
+        )
+        setSubmitLoading(false)
+        return
+      }
+    }
     const payload = mapUiToApi(values)
     const isEditingProject = Boolean(editingRecord?.project_number?.toString().trim())
     if (isEditingProject) {
@@ -1222,7 +1268,13 @@ function Proposals() {
       })
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(errorText || 'Request failed')
+        let detail = errorText
+        try {
+          const parsed = JSON.parse(errorText)
+          detail = parsed.detail || errorText
+        } catch {
+        }
+        throw new Error(detail || 'Request failed')
       }
       await fetchProposals()
       message.success(isEditing ? 'Proposal updated' : 'Proposal created')
@@ -1259,6 +1311,8 @@ function Proposals() {
     [fetchProposals],
   )
 
+
+
   // Calculate statistics
   useEffect(() => {
     let filtered = [...tableData]
@@ -1277,7 +1331,7 @@ function Proposals() {
 
     if (projectNumberFilter && projectNumberFilter.length > 0) {
       filtered = filtered.filter((item) =>
-        item.project_number && projectNumberFilter.some(filter => 
+        item.project_number && projectNumberFilter.some(filter =>
           item.project_number.toUpperCase().startsWith(filter.toUpperCase())
         )
       )
@@ -1290,7 +1344,7 @@ function Proposals() {
     }
 
     if (centreFilter && centreFilter.length > 0) {
-      filtered = filtered.filter((item) => 
+      filtered = filtered.filter((item) =>
         item.center && centreFilter.includes(item.center)
       )
     }
@@ -1356,11 +1410,11 @@ function Proposals() {
     } else if (selectedDateField && startDate && endDate) {
       const startOfDay = startDate.startOf('day')
       const endOfDay = endDate.endOf('day')
-      
+
       filtered = filtered.filter((item) => {
         const dateValue = item[selectedDateField]
         if (!dateValue) return false
-        
+
         try {
           const itemDate = dayjs(dateValue)
           return itemDate.isAfter(startOfDay) && itemDate.isBefore(endOfDay)
@@ -1685,6 +1739,41 @@ function Proposals() {
         fixed: field.fixed,
       }
 
+
+      const parseEnquiryDate = (val) => {
+        if (!val) return 0
+
+        // Try native/ISO parsing first (covers "2024-06-01", "2024-06-01T00:00:00Z", Date objects, etc.)
+        let parsed = dayjs(val)
+        if (parsed.isValid()) return parsed.valueOf()
+
+        // Fallback: explicit DD-MM-YYYY strings
+        parsed = dayjs(val, 'DD-MM-YYYY', true)
+        if (parsed.isValid()) return parsed.valueOf()
+
+        // Fallback: explicit DD/MM/YYYY strings, if that format also shows up
+        parsed = dayjs(val, 'DD/MM/YYYY', true)
+        if (parsed.isValid()) return parsed.valueOf()
+
+        return 0
+      }
+
+      // Sortable Enquiry Date column (use robust parser that handles ISO, DD-MM-YYYY, DD/MM/YYYY and Excel serials)
+      if (field.name === 'enquiry_date') {
+        return {
+          ...baseColumn,
+          sorter: {
+            compare: (a, b) => {
+              const safeVal = (v) => v === null || v === undefined ? '' : v
+              return parseEnquiryDate(safeVal(a.enquiry_date)) - parseEnquiryDate(safeVal(b.enquiry_date))
+            },
+            multiple: 1,
+          },
+          sortDirections: ['ascend', 'descend'],
+          render: (value) => formatDate(value),
+        }
+      }
+
       // Custom render for Status field with styled badges
       if (field.name === 'status') {
         return {
@@ -1823,23 +1912,23 @@ function Proposals() {
         if (!record.payments || record.payments.length === 0) {
           return <span style={{ color: '#999' }}>0</span>
         }
-        
+
         const total = record.payments.reduce((sum, payment) => {
           const amount = parseFloat(payment.amount_recieved) || 0
           return sum + amount
         }, 0)
-        
+
         return (
-          <span style={{ 
-            fontWeight: 600, 
-            color: total > 0 ? '#52c41a' : '#999' 
+          <span style={{
+            fontWeight: 600,
+            color: total > 0 ? '#52c41a' : '#999'
           }}>
             {formatIndianNumber(total)}
           </span>
         )
       },
     }
-    
+
     // Insert total column after payment columns
     if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
       const insertIndex = ppmRemarksIndex + 1 + paymentColumns.length
@@ -1919,10 +2008,10 @@ function Proposals() {
                   openQueriesModal(record)
                 }}
                 style={{
-                  color: record.queries?.some(query => 
+                  color: record.queries?.some(query =>
                     dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                   ) ? '#ff4d4f' : '#1890ff',
-                  fontWeight: record.queries?.some(query => 
+                  fontWeight: record.queries?.some(query =>
                     dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                   ) ? 'bold' : 'normal'
                 }}
@@ -1941,23 +2030,23 @@ function Proposals() {
         render: (_, record) => {
           // Show all queries for this project
           const allQueries = record.queries || []
-          
+
           if (allQueries.length === 0) {
             // Don't show anything when no queries for this project
             return null
           }
-          
+
           // Find queries with responses
           const respondedQueries = allQueries.filter(q => q.respond_to_remarks)
           const pendingQueries = allQueries.filter(q => !q.respond_to_remarks)
-          
+
           // Always show Query History button when there are queries
           return (
             <div>
               <div style={{ marginBottom: '8px' }}>
                 {pendingQueries.length > 0 && (
-                  <div style={{ 
-                    color: '#ff4d4f', 
+                  <div style={{
+                    color: '#ff4d4f',
                     fontWeight: 'bold',
                     backgroundColor: '#fff2f0',
                     padding: '4px',
@@ -1970,7 +2059,7 @@ function Proposals() {
                     </div>
                   </div>
                 )}
-                
+
                 {respondedQueries.length > 0 && (
                   <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
                     <div>{respondedQueries[0].respond_to_remarks}</div>
@@ -1994,20 +2083,20 @@ function Proposals() {
               </div>
             </div>
           )
-          
+
           // Show latest response if no pending queries
           const latestResponse = respondedQueries.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]
           const responseDate = dayjs(latestResponse.updated_at)
           const today = dayjs().startOf('day')
           const yesterday = dayjs().subtract(1, 'day').startOf('day')
           let dateLabel = responseDate.format('DD-MM-YYYY')
-          
+
           if (responseDate.isSame(today, 'day')) {
             dateLabel = 'Today ' + responseDate.format('HH:mm')
           } else if (responseDate.isSame(yesterday, 'day')) {
             dateLabel = 'Yesterday ' + responseDate.format('HH:mm')
           }
-          
+
           return (
             <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
               <div>{latestResponse.respond_to_remarks}</div>
@@ -2024,15 +2113,15 @@ function Proposals() {
         width: 80,
         render: (_, record) => {
           // Find pending admin queries
-          const pendingAdminQueries = record.queries?.filter(q => 
+          const pendingAdminQueries = record.queries?.filter(q =>
             String(q.to) === 'admin' && !q.respond_to_remarks
           ) || []
-          
+
           // Only show Respond button if there are pending admin queries
           if (pendingAdminQueries.length === 0) {
             return null
           }
-          
+
           return (
             <Button
               size="small"
@@ -2110,12 +2199,72 @@ function Proposals() {
     },
   ]
 
+  // Project code prefixes constant
+  const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
+
+  // Total Proposals Submitted breakdown (all items)
+ 
+
+
+
+  // Technically Completed breakdown
+  const technicallyCompletedBreakdown = {}
+  tableData.forEach((item) => {
+    if (item.technical_completed_year && item.technical_completed_year.trim() !== '') {
+      if (item.project_number) {
+        const prefix = PROJECT_PREFIXES.find((p) =>
+          item.project_number.toUpperCase().startsWith(p),
+        )
+        if (prefix) {
+          technicallyCompletedBreakdown[prefix] = (technicallyCompletedBreakdown[prefix] || 0) + 1
+        } else {
+          technicallyCompletedBreakdown.Other = (technicallyCompletedBreakdown.Other || 0) + 1
+        }
+      }
+    }
+  })
+
+  // Financially Completed breakdown
+  const financiallyCompletedBreakdown = {}
+  tableData.forEach((item) => {
+    if (item.technical_completed_year && item.technical_completed_year.trim() !== '' &&
+      item.financial_completed_year && item.financial_completed_year.trim() !== '') {
+      if (item.project_number) {
+        const prefix = PROJECT_PREFIXES.find((p) =>
+          item.project_number.toUpperCase().startsWith(p),
+        )
+        if (prefix) {
+          financiallyCompletedBreakdown[prefix] = (financiallyCompletedBreakdown[prefix] || 0) + 1
+        } else {
+          financiallyCompletedBreakdown.Other = (financiallyCompletedBreakdown.Other || 0) + 1
+        }
+      }
+    }
+  })
+
+  // Ongoing Projects breakdown
+  const ongoingProjectsBreakdown = {}
+  tableData.forEach((item) => {
+    if (item.status === 'Ongoing' || item.status === 'On Hold') {
+      if (item.project_number) {
+        const prefix = PROJECT_PREFIXES.find((p) =>
+          item.project_number.toUpperCase().startsWith(p),
+        )
+        if (prefix) {
+          ongoingProjectsBreakdown[prefix] = (ongoingProjectsBreakdown[prefix] || 0) + 1
+        } else {
+          ongoingProjectsBreakdown.Other = (ongoingProjectsBreakdown.Other || 0) + 1
+        }
+      }
+    }
+  })
+
   // Calculate statistics
   const statistics = useMemo(() => {
     const totalProposals = tableData.filter(
       (item) => !item.project_number || item.project_number.trim() === '',
     ).length
-    
+
     const totalProjects = tableData.filter(
       (item) => item.project_number && item.project_number.trim() !== '',
     ).length
@@ -2143,7 +2292,6 @@ function Proposals() {
     ).length
 
     // Calculate project code breakdown
-    const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
       if (item.project_number) {
@@ -2166,6 +2314,11 @@ function Proposals() {
       pendingProjects,
       onHoldProjects,
       projectCodeBreakdown,
+     // totalSubmittedBreakdown,
+     // pendingBreakdown,
+      technicallyCompletedBreakdown,
+      financiallyCompletedBreakdown,
+      ongoingProjectsBreakdown,
     }
   }, [tableData])
 
@@ -2182,7 +2335,7 @@ function Proposals() {
                 <div className="space-y-6">
                   {/* Statistics Cards */}
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-                     <Card
+                    <Card
                       className="bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                     >
                       <Statistic
@@ -2198,15 +2351,16 @@ function Proposals() {
                           fontWeight: 'bold',
                         }}
                       />
+
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                       onClick={() => setStatusFilter('proposals')}
                     >
                       <Statistic
                         title={
                           <span className="text-white/90">
-                             Pending
+                            Pending
                           </span>
                         }
                         value={statistics.totalProposals}
@@ -2264,6 +2418,18 @@ function Proposals() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.technicallyCompletedBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.technicallyCompletedBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
@@ -2282,9 +2448,21 @@ function Proposals() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.financiallyCompletedBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.financiallyCompletedBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                       onClick={() => setStatusFilter('pendingProjects')}
                     >
                       <Statistic
@@ -2300,6 +2478,18 @@ function Proposals() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {Object.keys(statistics.ongoingProjectsBreakdown).length > 0 && (
+                        <div className="mt-2 text-xs text-white/80">
+                          {Object.entries(statistics.ongoingProjectsBreakdown)
+                            .filter(([, count]) => count > 0)
+                            .map(([code, count], idx, arr) => (
+                              <span key={code}>
+                                {code}: {count}
+                                {idx < arr.length - 1 ? ' | ' : ''}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                       {statistics.onHoldProjects > 0 && (
                         <div style={{
                           fontSize: '12px',
@@ -2311,7 +2501,7 @@ function Proposals() {
                         </div>
                       )}
                     </Card>
-                   
+
                   </div>
 
                   {/* Search and Filters Section */}
@@ -2321,25 +2511,25 @@ function Proposals() {
                         Search & Filters
                       </Title>
                       <div className="flex gap-2">
-                          <Button
-                            type="primary"
-                            icon={<DownloadOutlined />}
-                            size="default"
-                            onClick={handleExportExcel}
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                          >
-                            Export to Excel
-                          </Button>
+                        <Button
+                          type="primary"
+                          icon={<DownloadOutlined />}
+                          size="default"
+                          onClick={handleExportExcel}
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
+                        >
+                          Export to Excel
+                        </Button>
 
                         {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
-                        <Button
-                          type="default"
-                          icon={<UploadOutlined />}
-                          size="default"
-                          onClick={() => document.getElementById('excel-import-input').click()}
-                        >
-                          Import Excel
-                        </Button>
+                          <Button
+                            type="default"
+                            icon={<UploadOutlined />}
+                            size="default"
+                            onClick={() => document.getElementById('excel-import-input').click()}
+                          >
+                            Import Excel
+                          </Button>
                         )}
                         <input
                           id="excel-import-input"
@@ -2349,6 +2539,8 @@ function Proposals() {
                           style={{ display: 'none' }}
                         />
                       </div>
+
+
                     </div>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} sm={12} md={6}>
@@ -2488,7 +2680,17 @@ function Proposals() {
                           </Select>
                         </Form.Item>
                       </Col>
-                                          </Row>
+
+                      <Col xs={24} sm={12} md={6} className="flex items-end">
+                        <Button
+                          onClick={handleShowDuplicateQuoteRefs}
+                          size="large"
+                          style={{ width: '100%' }}
+                        >
+                          Duplicate Quote Refs
+                        </Button>
+                      </Col>
+                    </Row>
                   </div>
 
                   {importPreview && (
@@ -3130,7 +3332,7 @@ function Proposals() {
                               onClick={() => {
                                 // Filter projects with pending admin queries
                                 const projectsWithPendingQueries = tableData.filter(record => {
-                                  const adminQueries = record.queries?.filter(q => 
+                                  const adminQueries = record.queries?.filter(q =>
                                     String(q.to) === 'admin' && !q.respond_to_remarks
                                   ) || []
                                   return adminQueries.length > 0
@@ -3140,7 +3342,7 @@ function Proposals() {
                               }}
                             >
                               Pending Queries ({tableData.filter(record => {
-                                const adminQueries = record.queries?.filter(q => 
+                                const adminQueries = record.queries?.filter(q =>
                                   String(q.to) === 'admin' && !q.respond_to_remarks
                                 ) || []
                                 return adminQueries.length > 0
@@ -3463,19 +3665,19 @@ function Proposals() {
 
               // Conditional logic based on proposals_converted field
               const fieldsAfterProposalsConverted = [
-                'project_number', 'project_allotment_date', 'project_co_ordinator', 
-                'party_name', 'activity', 'key_deliverables', 'order_number', 'order_date', 
-                'delivery_date', 'extended_delivery_date', 'date_of_actual_commencement', 
-                'order_value', 'details_of_external_internal_review_meeting', 'review_meeting_date', 
-                'closer_report', 'technical_completed_year', 'financial_completed_year', 
+                'project_number', 'project_allotment_date', 'project_co_ordinator',
+                'party_name', 'activity', 'key_deliverables', 'order_number', 'order_date',
+                'delivery_date', 'extended_delivery_date', 'date_of_actual_commencement',
+                'order_value', 'details_of_external_internal_review_meeting', 'review_meeting_date',
+                'closer_report', 'technical_completed_year', 'financial_completed_year',
                 'status', 'ppm_remarks', 'dispatch_date', 'small_value_project'
               ]
-              
+
               // Hide if_not_reason unless proposals_converted is 'No'
               if (field.name === 'if_not_reason' && proposalsConverted !== 'No') {
                 return null
               }
-              
+
               // Hide all fields after proposals_converted unless proposals_converted is 'Yes'
               if (fieldsAfterProposalsConverted.includes(field.name) && proposalsConverted !== 'Yes') {
                 return null
@@ -3851,7 +4053,7 @@ function Proposals() {
                 const uniqueCoordinators = availableCoordinators.filter((user, index, self) =>
                   index === self.findIndex((u) => u.name === user.name)
                 )
-                
+
                 return (
                   <Form.Item
                     key={field.name}
@@ -3963,10 +4165,10 @@ function Proposals() {
                         const value = Array.isArray(val)
                           ? val[val.length - 1] || ''
                           : val || ''
-                        
+
                         // Reset group when center changes
                         form.setFieldsValue({ center: value, group: undefined, project_co_ordinator: undefined })
-                        
+
                         // Update selected center ID
                         if (value) {
                           const matchedCentre = centres.find(
@@ -3994,10 +4196,10 @@ function Proposals() {
               if (field.name === 'group') {
                 const currentCenterValue = form.getFieldValue('center')
                 // Get groups for currently selected center, or all groups if no center selected
-                const availableGroups = currentCenterValue 
-                  ? filteredGroups 
+                const availableGroups = currentCenterValue
+                  ? filteredGroups
                   : groups
-                
+
                 return (
                   <Form.Item
                     key={field.name}
@@ -4014,7 +4216,7 @@ function Proposals() {
                         : []
                     }
                   >
-                    <Select 
+                    <Select
                       allowClear
                       showSearch
                       placeholder="Select Group"
@@ -4022,7 +4224,7 @@ function Proposals() {
                         // Find the selected center and group
                         const selectedCenterCode = form.getFieldValue('center')
                         const selectedCenter = centres.find(c => c.code === selectedCenterCode)
-                        
+
                         if (groupValue === 'Center Head') {
                           // Special case for Center Head
                           const centerHead = selectedCenter?.head
@@ -4035,22 +4237,22 @@ function Proposals() {
                           }
                         } else {
                           const selectedGroup = groups.find(g => g.code === groupValue)
-                          
+
                           if (selectedCenter && selectedGroup) {
                             // Find all users matching the center and group
-                            const matchingUsers = users.filter(user => 
+                            const matchingUsers = users.filter(user =>
                               user.center === selectedCenterCode && user.group === groupValue
                             )
-                            
+
                             // Include center head if not already in the list
                             const centerHead = selectedCenter.head
                             if (centerHead && !matchingUsers.some(u => u.name === centerHead)) {
                               matchingUsers.push({ name: centerHead, id: `head-${selectedCenter.id}` })
                             }
-                            
+
                             // Update available coordinators list
                             setAvailableCoordinators(matchingUsers)
-                            
+
                             // If there's only one coordinator, auto-select them
                             if (matchingUsers.length === 1) {
                               form.setFieldsValue({ project_co_ordinator: matchingUsers[0].name })
@@ -4068,7 +4270,7 @@ function Proposals() {
                             form.setFieldsValue({ project_co_ordinator: '' })
                           }
                         }
-                        
+
                         // Re-fetch users to get the updated list for the new center/group
                         setTimeout(() => fetchUsers(), 100) // Small delay to ensure form is updated first
                       }}
@@ -4156,8 +4358,8 @@ function Proposals() {
                     name={field.name}
                     label={field.label}
                   >
-                    <Select 
-                      placeholder="-- Select Option --" 
+                    <Select
+                      placeholder="-- Select Option --"
                       allowClear
                       onChange={(value) => setProposalsConverted(value)}
                     >
@@ -4173,7 +4375,43 @@ function Proposals() {
                 const uniqueCoordinators = availableCoordinators.filter((user, index, self) =>
                   index === self.findIndex((u) => u.name === user.name)
                 )
-                
+
+                if (field.name === 'quote_reference') {
+                  return (
+                    <Form.Item
+                      key={field.name}
+                      name={field.name}
+                      label={field.label}
+                      rules={[
+                        ...(field.required
+                          ? [{ required: true, message: `Please enter ${field.label}` }]
+                          : []),
+                        {
+                          validator: (_, value) => {
+                            if (!value || !value.trim()) return Promise.resolve()
+                            const normalized = value.trim().toLowerCase()
+                            const duplicate = tableData.find((item) => {
+                              if (!item.quote_reference) return false
+                              if (editingRecord && item.id === editingRecord.id) return false
+                              return item.quote_reference.trim().toLowerCase() === normalized
+                            })
+                            if (duplicate) {
+                              return Promise.reject(
+                                new Error(
+                                  `Quote Reference '${value}' already exists. Please enter a different Quote Reference.`
+                                )
+                              )
+                            }
+                            return Promise.resolve()
+                          },
+                        },
+                      ]}
+                    >
+                      <Input placeholder="Enter unique Quote Reference" />
+                    </Form.Item>
+                  )
+                }
+
                 return (
                   <Form.Item
                     key={field.name}
@@ -4182,11 +4420,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please select ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please select ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                   >
@@ -4263,7 +4501,7 @@ function Proposals() {
               key: 'remarks_description',
               ellipsis: true,
               render: (text, record) => (
-                <span style={{ 
+                <span style={{
                   color: record.respond_to_remarks ? '#52c41a' : '#ff4d4f',
                   fontWeight: record.respond_to_remarks ? 'normal' : 'bold'
                 }}>
@@ -4281,7 +4519,7 @@ function Proposals() {
                 const queryDate = dayjs(value)
                 const today = dayjs().startOf('day')
                 const yesterday = dayjs().subtract(1, 'day').startOf('day')
-                
+
                 if (queryDate.isSame(today, 'day')) {
                   return 'Today ' + queryDate.format('HH:mm')
                 } else if (queryDate.isSame(yesterday, 'day')) {

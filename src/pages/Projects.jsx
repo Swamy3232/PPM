@@ -176,6 +176,8 @@ function Projects() {
   const [documentVersion, setDocumentVersion] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState('')
 
+  const [attachments, setAttachments] = useState([])
+
   // Edit Document
   const [editDocumentModalVisible, setEditDocumentModalVisible] = useState(false)
   const [selectedDocumentForEdit, setSelectedDocumentForEdit] = useState(null)
@@ -826,6 +828,7 @@ function Projects() {
     setDocumentName((stage.stage_name || 'Document').toString())
     setUploadedBy(currentUserName || '')
     setDescription('')
+    setAttachments([])
 
     try {
       const res = await fetch(`${apiBase}/documents/`, {
@@ -867,7 +870,21 @@ function Projects() {
     setFileToUpload(null)
     setExistingDocuments([])
     setSuggestedVersion('1')
+    setAttachments([])
   }
+
+  const handleAddAttachments = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length) {
+      setAttachments((prev) => [...prev, ...files])
+    }
+    e.target.value = ''
+  }
+
+  const handleRemoveAttachment = (index) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
 
   const handleOpenEditDocumentModal = (doc) => {
     setSelectedDocumentForEdit(doc)
@@ -942,6 +959,9 @@ function Projects() {
     formData.append('uploaded_by', uploader)
     formData.append('version', documentVersion || suggestedVersion)
     formData.append('file', fileToUpload)
+    attachments.forEach((att) => {
+      formData.append('attachment', att)
+    })
 
     try {
       const res = await fetch(`${apiBase}/documents/`, {
@@ -1373,18 +1393,18 @@ function Projects() {
                         })()} {stageName || 'Stage'}
                       </Title>
                       {!isGuest && (
-                      <Space>
-                        {canUpload && (
-                          <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
-                            Upload
-                          </Button>
-                        )}
-                        {/* {canAddStageDetails && (
+                        <Space>
+                          {canUpload && (
+                            <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
+                              Upload
+                            </Button>
+                          )}
+                          {/* {canAddStageDetails && (
                           // <Button size="small" icon={<PlusOutlined />} onClick={() => handleOpenStageDetailModal(stage)}>
                             
                           // </Button>
                         )} */}
-                      </Space>
+                        </Space>
                       )}
                     </div>
 
@@ -1402,6 +1422,31 @@ function Projects() {
                                 <div className="text-xs text-gray-500 mt-1">
                                   <UserOutlined /> {doc.uploaded_by || 'Unknown'} • <CalendarOutlined /> {formatDate(doc.updated_at)}
                                 </div>
+                                {Array.isArray(doc.attachment) && doc.attachment.length > 0 && (
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {doc.attachment.map((url, idx) => (
+                                      <Button
+                                        key={idx}
+                                        type="link"
+                                        size="small"
+                                        icon={<LinkOutlined />}
+                                        style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                                        onClick={() => {
+                                          const urlNoQuery = url.split('#')[0].split('?')[0]
+                                          const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
+                                          if (ext === 'xlsx' || ext === 'xls') {
+                                            loadExcelWithRenderer(url)
+                                          } else if (ext === 'docx' || ext === 'doc') {
+                                            loadWordDocument(url)
+                                          }
+                                          setViewDocumentUrl(url)
+                                        }}
+                                      >
+                                        Attachment {idx + 1}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               <div className="absolute bottom-2 right-2 flex items-center gap-1">
                                 <Text type="secondary" className="text-xs">v{doc.version || 'N/A'}</Text>
@@ -1637,16 +1682,16 @@ function Projects() {
                             value={projectStageTitle}
                             onChange={(e) => setProjectStageTitle(e.target.value)}
                           /> */}
-                           {!isGuest && (
-                          <Button
-                            type="primary"
-                            size="small"
-                            icon={<PlusOutlined />}
-                            onClick={() => handleOpenStageDetailModal(stage)}
-                          >
-                            Add Stage
-                          </Button>
-                           )}
+                          {!isGuest && (
+                            <Button
+                              type="primary"
+                              size="small"
+                              icon={<PlusOutlined />}
+                              onClick={() => handleOpenStageDetailModal(stage)}
+                            >
+                              Add Stage
+                            </Button>
+                          )}
                         </div>
                         <div className="mt-3">
                           <table className="min-w-full bg-white border border-gray-200">
@@ -1704,13 +1749,13 @@ function Projects() {
 
                     <div>
                       {!isGuest && (
-                      <div className="flex justify-between items-center mb-3">
-                        {canAddPayments && (
+                        <div className="flex justify-between items-center mb-3">
+                          {canAddPayments && (
                             <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
                               Add Payment
                             </Button>
-                        )}
-                      </div>
+                          )}
+                        </div>
                       )}
 
                       {hasPay && (
@@ -1921,7 +1966,6 @@ function Projects() {
             </div>
           </Form>
         </Modal>
-
         <Modal
           title={`Upload Document - ${selectedStageForUpload?.stage_name}`}
           open={uploadModalVisible}
@@ -1937,6 +1981,39 @@ function Projects() {
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">Click or drag file to this area</p>
             </Dragger>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Text strong className="text-sm">Attachments (optional)</Text>
+                <label
+                  htmlFor="project-attachment-input"
+                  className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white cursor-pointer hover:bg-blue-600 transition-colors"
+                >
+                  <PlusOutlined style={{ fontSize: 12 }} />
+                </label>
+                <input
+                  id="project-attachment-input"
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleAddAttachments}
+                />
+              </div>
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {attachments.map((file, index) => (
+                    <Tag
+                      key={`${file.name}-${index}`}
+                      closable
+                      onClose={() => handleRemoveAttachment(index)}
+                    >
+                      {file.name.length > 24 ? file.name.slice(0, 21) + '...' : file.name}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <Input placeholder="Document Name *" value={documentName} disabled />
             <div>
               <Input
@@ -2118,8 +2195,8 @@ function Projects() {
                                 <button
                                   key={index}
                                   className={`px-3 py-1 text-sm border-b-2 transition-colors ${activeSheetIndex === index
-                                      ? 'border-blue-500 text-blue-600 bg-blue-50'
-                                      : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                    ? 'border-blue-500 text-blue-600 bg-blue-50'
+                                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
                                     }`}
                                   onClick={() => setActiveSheetIndex(index)}
                                 >

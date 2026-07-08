@@ -396,7 +396,7 @@ function ScientistProposals() {
       const rawUser = window.localStorage.getItem('ppm_user')
       if (rawUser) {
         const parsedUser = JSON.parse(rawUser)
-        name = (parsedUser.name || '').trim() 
+        name = (parsedUser.name || '').trim()
         setCurrentUserName(name)
         setCurrentUserCenter(parsedUser.center || '')
         setCurrentUserGroup(parsedUser.group || '')
@@ -905,7 +905,7 @@ function ScientistProposals() {
     showVersionEditor,
     enquiryVersionInput,
     proposalVersionInput,
-    enquiryAttachments,      
+    enquiryAttachments,
     proposalAttachments,
     closeUploadModal,
     fetchProjectDocuments,
@@ -1863,6 +1863,24 @@ function ScientistProposals() {
     return diffDays
   }
 
+  const parseEnquiryDate = (val) => {
+    if (!val || val === '') return Number.MIN_SAFE_INTEGER
+
+    // Try native/ISO parsing first (covers "2024-06-01", "2024-06-01T00:00:00Z", etc.)
+    let parsed = dayjs(val)
+    if (parsed.isValid()) return parsed.valueOf()
+
+    // Fallback: explicit DD-MM-YYYY strings
+    parsed = dayjs(val, 'DD-MM-YYYY', true)
+    if (parsed.isValid()) return parsed.valueOf()
+
+    // Fallback: explicit DD/MM/YYYY strings
+    parsed = dayjs(val, 'DD/MM/YYYY', true)
+    if (parsed.isValid()) return parsed.valueOf()
+
+    return Number.MIN_SAFE_INTEGER // Invalid dates treated as oldest
+  }
+
   const columns = useMemo(() => {
     if (statusFilter === 'proposals') {
       return [
@@ -1878,6 +1896,10 @@ function ScientistProposals() {
           dataIndex: 'enquiry_date',
           title: 'Enquiry Date',
           width: 110,
+          sorter: (a, b) => {
+            return parseEnquiryDate(a.enquiry_date) - parseEnquiryDate(b.enquiry_date)
+          },
+          sortDirections: ['ascend', 'descend'],
           render: (value) => formatDate(value),
         },
         {
@@ -2030,6 +2052,20 @@ function ScientistProposals() {
           }
         }
       }
+
+      // Custom sorter for Enquiry Date field
+      // if (field.name === 'enquiry_date') {
+      //   return {
+      //     ...baseColumn,
+      //     sorter: (a, b) => {
+      //       return parseEnquiryDate(a.enquiry_date) - parseEnquiryDate(b.enquiry_date)
+      //     },
+      //     sortDirections: ['ascend', 'descend'],
+      //     render: field.render ?? (dateFields.has(field.name)
+      //       ? (value) => formatDate(value)
+      //       : (value) => wrapWithTooltip(value, field.width ? Math.floor(field.width / 8) : 30)),
+      //   }
+      // }
 
       if (field.name === 'activity') {
         return {
@@ -2989,7 +3025,7 @@ function ScientistProposals() {
               )}
             </div>
 
-            
+
             {/* Proposal Upload */}
             <div className="rounded-lg border border-slate-200 p-3 bg-white w-full overflow-hidden">
               <div className="flex items-center justify-between mb-2">

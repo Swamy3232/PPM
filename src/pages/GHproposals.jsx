@@ -359,6 +359,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [currentUserCentre, setCurrentUserCentre] = useState('')
   const [currentUserGroup, setCurrentUserGroup] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   // Unacknowledged proposals state
   const [unacknowledgedCount, setUnacknowledgedCount] = useState(0)
@@ -692,6 +694,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       
       setTableData(proposalsWithQueries)
       setFilteredData(proposalsWithQueries)
+      setCurrentPage(1)
     } catch (error) {
       console.error(error)
       message.error(error.message || 'Unable to fetch proposals')
@@ -797,6 +800,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       setTableData(normalized)
       setFilteredData(normalized)
       setOriginalTableData(normalized) // Update original data to maintain consistency
+      setCurrentPage(1)
       console.log('Unacknowledged proposals loaded for group:', normalized.length)
     } catch (error) {
       console.error(error)
@@ -811,6 +815,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       setShowUnacknowledgedOnly(false)
       setTableData(originalTableData)
       setFilteredData(originalTableData)
+      setCurrentPage(1)
       fetchProposals()
     } else {
       if (!unacknowledgedCount) {
@@ -925,6 +930,37 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     setDocsModalVisible(true)
     await fetchProjectDocuments(projectId)
   }
+
+    const handleShowDuplicateQuoteRefs = useCallback(() => {
+      // Count occurrences of each quote_reference (ignore empty/null)
+      const refCounts = {}
+      tableData.forEach((item) => {
+        const ref = (item.quote_reference || '').trim()
+        if (ref) {
+          refCounts[ref] = (refCounts[ref] || 0) + 1
+        }
+      })
+  
+      // Keep only refs that appear more than once
+      const duplicateRefs = new Set(
+        Object.entries(refCounts)
+          .filter(([, count]) => count > 1)
+          .map(([ref]) => ref)
+      )
+  
+      if (duplicateRefs.size === 0) {
+        message.info('No duplicate Quote References found')
+        setFilteredData(tableData)
+        return
+      }
+  
+      const duplicates = tableData.filter((item) =>
+        duplicateRefs.has((item.quote_reference || '').trim())
+      )
+  
+      setFilteredData(duplicates)
+      message.info(`Showing ${duplicates.length} records with duplicate Quote References (${duplicateRefs.size} unique refs)`)
+    }, [tableData])
 
   const viewDocument = (doc) => {
     if (!doc?.url) {
@@ -1198,6 +1234,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     }
 
     setFilteredData(filtered)
+    setCurrentPage(1)
   }, [searchText, coordinatorFilter, orderDateRange, enquiryDateRange, statusFilter, projectCodePrefix, tableData])
 
  const uniqueCoordinators = useMemo(() => {
@@ -1262,7 +1299,26 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     return diffDays // positive = overdue, negative = still within deadline
   }
 
+
   const columns = useMemo(() => {
+  const parseEnquiryDate = (val) => {
+    if (!val || val === '') return Number.MIN_SAFE_INTEGER // Empty dates go to end
+
+    // Try native/ISO parsing first (covers "2024-06-01", "2024-06-01T00:00:00Z", etc.)
+    let parsed = dayjs(val)
+    if (parsed.isValid()) return parsed.valueOf()
+
+    // Fallback: explicit DD-MM-YYYY strings
+    parsed = dayjs(val, 'DD-MM-YYYY', true)
+    if (parsed.isValid()) return parsed.valueOf()
+
+    // Fallback: explicit DD/MM/YYYY strings
+    parsed = dayjs(val, 'DD/MM/YYYY', true)
+    if (parsed.isValid()) return parsed.valueOf()
+
+    return Number.MIN_SAFE_INTEGER // Invalid dates treated as empty
+    }
+
     if (statusFilter === 'proposals') {
       return [
         {
@@ -1273,10 +1329,14 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           render: (text, record, index) => index + 1,
         },
         {
-          key: 'enquiry_date',
+           key: 'enquiry_date',
           dataIndex: 'enquiry_date',
           title: 'Enquiry Date',
           width: 150,
+          sorter: (a, b) => {
+            return parseEnquiryDate(a.enquiry_date) - parseEnquiryDate(b.enquiry_date)
+          },
+          sortDirections: ['ascend', 'descend'],
           render: (value) => formatDate(value),
         },
         {
@@ -1553,6 +1613,20 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         }
       }
 
+      // Custom sorter for Enquiry Date field
+      if (f.name === 'enquiry_date') {
+        return {
+          ...baseColumn,
+          sorter: (a, b) => {
+            return parseEnquiryDate(a.enquiry_date) - parseEnquiryDate(b.enquiry_date)
+          },
+          sortDirections: ['ascend', 'descend'],
+          render: f.render ?? (dateFields.has(f.name) 
+            ? (value) => formatDate(value) 
+            : (value) => wrapWithTooltip(value, f.width ? Math.floor(f.width / 8) : 30)),
+        }
+      }
+
       return {
         ...baseColumn,
         render: f.render ?? (dateFields.has(f.name) 
@@ -1703,23 +1777,37 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                   </div>
                 </div>
                 <Table
-                  className="role-proposals-table"
-                  rowKey="key"
-                  columns={columns}
-                  dataSource={filteredData}
-                  loading={tableLoading}
-                  pagination={{ pageSize: 10 }}
-                  tableLayout="fixed"
-                  sticky
-                  bordered
-                  onRow={(record) => ({
-                    onClick: () => openDetailModal(record),
-                    style: { 
-                      cursor: 'pointer',
-                      backgroundColor: record.status === 'On Hold' ? '#fff2e8' : 'transparent',
-                    },
-                  })}
-                />
+  className="role-proposals-table"
+  rowKey="id"
+  columns={columns}
+  dataSource={filteredData}
+  loading={tableLoading}
+  pagination={{
+    current: currentPage,
+    pageSize: pageSize,
+    showSizeChanger: true,
+    pageSizeOptions: ['10', '20', '50', '100'],
+    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+    onChange: (page, size) => {
+      setCurrentPage(page)
+      setPageSize(size)
+    },
+    onShowSizeChange: (current, size) => {
+      setCurrentPage(1)
+      setPageSize(size)
+    },
+  }}
+  tableLayout="fixed"
+  sticky
+  bordered
+  onRow={(record) => ({
+    onClick: () => openDetailModal(record),
+    style: { 
+      cursor: 'pointer',
+      backgroundColor: record.status === 'On Hold' ? '#fff2e8' : 'transparent',
+    },
+  })}
+/>
               </div>
             </div>
           </Tabs.TabPane>
