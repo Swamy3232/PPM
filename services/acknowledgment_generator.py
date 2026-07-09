@@ -17,6 +17,7 @@ from docx import Document
 from docx.shared import Emu, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from datetime import datetime, date
 
 FONT_NAME = "Garamond"
 SIZE_13 = Pt(13)
@@ -50,6 +51,24 @@ def blank_paragraph(doc, line_spacing=1.0, space_after=0):
     p.paragraph_format.space_after = Pt(space_after)
     return p
 
+DATE_FMT = "%d-%m-%Y"
+
+
+def format_date(value):
+    """Accepts a datetime/date object or a string, returns DD-MM-YYYY."""
+    if isinstance(value, (datetime, date)):
+        return value.strftime(DATE_FMT)
+    if isinstance(value, str):
+        # try to parse common incoming formats, adjust as needed
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(value, fmt).strftime(DATE_FMT)
+            except ValueError:
+                continue
+        # already in desired format or unparseable — return as-is
+        return value
+    raise TypeError(f"Unsupported date type: {type(value)}")
+
 
 def build_document(
     ref_no: str,
@@ -62,6 +81,9 @@ def build_document(
     purchase_order_date: str,
 ):
     doc = Document()
+    
+    current_date = format_date(current_date)
+    purchase_order_date = format_date(purchase_order_date)
 
     # ---- Page size (A4) and margins, matching the original ----
     section = doc.sections[0]
@@ -87,6 +109,7 @@ def build_document(
     p.paragraph_format.line_spacing = 1.0
     p.paragraph_format.space_after = Pt(0)
     add_run(p, f"Ref No.: {ref_no}")
+
 
     # Date line — right aligned
     p = doc.add_paragraph()
