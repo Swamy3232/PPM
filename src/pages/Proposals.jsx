@@ -2065,7 +2065,7 @@ function Proposals() {
                   icon={<FileTextOutlined />}
                   onClick={(e) => e.stopPropagation()}
                 >
-            
+
                 </Button>
               </Dropdown>
             )}
@@ -2253,7 +2253,7 @@ function Proposals() {
   const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT']
 
   // Total Proposals Submitted breakdown (all items)
- 
+
 
 
 
@@ -2341,6 +2341,18 @@ function Proposals() {
       (item) => item.status === 'On Hold',
     ).length
 
+    // Calculate pending breakdown (proposals without project_number)
+    const pendingBreakdown = {
+      ongoing: tableData.filter(
+        (item) => (!item.project_number || item.project_number.trim() === '') &&
+          (!item.proposals_converted || item.proposals_converted.trim() === '')
+      ).length,
+      rejected: tableData.filter(
+        (item) => (!item.project_number || item.project_number.trim() === '') &&
+          String(item.proposals_converted || '').toLowerCase().trim() === 'no'
+      ).length,
+    }
+
     // Calculate project code breakdown
     const projectCodeBreakdown = {}
     tableData.forEach((item) => {
@@ -2364,11 +2376,12 @@ function Proposals() {
       pendingProjects,
       onHoldProjects,
       projectCodeBreakdown,
-     // totalSubmittedBreakdown,
-     // pendingBreakdown,
+      // totalSubmittedBreakdown,
+      // pendingBreakdown,
       technicallyCompletedBreakdown,
       financiallyCompletedBreakdown,
       ongoingProjectsBreakdown,
+      pendingBreakdown,
     }
   }, [tableData])
 
@@ -2420,6 +2433,12 @@ function Proposals() {
                           fontWeight: 'bold',
                         }}
                       />
+                      {statistics.pendingBreakdown && (
+                        <div className="mt-2 text-xs text-white/80">
+                          Ongoing: {statistics.pendingBreakdown.ongoing} | Rejected:{" "}
+                          {statistics.pendingBreakdown.rejected}
+                        </div>
+                      )}
                     </Card>
                     <Card
                       className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
