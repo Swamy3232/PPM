@@ -1,7 +1,6 @@
-from sqlalchemy import Column, DateTime, ARRAY, ForeignKey, Integer, String, func , Boolean , TIMESTAMP
+from sqlalchemy import Column, DateTime, ARRAY, ForeignKey, Integer, String, func , Boolean , TIMESTAMP, JSON, Numeric
 from sqlalchemy.orm import relationship
 from db import Base
-
 
 # -------------------------------------------------
 # PROPOSAL TABLE
@@ -290,3 +289,17 @@ class Customer(Base):
 
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+
+# class DynamicTable(Base):
+#     __tablename__ = "dynamic_tables"
+
+#     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+#     project_id = Column(Integer, nullable=True)  # optional link to a Proposal/project
+#     header_name = Column(String, nullable=False)   # e.g. "Manpower" or a custom name
+#     columns = Column(JSON, nullable=False)         # e.g. ["Description", "Cost", "Bar", "Total"]
+#     rows = Column(JSON, nullable=False)
+#     total_amount = Column(Float, nullable=True)  # e.g. [{"Description": "...", "Cost": "5000", ...}, ...]
+#     created_by = Column(String, nullable=True)
+#     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+#     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -23,6 +23,7 @@ from routes.customers import router as customers_router
 from routes.remarksroutes import router as remarks_router
 from routes.projectpayment import router as project_payments_router
 from routes.acknowledgment import router as acknowledgment_router
+from routes.dynamic_table import router as dynamic_table_router
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -56,3 +57,4 @@ app.include_router(customers_router)
 app.include_router(remarks_router)
 app.include_router(project_payments_router)
 app.include_router(acknowledgment_router)
+app.include_router(dynamic_table_router)

@@ -1,5 +1,4 @@
-from typing import Optional
-
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -192,3 +191,25 @@ class ProposalCoordinatorCreate(BaseModel):
 
 class AcknowledgeUpdate(BaseModel):
     is_acknowledged: bool
+
+# class DynamicTableCreate(BaseModel):
+#     project_id: Optional[int] = None
+#     header_name: str
+#     columns: List[str]
+#     rows: List[Dict[str, Any]]
+#     created_by: Optional[str] = None
+
+# class DynamicTableUpdate(BaseModel):
+#     header_name: Optional[str] = None
+#     columns: Optional[List[str]] = None
+#     rows: Optional[List[Dict[str, Any]]] = None
+    
+# class DynamicTableItem(BaseModel):
+#     header_name: str
+#     columns: List[str]
+#     rows: List[Dict[str, Any]]
+
+# class DynamicTableCreate(BaseModel):
+#     project_id: Optional[int] = None
+#     created_by: Optional[str] = None
+#     tables: List[DynamicTableItem]
