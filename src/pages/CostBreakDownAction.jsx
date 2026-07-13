@@ -31,8 +31,8 @@ const DEFAULT_CUSTOM_COLUMNS = ["Description", "Amount"];
 
 const api = axios.create({ baseURL: `${API_BASE_URL}/dynamic-tables` });
 
-async function generateWordDocument(payload) {
-    const res = await api.post("/generate-word", payload, { responseType: "blob" });
+async function generateWordDocument(projectId, payload) {
+    const res = await api.post(`/${projectId}/generate-word`, payload, { responseType: "blob" });
 
     const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
     const disposition = res.headers["content-disposition"];
@@ -49,6 +49,11 @@ async function generateWordDocument(payload) {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(blobUrl);
+}
+
+async function fetchSavedTables(projectId) {
+    const res = await api.get(`/${projectId}`);
+    return Array.isArray(res.data) ? res.data : [];
 }
 
 /* ============================================================
@@ -334,30 +339,53 @@ function AddHeaderForm({ existingHeaderNames, onAdd, isEnteringHeader, activeHea
     );
 }
 
-export function CostEstimationModal({ open, onClose, title, createdBy }) {
+export function CostEstimationModal({ open, onClose, title, createdBy, projectId }) {
     const [headers, setHeaders] = useState([]); // [{header_name, columns, rows}]
     const [activeKey, setActiveKey] = useState("");
     const [generating, setGenerating] = useState(false);
+    const [loadingSaved, setLoadingSaved] = useState(false);
     const [isEnteringHeader, setIsEnteringHeader] = useState(false);
 
-    // Reset form state each time the modal is freshly opened, and
-    // auto-create the Manpower table right away - no click required.
+    // Reset form state each time the modal is freshly opened.
+    // If this project already has saved tables, load them (edit mode).
+    // Otherwise fall back to a fresh Manpower table.
     useEffect(() => {
-        if (open) {
-            const initial = {
-                header_name: MANPOWER_HEADER,
-                columns: MANPOWER_COLUMNS,
-                rows: [emptyRow(MANPOWER_COLUMNS, MANPOWER_HEADER)],
-            };
-            setHeaders([initial]);
-            setActiveKey(MANPOWER_HEADER);
-            setIsEnteringHeader(false);
-        } else {
+        if (!open) {
             setHeaders([]);
             setActiveKey("");
             setIsEnteringHeader(false);
+            return;
         }
-    }, [open]);
+
+        const loadInitialState = async () => {
+            setLoadingSaved(true);
+            let saved = [];
+            if (projectId) {
+                try {
+                    saved = await fetchSavedTables(projectId);
+                } catch (err) {
+                    console.error("Failed to fetch saved cost estimation tables:", err);
+                }
+            }
+
+            if (saved && saved.length > 0) {
+                setHeaders(saved);
+                setActiveKey(saved[0].header_name);
+            } else {
+                const initial = {
+                    header_name: MANPOWER_HEADER,
+                    columns: MANPOWER_COLUMNS,
+                    rows: [emptyRow(MANPOWER_COLUMNS, MANPOWER_HEADER)],
+                };
+                setHeaders([initial]);
+                setActiveKey(MANPOWER_HEADER);
+            }
+            setIsEnteringHeader(false);
+            setLoadingSaved(false);
+        };
+
+        loadInitialState();
+    }, [open, projectId]);
 
     // Switching TO custom mode means the user is about to type a header name -
     // hide existing tables until it's actually added.
@@ -387,17 +415,21 @@ export function CostEstimationModal({ open, onClose, title, createdBy }) {
             message.warning("Add at least one header before generating");
             return;
         }
+        if (!projectId) {
+            message.error("Missing project reference - cannot save or generate");
+            return;
+        }
         setGenerating(true);
         try {
-            await generateWordDocument({
+            await generateWordDocument(projectId, {
                 title: title || "Cost Breakdown",
                 created_by: createdBy,
                 tables: headers,
             });
-            message.success("Word document generated");
+            message.success("Saved and Word document generated");
             closeModal();
         } catch (err) {
-            message.error("Failed to generate document");
+            message.error("Failed to save/generate document");
         } finally {
             setGenerating(false);
         }
@@ -412,6 +444,7 @@ export function CostEstimationModal({ open, onClose, title, createdBy }) {
             onCancel={closeModal}
             width={800}
             destroyOnClose
+            confirmLoading={loadingSaved}
             footer={[
                 <Button key="cancel" onClick={closeModal}>
                     Cancel

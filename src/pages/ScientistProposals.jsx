@@ -2338,28 +2338,28 @@ function ScientistProposals() {
               More
             </Button>
             <Dropdown
-  menu={{
-    items: [
-      {
-        key: 'costEstimation',
-        label: 'Cost Estimation Generator',
-        onClick: (e) => {
-          e.domEvent.stopPropagation()
-          setSelectedProposalForCostEstimation(record)
-          setCostEstimationModalOpen(true)
-        },
-      },
-    ],
-  }}
-  trigger={['click']}
->
-  <Button
-    size="small"
-    type="text"
-    icon={<FileOutlined />}
-    onClick={(e) => e.stopPropagation()}
-  />
-</Dropdown>
+              menu={{
+                items: [
+                  {
+                    key: 'costEstimation',
+                    label: 'Cost Estimation Generator',
+                    onClick: (e) => {
+                      e.domEvent.stopPropagation()
+                      setSelectedProposalForCostEstimation(record)
+                      setCostEstimationModalOpen(true)
+                    },
+                  },
+                ],
+              }}
+              trigger={['click']}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FileOutlined />}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </Dropdown>
           </Space>
         ),
       },
@@ -3880,6 +3880,7 @@ function ScientistProposals() {
         onClose={() => setCostEstimationModalOpen(false)}
         title={selectedProposalForCostEstimation?.activity || selectedProposalForCostEstimation?.project_number}
         createdBy={currentUserName}
+        projectId={selectedProposalForCostEstimation?.id}
       />
 
       {/* Remarks Modal */}
