@@ -7,6 +7,7 @@ import {
   EyeOutlined,
   InboxOutlined,
   MessageOutlined,
+  FileOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -14,6 +15,7 @@ import {
   Input,
   Modal,
   Radio,
+  Dropdown,
   Space,
   Spin,
   Table,
@@ -41,6 +43,7 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import '../App.css'
 import { API_BASE_URL } from '../config/api.js'
 import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/date.js'
+import { CostEstimationModal } from './CostBreakDownAction'
 
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
@@ -222,6 +225,8 @@ function ScientistProposals() {
     ongoingProjects: 0
   })
   const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false)
+  const [costEstimationModalOpen, setCostEstimationModalOpen] = useState(false)
+  const [selectedProposalForCostEstimation, setSelectedProposalForCostEstimation] = useState(null)
 
   // Remarks modal state
   const [remarksModalOpen, setRemarksModalOpen] = useState(false)
@@ -285,7 +290,7 @@ function ScientistProposals() {
   // Store unresponded query counts for each project to conditionally show Queries button
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
 
-   // "Reason Required" popup state
+  // "Reason Required" popup state
   const [reasonPopupOpen, setReasonPopupOpen] = useState(false)
   const [reasonInputs, setReasonInputs] = useState({})
   const [savingReasonIds, setSavingReasonIds] = useState({})
@@ -388,7 +393,7 @@ function ScientistProposals() {
     'updated_by',
     'closer_report',
     'proposal_status',
-   // 'if_not_reason',
+    // 'if_not_reason',
   ]
 
   // Map API response to UI format
@@ -1757,7 +1762,7 @@ function ScientistProposals() {
       (item) => item.status === 'On Hold',
     ).length
 
-     const convertedNo = tableData.filter(
+    const convertedNo = tableData.filter(
       (item) => isProposalNotConverted(item.proposals_converted, item.if_not_reason),
     ).length
 
@@ -2103,6 +2108,29 @@ function ScientistProposals() {
               >
                 More
               </Button>
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'costEstimation',
+                      label: 'Cost Estimation Generator',
+                      onClick: (e) => {
+                        e.domEvent.stopPropagation()
+                        setSelectedProposalForCostEstimation(record)
+                        setCostEstimationModalOpen(true)
+                      },
+                    },
+                  ],
+                }}
+                trigger={['click']}
+              >
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<FileOutlined />}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </Dropdown>
             </Space>
           ),
         },
@@ -2309,6 +2337,29 @@ function ScientistProposals() {
             >
               More
             </Button>
+            <Dropdown
+  menu={{
+    items: [
+      {
+        key: 'costEstimation',
+        label: 'Cost Estimation Generator',
+        onClick: (e) => {
+          e.domEvent.stopPropagation()
+          setSelectedProposalForCostEstimation(record)
+          setCostEstimationModalOpen(true)
+        },
+      },
+    ],
+  }}
+  trigger={['click']}
+>
+  <Button
+    size="small"
+    type="text"
+    icon={<FileOutlined />}
+    onClick={(e) => e.stopPropagation()}
+  />
+</Dropdown>
           </Space>
         ),
       },
@@ -2325,7 +2376,7 @@ function ScientistProposals() {
               key: 'proposals',
               label: 'Total Proposals Submitted',
               children: (
-               <div className="space-y-6">
+                <div className="space-y-6">
                   <style>{`
                     @keyframes blinkReasonBtn {
                       0%, 100% { opacity: 1; }
@@ -2749,7 +2800,7 @@ function ScientistProposals() {
       </Modal>
 
 
- {/* Reason Required Popup */}
+      {/* Reason Required Popup */}
       <Modal
         title={`Proposals Needing a Reason (${notConvertedNoReasonList.length})`}
         open={reasonPopupOpen}
@@ -2791,7 +2842,7 @@ function ScientistProposals() {
               },
             },
             {
-              title: 'Disclaimer',
+              title: 'Disclaimeres made in reason required',
               key: 'if_not_reason',
               render: (_, record) => (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -2858,7 +2909,7 @@ function ScientistProposals() {
                 }
               } */}
 
-              {ALL_FIELDS.filter((f) => {
+            {ALL_FIELDS.filter((f) => {
               if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
 
               // For proposals, only allow editing proposal_status and co_ordinator_remarks
@@ -3823,6 +3874,13 @@ function ScientistProposals() {
           </div>
         </div>
       </Modal>
+
+      <CostEstimationModal
+        open={costEstimationModalOpen}
+        onClose={() => setCostEstimationModalOpen(false)}
+        title={selectedProposalForCostEstimation?.activity || selectedProposalForCostEstimation?.project_number}
+        createdBy={currentUserName}
+      />
 
       {/* Remarks Modal */}
       <Modal
