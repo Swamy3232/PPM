@@ -20,52 +20,53 @@ def compute_manpower(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], 
     for row in rows:
         cb = row.get("Cost Breakup") or {}
         rate = float(cb.get("rate", 0) or 0)
-        hours = float(cb.get("hours", 0) or 0)
-        days = float(cb.get("days", 0) or 0)
         quantity = float(cb.get("quantity", 1) or 1)
+        calc_type = cb.get("type", "hourly")
 
-        amount = rate * hours * days * quantity
+        if calc_type == "monthly":
+            months = float(cb.get("months", 0) or 0)
+            amount = rate * months * quantity
+            breakup_str = f"{rate:g}*{months:g}(months)*{quantity:g}"
+        else:
+            hours = float(cb.get("hours", 0) or 0)
+            days = float(cb.get("days", 0) or 0)
+            amount = rate * hours * days * quantity
+            breakup_str = f"{rate:g}*{hours:g}(hours)*{days:g}(days)*{quantity:g}"
+
         total += amount
-
-        breakup_str = f"{rate:g}*{hours:g}(hours)*{days:g}(days)*{quantity:g}"
 
         computed_rows.append({
             "Role": row.get("Role", ""),
             "Cost Breakup": breakup_str,
-            "Amount": round(amount, 2)
+            "Total Amount": round(amount, 2)
         })
 
     total = round(total, 2)
-    computed_rows.append({"Role": "Total", "Cost Breakup": "", "Amount": total})
+    computed_rows.append({"Role": "Total", "Cost Breakup": "", "Total Amount": total})
 
     return computed_rows, total
 
 
 def compute_generic_amount_total(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], float]:
     """
-    For ANY header (custom or predefined) that has an 'Amount' column.
-    User enters Amount manually per row; this just sums it and appends a Total row.
+    For ANY header (custom or predefined) that has a 'Total Amount' column.
+    User enters Total Amount manually per row; this just sums it and appends a Total row.
     """
     total = 0.0
     computed_rows = []
 
     for row in rows:
-        amount = float(row.get("Amount", 0) or 0)
+        amount = float(row.get("Total Amount", 0) or 0)
         total += amount
-        computed_rows.append({**row, "Amount": round(amount, 2)})
+        computed_rows.append({**row, "Total Amount": round(amount, 2)})
 
     total = round(total, 2)
    
-    # total_row = {key: "" for key in computed_rows[0].keys()} if computed_rows else {}
-    # total_row["Description"] = "Total"
-    # total_row["Amount"] = total
-    # computed_rows.append(total_row)
-    
     if computed_rows:
         first_col = list(computed_rows[0].keys())[0]
         total_row = {key: "" for key in computed_rows[0].keys()}
         total_row[first_col] = "Total"
-        total_row["Amount"] = total
+        total_row["Total Amount"] = total
     else:
         total_row = {}
     computed_rows.append(total_row)
@@ -83,7 +84,7 @@ def compute_rows_for_header(header_name: str, rows: List[Dict[str, Any]], column
     if header_name == "Manpower":
         return compute_manpower(rows)
 
-    if "Amount" in columns and rows:
+    if "Total Amount" in columns and rows:
         return compute_generic_amount_total(rows)
 
     return rows, None

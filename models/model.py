@@ -2,6 +2,8 @@ from sqlalchemy import Column, DateTime, ARRAY, ForeignKey, Integer, String, fun
 from sqlalchemy.orm import relationship
 from db import Base
 
+
+
 # -------------------------------------------------
 # PROPOSAL TABLE
 # -------------------------------------------------
@@ -305,13 +307,12 @@ class Customer(Base):
 #     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
-from sqlalchemy import JSON
-
 class DynamicTable(Base):
     __tablename__ = "dynamic_tables"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     project_id = Column(Integer, nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)   # version number per project (1, 2, 3 ...)
     header_name = Column(String, nullable=False)
     columns = Column(JSON, nullable=False)
     rows = Column(JSON, nullable=False)  # raw, editable rows - NOT computed/display rows
