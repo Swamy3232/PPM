@@ -8,6 +8,7 @@ import {
   InboxOutlined,
   MessageOutlined,
   FileOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -2094,20 +2095,19 @@ function ScientistProposals() {
                       dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                     ) ? 'bold' : 'normal'
                   }}
-                >
-                  Queries
-                </Button>
+                  title="Queries"
+                />
               )}
               <Button
                 size="small"
                 type="link"
+                icon={<InfoCircleOutlined />}
                 onClick={(e) => {
                   e.stopPropagation()
                   openDetailModal(record)
                 }}
-              >
-                More
-              </Button>
+                title="More Details"
+              />
               <Dropdown
                 menu={{
                   items: [
@@ -2126,9 +2126,10 @@ function ScientistProposals() {
               >
                 <Button
                   size="small"
-                  type="text"
+                  type="link"
                   icon={<FileOutlined />}
                   onClick={(e) => e.stopPropagation()}
+                  title="Generate/Estimate Cost"
                 />
               </Dropdown>
             </Space>
@@ -2323,20 +2324,19 @@ function ScientistProposals() {
                     dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                   ) ? 'bold' : 'normal'
                 }}
-              >
-                Queries
-              </Button>
+                title="Queries"
+              />
             )}
             <Button
               size="small"
               type="link"
+              icon={<InfoCircleOutlined />}
               onClick={(e) => {
                 e.stopPropagation()
                 openDetailModal(record)
               }}
-            >
-              More
-            </Button>
+              title="More Details"
+            />
             <Dropdown
               menu={{
                 items: [
@@ -2355,9 +2355,10 @@ function ScientistProposals() {
             >
               <Button
                 size="small"
-                type="text"
+                type="link"
                 icon={<FileOutlined />}
                 onClick={(e) => e.stopPropagation()}
+                title="Generate/Estimate Cost"
               />
             </Dropdown>
           </Space>
@@ -3876,9 +3877,18 @@ function ScientistProposals() {
       </Modal>
 
       <CostEstimationModal
+        key={selectedProposalForCostEstimation?.id}
         open={costEstimationModalOpen}
-        onClose={() => setCostEstimationModalOpen(false)}
-        title={selectedProposalForCostEstimation?.activity || selectedProposalForCostEstimation?.project_number}
+        onClose={() => {
+          setCostEstimationModalOpen(false);
+          setSelectedProposalForCostEstimation(null);
+        }}
+        title={
+          selectedProposalForCostEstimation?.activity || 
+          selectedProposalForCostEstimation?.project_number || 
+          selectedProposalForCostEstimation?.quote_description || 
+          (selectedProposalForCostEstimation?.id ? `Proposal No ${selectedProposalForCostEstimation.id}` : "Cost Estimation")
+        }
         createdBy={currentUserName}
         projectId={selectedProposalForCostEstimation?.id}
       />
