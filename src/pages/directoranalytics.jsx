@@ -33,8 +33,24 @@ import {
   Statistic,
   Switch,
 } from 'antd'
-import { Chart, registerables } from 'chart.js'
-import { TreemapController, TreemapElement } from 'chartjs-chart-treemap'
+import {
+  ResponsiveContainer,
+  BarChart as ReChartsBarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as ReChartsTooltip,
+  Legend,
+  AreaChart as ReChartsAreaChart,
+  Area,
+  LineChart as ReChartsLineChart,
+  Line,
+  PieChart as ReChartsPieChart,
+  Pie,
+  Cell,
+  Treemap as ReChartsTreemap
+} from 'recharts'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
@@ -45,7 +61,308 @@ import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/d
 
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
-Chart.register(...registerables, TreemapController, TreemapElement)
+
+// Helper function to format value in Crores
+const formatInCrore = (value) => {
+  const num = Number(value) || 0
+  const crore = num / 1e7
+  if (!Number.isFinite(crore)) return '0 cr'
+  return `${crore.toFixed(crore % 1 === 0 ? 0 : 2)} cr`
+}
+
+const COLORS = [
+  '#3b82f6', // blue-500
+  '#8b5cf6', // purple-500
+  '#f97316', // orange-500
+  '#10b981', // emerald-500
+  '#22c55e', // green-500
+  '#ef4444', // red-500
+  '#0ea5e9', // sky-500
+  '#6366f1', // indigo-500
+  '#ec4899', // pink-500
+  '#f43f5e', // rose-500
+]
+
+const CustomTooltip = ({ active, payload, isAmount }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload
+    const value = payload[0].value
+    const total = data.totalVal || 1
+    const pct = total > 0 ? (value / total) * 100 : 0
+    const displayValue = isAmount ? formatInCrore(value) : value
+
+    return (
+      <div className="bg-slate-900/95 text-white p-3 rounded-xl border border-slate-700 shadow-2xl backdrop-blur-sm">
+        <p className="font-semibold text-sm max-w-xs break-words">{data.fullName}</p>
+        <p className="text-xs text-slate-300 mt-1">
+          Value: <span className="font-bold text-white">{displayValue}</span>
+        </p>
+        <p className="text-xs text-slate-300">
+          Percentage: <span className="font-bold text-white">{pct.toFixed(1)}%</span>
+        </p>
+      </div>
+    )
+  }
+  return null
+}
+
+const InteractiveChart = ({ data, chartType, chartMetric, onElementClick }) => {
+  const isAmount = chartMetric === 'amount'
+  if (!data || !data.labels || !data.labels.length) {
+    return (
+      <div className="flex items-center justify-center h-full text-slate-400">
+        No data available for chart
+      </div>
+    )
+  }
+
+  const totalVal = data.values.reduce((acc, v) => acc + Number(v || 0), 0)
+  const chartItems = data.labels.map((label, idx) => ({
+    name: getFirstTwoWords(label),
+    fullName: label,
+    value: Number(data.values[idx] ?? 0),
+    totalVal,
+  }))
+
+  if (chartType === 'treemap') {
+    const treemapData = chartItems.map((item, index) => ({
+      ...item,
+      size: item.value,
+      index,
+    })).filter((item) => item.size > 0)
+
+    const CustomizedContent = (props) => {
+      const { root, depth, x, y, width, height, index, name, value } = props
+      if (depth !== 1) return null
+
+      const pct = totalVal > 0 ? (value / totalVal) * 100 : 0
+      const labelValue = isAmount ? formatInCrore(value) : value
+
+      return (
+        <g
+          onClick={() => {
+            const item = treemapData[index]
+            if (item && onElementClick) {
+              onElementClick(item.fullName)
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            style={{
+              fill: COLORS[index % COLORS.length],
+              stroke: '#fff',
+              strokeWidth: 1,
+            }}
+          />
+          {width > 60 && height > 30 && (
+            <text
+              x={x + width / 2}
+              y={y + height / 2 - 4}
+              textAnchor="middle"
+              fill="#fff"
+              fontSize={11}
+              fontWeight="bold"
+            >
+              {name}
+            </text>
+          )}
+          {width > 90 && height > 45 && (
+            <text
+              x={x + width / 2}
+              y={y + height / 2 + 10}
+              textAnchor="middle"
+              fill="#fff"
+              fontSize={10}
+              fontWeight="500"
+            >
+              {`${labelValue} (${pct.toFixed(1)}%)`}
+            </text>
+          )}
+        </g>
+      )
+    }
+
+    return (
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+        <ReChartsTreemap
+          data={treemapData}
+          dataKey="size"
+          aspectRatio={4 / 3}
+          stroke="#fff"
+          fill="#8884d8"
+          content={<CustomizedContent />}
+        >
+          <ReChartsTooltip content={<CustomTooltip isAmount={isAmount} />} />
+        </ReChartsTreemap>
+      </ResponsiveContainer>
+    )
+  }
+
+  if (chartType === 'pie' || chartType === 'donut') {
+    const pieData = chartItems.filter((item) => item.value > 0)
+    return (
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+        <ReChartsPieChart>
+          <Pie
+            data={pieData}
+            cx="50%"
+            cy="50%"
+            innerRadius={chartType === 'donut' ? '60%' : '0%'}
+            outerRadius="80%"
+            paddingAngle={2}
+            dataKey="value"
+            onClick={(item) => {
+              if (item && item.value > 0 && onElementClick) {
+                onElementClick(item.fullName || item.name)
+              }
+            }}
+            label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+            labelLine={true}
+          >
+            {pieData.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={COLORS[index % COLORS.length]}
+                cursor={entry.value > 0 ? 'pointer' : 'default'}
+              />
+            ))}
+          </Pie>
+          <ReChartsTooltip content={<CustomTooltip isAmount={isAmount} />} />
+          <Legend verticalAlign="bottom" height={36} />
+        </ReChartsPieChart>
+      </ResponsiveContainer>
+    )
+  }
+
+  if (chartType === 'line' || chartType === 'area') {
+    return (
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+        {chartType === 'area' ? (
+          <ReChartsAreaChart
+            data={chartItems}
+            margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+            onClick={(state) => {
+              if (state && state.activePayload && state.activePayload.length) {
+                const clickedData = state.activePayload[0].payload
+                if (clickedData && clickedData.value > 0 && onElementClick) {
+                  onElementClick(clickedData.fullName)
+                }
+              }
+            }}
+          >
+            <defs>
+              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" stroke="#64748b" />
+            <YAxis stroke="#64748b" tickFormatter={(v) => (isAmount ? formatInCrore(v) : v)} />
+            <ReChartsTooltip content={<CustomTooltip isAmount={isAmount} />} />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              fillOpacity={1}
+              fill="url(#colorValue)"
+              activeDot={(props) => {
+                const { payload } = props
+                const hasData = payload && payload.value > 0
+                return <circle {...props} cursor={hasData ? 'pointer' : 'default'} />
+              }}
+            />
+          </ReChartsAreaChart>
+        ) : (
+          <ReChartsLineChart
+            data={chartItems}
+            margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+            onClick={(state) => {
+              if (state && state.activePayload && state.activePayload.length) {
+                const clickedData = state.activePayload[0].payload
+                if (clickedData && clickedData.value > 0 && onElementClick) {
+                  onElementClick(clickedData.fullName)
+                }
+              }
+            }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" stroke="#64748b" />
+            <YAxis stroke="#64748b" tickFormatter={(v) => (isAmount ? formatInCrore(v) : v)} />
+            <ReChartsTooltip content={<CustomTooltip isAmount={isAmount} />} />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#8b5cf6"
+              strokeWidth={3}
+              activeDot={(props) => {
+                const { payload } = props
+                const hasData = payload && payload.value > 0
+                return <circle {...props} cursor={hasData ? 'pointer' : 'default'} />
+              }}
+            />
+          </ReChartsLineChart>
+        )}
+      </ResponsiveContainer>
+    )
+  }
+
+  // Bar, Funnel, Box
+  const isHorizontal = chartType === 'funnel'
+  const isBox = chartType === 'box'
+  const barData = [...chartItems]
+  if (isHorizontal) {
+    barData.sort((a, b) => b.value - a.value)
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+      <ReChartsBarChart
+        data={barData}
+        layout={isHorizontal ? 'vertical' : 'horizontal'}
+        margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={isHorizontal} />
+        {isHorizontal ? (
+          <>
+            <XAxis type="number" stroke="#64748b" tickFormatter={(v) => (isAmount ? formatInCrore(v) : v)} />
+            <YAxis type="category" dataKey="name" stroke="#64748b" width={100} />
+          </>
+        ) : (
+          <>
+            <XAxis dataKey="name" stroke="#64748b" />
+            <YAxis stroke="#64748b" tickFormatter={(v) => (isAmount ? formatInCrore(v) : v)} />
+          </>
+        )}
+        <ReChartsTooltip content={<CustomTooltip isAmount={isAmount} />} />
+        <Bar
+          dataKey="value"
+          radius={isBox ? [8, 8, 0, 0] : [4, 4, 0, 0]}
+          maxBarSize={isBox ? 50 : 35}
+          onClick={(item) => {
+            if (item && item.value > 0 && onElementClick) {
+              onElementClick(item.fullName)
+            }
+          }}
+        >
+          {barData.map((entry, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={COLORS[index % COLORS.length]}
+              cursor={entry.value > 0 ? 'pointer' : 'default'}
+            />
+          ))}
+        </Bar>
+      </ReChartsBarChart>
+    </ResponsiveContainer>
+  )
+}
 
 // Function to extract project code from project number
 const getProjectCode = (projectNumber) => {
@@ -236,47 +553,18 @@ function directoranalytics() {
   const [smallValueProjectFilter, setSmallValueProjectFilter] = useState(null)
   const [selectedDateField, setSelectedDateField] = useState('enquiry_date')
   const [dateRange, setDateRange] = useState(null)
-  const chartRef = useRef(null)
-  const chartInstanceRef = useRef(null)
   const graphCardRef = useRef(null)
   const [isGraphFullscreen, setIsGraphFullscreen] = useState(false)
 
   useEffect(() => {
     const onFsChange = () => {
       const fsEl = document.fullscreenElement
-      const wasFullscreen = isGraphFullscreen
       const nowFullscreen = Boolean(graphCardRef.current && fsEl === graphCardRef.current)
       setIsGraphFullscreen(nowFullscreen)
-
-      const chart = chartInstanceRef.current
-      if (!chart) return
-
-      // Chart.js needs a few resize attempts because fullscreen/layout changes are async.
-      const resizeAttempts = [0, 100, 250, 400, 650]
-      resizeAttempts.forEach((delay) => {
-        setTimeout(() => {
-          chart.resize()
-          chart.update()
-        }, delay)
-      })
-
-      // Also do one RAF pass right after event.
-      requestAnimationFrame(() => {
-        chart.resize()
-        chart.update()
-      })
-
-      // Force a re-render of the component to fix dropdown z-index issues
-      if (wasFullscreen !== nowFullscreen) {
-        setTimeout(() => {
-          // Trigger a re-render by updating state
-          setIsGraphFullscreen(nowFullscreen)
-        }, 50)
-      }
     }
     document.addEventListener('fullscreenchange', onFsChange)
     return () => document.removeEventListener('fullscreenchange', onFsChange)
-  }, [isGraphFullscreen])
+  }, [])
 
   const handleToggleGraphFullscreen = async () => {
     try {
@@ -295,18 +583,41 @@ function directoranalytics() {
 
   const handleDownloadGraph = () => {
     try {
-      const chart = chartInstanceRef.current
-      if (!chart) {
+      const container = graphCardRef.current
+      if (!container) return
+
+      const svgEl = container.querySelector('svg')
+      if (!svgEl) {
         message.warning('Chart is not ready yet.')
         return
       }
-      const dataUrl = chart.toBase64Image()
-      const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `director-analytics_${chartType || 'chart'}_${dayjs().format('YYYY-MM-DD_HH-mm-ss')}.png`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+
+      const serializer = new XMLSerializer()
+      const svgString = serializer.serializeToString(svgEl)
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+      const URL = window.URL || window.webkitURL || window
+      const blobURL = URL.createObjectURL(svgBlob)
+
+      const image = new Image()
+      image.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = svgEl.clientWidth || svgEl.getBoundingClientRect().width || 800
+        canvas.height = svgEl.clientHeight || svgEl.getBoundingClientRect().height || 420
+        const context = canvas.getContext('2d')
+        context.fillStyle = '#ffffff'
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.drawImage(image, 0, 0)
+
+        const png = canvas.toDataURL('image/png')
+        const a = document.createElement('a')
+        a.href = png
+        a.download = `director-analytics_${chartType || 'chart'}_${dayjs().format('YYYY-MM-DD_HH-mm-ss')}.png`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(blobURL)
+      }
+      image.src = blobURL
     } catch (e) {
       console.error('Download error:', e)
       message.error('Unable to download chart image.')
@@ -1672,6 +1983,17 @@ function directoranalytics() {
 
   const handleChartClick = useCallback(
     (label) => {
+      // Prevent drilling down if the clicked item has 0 value
+      if (chartData && chartData.labels && chartData.values) {
+        const idx = chartData.labels.indexOf(label)
+        if (idx !== -1) {
+          const val = chartData.values[idx]
+          if (!val || Number(val) === 0) {
+            return
+          }
+        }
+      }
+
       const dimension = chartData.dimension
       if (dimension === 'trend') {
         // No drilling for trend charts
@@ -1694,17 +2016,23 @@ function directoranalytics() {
         setDrillLevel('center')
         setSelectedCenter('')
         setSelectedGroup('')
+        setSelectedProjectName('')
+        setSelectedProjectCode('')
         return
       }
       if (dimension === 'center') {
         setSelectedCenter(label)
         setDrillLevel('group')
         setSelectedGroup('')
+        setSelectedProjectName('')
+        setSelectedProjectCode('')
         return
       }
       if (dimension === 'group') {
         setSelectedGroup(label)
         setDrillLevel('coordinator')
+        setSelectedProjectName('')
+        setSelectedProjectCode('')
         return
       }
       if (dimension === 'project_co_ordinator') {
@@ -1730,265 +2058,10 @@ function directoranalytics() {
         return
       }
     },
-    [categoryKeyFromLabel, chartData.dimension, selectedCategory, selectedProjectName, drillLevel],
+    [categoryKeyFromLabel, chartData, selectedCategory, selectedProjectName, drillLevel],
   )
 
-  useEffect(() => {
-    if (!chartRef.current) return
-    if (chartInstanceRef.current) {
-      chartInstanceRef.current.destroy()
-      chartInstanceRef.current = null
-    }
 
-    const chartTypeToRender = chartType === 'box'
-      ? 'bar'
-      : chartType === 'area'
-        ? 'line'
-        : chartType === 'donut'
-          ? 'doughnut'
-          : chartType === 'funnel'
-            ? 'bar'
-            : chartType
-    const ctx = chartRef.current.getContext('2d')
-    const renderedItems = chartType === 'funnel'
-      ? chartData.labels
-        .map((label, idx) => ({
-          label,
-          value: Number(chartData.values[idx] ?? 0),
-        }))
-        .sort((a, b) => b.value - a.value)
-      : chartData.labels.map((label, idx) => ({
-        label,
-        value: Number(chartData.values[idx] ?? 0),
-      }))
-    const renderedFullLabels = renderedItems.map((item) => item.label)
-    const renderedDisplayLabels = renderedFullLabels.map((label) => getFirstTwoWords(label))
-    const renderedValues = renderedItems.map((item) => item.value)
-    const maxRenderedValue = renderedValues.length ? Math.max(...renderedValues) : 0
-    const renderedDatasetValues = chartType === 'funnel'
-      ? renderedValues.map((v) => {
-        const offset = (maxRenderedValue - v) / 2
-        return [offset, offset + v]
-      })
-      : renderedValues
-    const totalValue = renderedValues.reduce((acc, v) => acc + Number(v || 0), 0)
-    const isAmountChart = chartMetric === 'amount'
-    const truncate = (s, max = 12) => {
-      const str = String(s ?? '').trim()
-      if (!str) return 'Unknown'
-      return str.length > max ? `${str.slice(0, max)}...` : str
-    }
-
-    const valuePctLabelsPlugin = {
-      id: 'valuePctLabels',
-      afterDatasetsDraw: (chart) => {
-        // Treemap already draws labels inside the tiles.
-        if (chartTypeToRender === 'treemap') return
-        // Floating/centered funnel bars are cleaner without overlaid custom labels.
-        if (chartType === 'funnel') return
-        if (!chart?.ctx) return
-
-        const canvasCtx = chart.ctx
-        const meta = chart.getDatasetMeta(0)
-        const dataset = chart.data.datasets?.[0]
-        const dataValues = (dataset?.data || []).map((v) => Number(v ?? 0))
-        const chartLabels = chart.data.labels || []
-
-        const drawTwoLine = (x, y, line1, line2) => {
-          canvasCtx.save()
-          canvasCtx.textAlign = 'center'
-          canvasCtx.textBaseline = 'middle'
-          canvasCtx.font = '600 11px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-          const isTreemap = chartTypeToRender === 'treemap'
-          const isLineChart = chartTypeToRender === 'line'
-          canvasCtx.shadowColor = isTreemap ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.1)'
-          canvasCtx.shadowBlur = isTreemap ? 3 : 1
-          // Use white labels for all charts except line charts, which use black.
-          canvasCtx.fillStyle = isLineChart ? '#1f2937' : '#ffffff'
-
-          // Two-line label: name on top, value + percentage below.
-          canvasCtx.fillText(line1, x, y - 8)
-          canvasCtx.font = '700 10px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-          canvasCtx.fillText(line2, x, y + 6)
-
-          canvasCtx.restore()
-        }
-
-        const type = chart.config.type
-        const elements = meta?.data || []
-
-        elements.forEach((el, idx) => {
-          const v = dataValues[idx] ?? 0
-          const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
-          if (v <= 0) return
-          const name = truncate(chartLabels[idx])
-
-          // For pie/donut, avoid drawing on very tiny slices (it will be unreadable).
-          if ((type === 'pie' || type === 'doughnut') && pct < 2) return
-
-          const labelValue = isAmountChart ? formatInCrore(v) : String(v)
-          const labelPct = `${pct.toFixed(1)}%`
-          const line2 = `${labelValue} (${labelPct})`
-
-          if (type === 'pie' || type === 'doughnut') {
-            // ArcElement
-            const arc = el
-            const angle = (arc.startAngle + arc.endAngle) / 2
-            const r = (arc.innerRadius + arc.outerRadius) / 2
-            const x = arc.x + Math.cos(angle) * r
-            const y = arc.y + Math.sin(angle) * r
-            drawTwoLine(x, y, name, line2)
-            return
-          }
-
-          if (type === 'line') {
-            // Point element
-            const x = el.x
-            const y = el.y
-            drawTwoLine(x, y - 2, name, line2)
-            return
-          }
-
-          // bar / category bar: rectangle element
-          const x = el.x
-          const barTop = el.y
-          const barBottom = el.base ?? el.y + el.height
-          const y = barTop + (barBottom - barTop) / 2
-
-          // Skip labels that would overlap too near the very top for tiny bars.
-          if (Number.isFinite(y) && Math.abs(barBottom - barTop) < 18) return
-          drawTwoLine(x, y, name, line2)
-        })
-      },
-    }
-
-    const colors = chartData.labels.map((_, idx) =>
-      ['#2563eb', '#8b5cf6', '#f97316', '#10b981', '#22c55e', '#ef4444', '#0ea5e9'][idx % 7],
-    )
-    const borders = chartData.labels.map((_, idx) =>
-      ['#1d4ed8', '#7c3aed', '#ea580c', '#059669', '#16a34a', '#dc2626', '#0284c7'][idx % 7],
-    )
-    const dataset = chartType === 'treemap'
-      ? {
-        tree: chartData.labels.map((label, idx) => ({
-          label,
-          value: Number(chartData.values[idx] ?? 0),
-        })),
-        key: 'value',
-        // Pack tiles tightly; otherwise many small tiles become effectively invisible.
-        spacing: 0,
-        borderWidth: 0.5,
-        backgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
-        borderColor: (ctx) => borders[ctx.dataIndex % borders.length],
-        hoverBackgroundColor: (ctx) => colors[ctx.dataIndex % colors.length],
-        hoverBorderColor: (ctx) => borders[ctx.dataIndex % borders.length],
-        labels: {
-          display: true,
-          color: '#ffffff',
-          font: { size: 10, weight: '700' },
-          padding: 1,
-          overflow: 'fit',
-          position: 'middle',
-          // Show value + percentage so user doesn't need hover.
-          formatter: (ctx) => {
-            if (ctx.type !== 'data') return ''
-            const v = Number(ctx.raw?.v ?? ctx.raw?.value ?? 0)
-            // chartjs-chart-treemap doesn't reliably expose our custom leaf label on ctx.raw.
-            // Use dataIndex to map back to the source label array.
-            const name = truncate(chartData.labels?.[ctx.dataIndex] ?? ctx.label)
-            const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
-            // Keep it to 2 lines: name on top, value + percentage below.
-            return [name, `${isAmountChart ? formatInCrore(v) : v} (${pct.toFixed(1)}%)`]
-          },
-        },
-      }
-      : {
-        label: isAmountChart ? 'Amount' : 'Record Count',
-        data: renderedDatasetValues,
-        backgroundColor: chartType === 'area'
-          ? colors.map((color) => `${color}66`)
-          : colors,
-        borderColor: borders,
-        borderWidth: chartType === 'box' ? 2 : 1,
-        borderRadius: chartType === 'box' ? 8 : 0,
-        barPercentage: chartType === 'box' ? 0.6 : undefined,
-        tension: chartType === 'line' || chartType === 'area' ? 0.3 : 0,
-        fill: chartType === 'area' ? true : chartType === 'line' ? false : undefined,
-      }
-    chartInstanceRef.current = new Chart(ctx, {
-      type: chartTypeToRender,
-      data: {
-        labels: renderedDisplayLabels,
-        datasets: [{
-          ...dataset,
-          fullLabels: renderedFullLabels, // Store full labels for tooltips
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: chartType === 'funnel' ? 'y' : 'x',
-        onClick: (evt, elements) => {
-          if (!elements || elements.length === 0) return
-          const activeElement = elements[0]
-          const label = renderedFullLabels[activeElement.index]
-          handleChartClick(label)
-        },
-        scales: chartTypeToRender === 'pie' || chartTypeToRender === 'doughnut' || chartTypeToRender === 'treemap'
-          ? {}
-          : {
-            y: {
-              beginAtZero: chartType !== 'funnel',
-              ticks: chartType === 'funnel'
-                ? { color: '#374151', font: { size: 12 } }
-                : { color: '#374151', font: { size: 12 }, callback: (value) => (isAmountChart ? formatInCrore(Number(value)) : value) },
-              title: { display: true, text: chartType === 'funnel' ? 'Category' : (isAmountChart ? 'Amount (cr)' : 'Count'), color: '#374151' },
-            },
-            x: {
-              ticks: {
-                color: '#374151',
-                font: { size: 12 },
-                display: chartType !== 'funnel',
-                callback: chartType === 'funnel'
-                  ? (value) => (isAmountChart ? formatInCrore(Number(value)) : value)
-                  : function (value) {
-                    const label = this.getLabelForValue(value)
-                    return getFirstTwoWords(label)
-                  }
-              },
-              grid: { display: chartType !== 'funnel' },
-              title: { display: chartType !== 'funnel', text: chartType === 'funnel' ? (isAmountChart ? 'Amount (cr)' : 'Count') : 'Category', color: '#374151' },
-            },
-          },
-        plugins: {
-          legend: { display: chartTypeToRender === 'pie' || chartTypeToRender === 'doughnut' },
-          tooltip: {
-            enabled: true,
-            callbacks: {
-              // Single tooltip line with name + value + percentage.
-              label: (context) => {
-                const idx = context.dataIndex ?? 0
-                // Use full label from dataset instead of truncated label
-                const fullLabel = chartInstanceRef.current.data.datasets[0]?.fullLabels?.[idx]
-                const name = fullLabel ?? renderedFullLabels?.[idx] ?? context.label ?? 'Unknown'
-                const v = Number(renderedValues?.[idx] ?? context.raw?.v ?? context.raw?.value ?? context.parsed?.v ?? 0)
-                const pct = totalValue > 0 ? (v / totalValue) * 100 : 0
-                return `${name}: ${isAmountChart ? formatInCrore(v) : v} (${pct.toFixed(1)}%)`
-              },
-            },
-          },
-        },
-      },
-      plugins: [valuePctLabelsPlugin],
-    })
-
-    return () => {
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.destroy()
-        chartInstanceRef.current = null
-      }
-    }
-  }, [chartData, chartType, handleChartClick, isGraphFullscreen])
 
   // Get unique centers for filter
   const uniqueCentres = useMemo(() => {
@@ -2308,7 +2381,7 @@ function directoranalytics() {
     const financiallyNotCompletedBreakdown = {}
     tableData.forEach((item) => {
       if (item.technical_completed_year && item.technical_completed_year.trim() !== '' &&
-          (!item.financial_completed_year || item.financial_completed_year.trim() === '')) {
+        (!item.financial_completed_year || item.financial_completed_year.trim() === '')) {
         if (item.project_number) {
           const prefix = PROJECT_PREFIXES.find((p) =>
             item.project_number.toUpperCase().startsWith(p),
@@ -2326,7 +2399,7 @@ function directoranalytics() {
     const financiallyCompletedBreakdown = {}
     tableData.forEach((item) => {
       if (item.technical_completed_year && item.technical_completed_year.trim() !== '' &&
-          item.financial_completed_year && item.financial_completed_year.trim() !== '') {
+        item.financial_completed_year && item.financial_completed_year.trim() !== '') {
         if (item.project_number) {
           const prefix = PROJECT_PREFIXES.find((p) =>
             item.project_number.toUpperCase().startsWith(p),
@@ -3397,13 +3470,18 @@ bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl t
                     </div>
                     <div
                       style={{
-                        minHeight: isGraphFullscreen ? '90vh' : 420,
-                        height: isGraphFullscreen ? '90vh' : undefined,
+                        height: isGraphFullscreen ? '90vh' : '420px',
                         position: 'relative',
+                        width: '100%',
                       }}
                     >
-                      <canvas ref={chartRef} />
-
+                      <InteractiveChart
+                        key={`${chartType}-${chartMetric}-${isGraphFullscreen}-${chartData.title}`}
+                        data={chartData}
+                        chartType={chartType}
+                        chartMetric={chartMetric}
+                        onElementClick={handleChartClick}
+                      />
                     </div>
                   </div>
                 </div>
