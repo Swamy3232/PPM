@@ -2463,8 +2463,30 @@ function ScientistProposals() {
                   <div className="flex flex-col gap-6">
                     {/* Search & Filters */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <div className="mb-4">
+                      <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <Title level={4} className="!mb-0">Search & Filters</Title>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            onClick={() => {
+                              setSearchText('')
+                              setDateRange(null)
+                              setStatusFilter(null)
+                              setProjectNumberFilter(null)
+                            }}
+                            size="default"
+                          >
+                            Clear Filters
+                          </Button>
+                          <Button
+                            type="primary"
+                            icon={<DownloadOutlined />}
+                            size="default"
+                            onClick={handleExportExcel}
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
+                          >
+                            Export to Excel
+                          </Button>
+                        </div>
                       </div>
                       <Row gutter={[16, 16]}>
                         <Col xs={24} sm={12} md={6}>
@@ -2502,31 +2524,6 @@ function ScientistProposals() {
                             style={{ width: '100%' }}
                             format={DISPLAY_DATE_FORMAT}
                           />
-                        </Col>
-                        <Col xs={24} sm={12} md={6} className="flex items-center">
-                          <Button
-                            onClick={() => {
-                              setSearchText('')
-                              setDateRange(null)
-                              setStatusFilter(null)
-                              setProjectNumberFilter(null)
-                            }}
-                            size="large"
-                            style={{ width: '100%' }}
-                          >
-                            Clear Filters
-                          </Button>
-                        </Col>
-                        <Col xs={24} sm={12} md={6} className="flex items-center">
-                          <Button
-                            type="primary"
-                            icon={<DownloadOutlined />}
-                            size="large"
-                            onClick={handleExportExcel}
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg w-full"
-                          >
-                            Export to Excel
-                          </Button>
                         </Col>
                       </Row>
                     </div>
@@ -2569,7 +2566,11 @@ function ScientistProposals() {
                         columns={columns}
                         dataSource={filteredData}
                         loading={tableLoading}
-                        pagination={{ pageSize: 10 }}
+                        pagination={{
+                          defaultPageSize: 10,
+                          showSizeChanger: true,
+                          pageSizeOptions: ['10', '20', '50', '100']
+                        }}
                         tableLayout="fixed"
                         sticky
                         bordered
@@ -3884,9 +3885,9 @@ function ScientistProposals() {
           setSelectedProposalForCostEstimation(null);
         }}
         title={
-          selectedProposalForCostEstimation?.activity || 
-          selectedProposalForCostEstimation?.project_number || 
-          selectedProposalForCostEstimation?.quote_description || 
+          selectedProposalForCostEstimation?.activity ||
+          selectedProposalForCostEstimation?.project_number ||
+          selectedProposalForCostEstimation?.quote_description ||
           (selectedProposalForCostEstimation?.id ? `Proposal No ${selectedProposalForCostEstimation.id}` : "Cost Estimation")
         }
         createdBy={currentUserName}

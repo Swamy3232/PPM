@@ -2575,11 +2575,35 @@ function Proposals() {
 
                   {/* Search and Filters Section */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="mb-4 flex justify-between items-center">
+                    <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                       <Title level={4} className="!mb-0">
                         Search & Filters
                       </Title>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          onClick={() => {
+                            setSearchText('')
+                            setCentreFilter([])
+                            setOrderDateRange(null)
+                            setStatusFilter(null)
+                            setProjectNumberFilter([])
+                            setGroupFilter([])
+                            setIsAcknowledgedFilter(null)
+                            setSmallValueProjectFilter(null)
+                            setSelectedDateField('enquiry_date')
+                            setStartDate(null)
+                            setEndDate(null)
+                          }}
+                          size="default"
+                        >
+                          Clear Filters
+                        </Button>
+                        <Button
+                          onClick={handleShowDuplicateQuoteRefs}
+                          size="default"
+                        >
+                          Duplicate Quote Refs
+                        </Button>
                         <Button
                           type="primary"
                           icon={<DownloadOutlined />}
@@ -2600,6 +2624,8 @@ function Proposals() {
                             Import Excel
                           </Button>
                         )}
+                      </div>
+
                         <input
                           id="excel-import-input"
                           type="file"
@@ -2607,9 +2633,6 @@ function Proposals() {
                           onChange={handleImportFileChange}
                           style={{ display: 'none' }}
                         />
-                      </div>
-
-
                     </div>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} sm={12} md={6}>
@@ -2621,28 +2644,6 @@ function Proposals() {
                           size="large"
                           allowClear
                         />
-                      </Col>
-                      {/* Clear Filters button (clears search + all filters) */}
-                      <Col xs={24} sm={12} md={2} className="flex items-center">
-                        <Button
-                          onClick={() => {
-                            setSearchText('')
-                            setCentreFilter([])
-                            setOrderDateRange(null)
-                            setStatusFilter(null)
-                            setProjectNumberFilter([])
-                            setGroupFilter([])
-                            setIsAcknowledgedFilter(null)
-                            setSmallValueProjectFilter(null)
-                            setSelectedDateField('enquiry_date')
-                            setStartDate(null)
-                            setEndDate(null)
-                          }}
-                          size="large"
-                          style={{ width: '100%' }}
-                        >
-                          Clear Filters
-                        </Button>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select
@@ -2748,16 +2749,6 @@ function Proposals() {
                             <Select.Option value={false}>No</Select.Option>
                           </Select>
                         </Form.Item>
-                      </Col>
-
-                      <Col xs={24} sm={12} md={6} className="flex items-end">
-                        <Button
-                          onClick={handleShowDuplicateQuoteRefs}
-                          size="large"
-                          style={{ width: '100%' }}
-                        >
-                          Duplicate Quote Refs
-                        </Button>
                       </Col>
                     </Row>
                   </div>

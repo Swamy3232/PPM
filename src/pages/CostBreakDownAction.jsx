@@ -26,9 +26,7 @@ import {
 import axios from "axios";
 import { API_BASE_URL } from '../config/api.js';
 
-/* ============================================================
-   CONSTANTS
-   ============================================================ */
+
 
 const MANPOWER_HEADER = "Manpower";
 const MANPOWER_COLUMNS = ["Role", "Cost Breakup", "Total Amount"];
@@ -345,31 +343,31 @@ function HeaderRowsEditor({ headerItem, onChange, onNewTable }) {
                         )}
                     </div>
                 ),
-            dataIndex: col,
-            key: col,
-            render: (_, record, index) => {
-                if (headerName === MANPOWER_HEADER && col === "Cost Breakup") {
-                    return <ManpowerCostInput value={record[col]} onChange={(v) => updateRow(index, col, v)} />;
-                }
-                if (headerName === MANPOWER_HEADER && col === "Total Amount") {
-                    const cb = record["Cost Breakup"] || {};
-                    let amt = 0;
-                    if (cb.type === "monthly") {
-                        amt = (cb.rate || 0) * (cb.months || 0) * (cb.quantity || 0);
-                    } else {
-                        amt = (cb.rate || 0) * (cb.hours || 0) * (cb.days || 0) * (cb.quantity || 0);
+                dataIndex: col,
+                key: col,
+                render: (_, record, index) => {
+                    if (headerName === MANPOWER_HEADER && col === "Cost Breakup") {
+                        return <ManpowerCostInput value={record[col]} onChange={(v) => updateRow(index, col, v)} />;
                     }
-                    return <span>{amt.toFixed(2)}</span>;
-                }
-                if (col === "Total Amount") {
-                    return (
-                        <InputNumber min={0} controls={false} value={record[col]} onChange={(v) => updateRow(index, col, v ?? 0)} style={{ width: 120 }} />
-                    );
-                }
-                return <Input value={record[col]} onChange={(e) => updateRow(index, col, e.target.value)} />;
-            },
-        };
-    }),
+                    if (headerName === MANPOWER_HEADER && col === "Total Amount") {
+                        const cb = record["Cost Breakup"] || {};
+                        let amt = 0;
+                        if (cb.type === "monthly") {
+                            amt = (cb.rate || 0) * (cb.months || 0) * (cb.quantity || 0);
+                        } else {
+                            amt = (cb.rate || 0) * (cb.hours || 0) * (cb.days || 0) * (cb.quantity || 0);
+                        }
+                        return <span>{amt.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+                    }
+                    if (col === "Total Amount") {
+                        return (
+                            <InputNumber min={0} controls={false} value={record[col]} onChange={(v) => updateRow(index, col, v ?? 0)} style={{ width: 120 }} />
+                        );
+                    }
+                    return <Input value={record[col]} onChange={(e) => updateRow(index, col, e.target.value)} />;
+                },
+            };
+        }),
 
         ...(headerName === MANPOWER_HEADER
             ? []
@@ -436,7 +434,7 @@ function HeaderRowsEditor({ headerItem, onChange, onNewTable }) {
                             New Table
                         </Button>
                     </div>
-                    {previewTotal !== null && <span style={{ fontWeight: 600 }}>Total: {previewTotal.toFixed(2)}</span>}
+                    {previewTotal !== null && <span style={{ fontWeight: 600 }}>Total: {previewTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
                 </div>
             )}
         />
