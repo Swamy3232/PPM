@@ -7,6 +7,8 @@ import {
   EyeOutlined,
   InboxOutlined,
   MessageOutlined,
+  FileOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -14,6 +16,7 @@ import {
   Input,
   Modal,
   Radio,
+  Dropdown,
   Space,
   Spin,
   Table,
@@ -41,6 +44,7 @@ import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import '../App.css'
 import { API_BASE_URL } from '../config/api.js'
 import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/date.js'
+import { CostEstimationModal } from './CostBreakDownAction'
 
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
@@ -222,6 +226,8 @@ function ScientistProposals() {
     ongoingProjects: 0
   })
   const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false)
+  const [costEstimationModalOpen, setCostEstimationModalOpen] = useState(false)
+  const [selectedProposalForCostEstimation, setSelectedProposalForCostEstimation] = useState(null)
 
   // Remarks modal state
   const [remarksModalOpen, setRemarksModalOpen] = useState(false)
@@ -284,6 +290,11 @@ function ScientistProposals() {
 
   // Store unresponded query counts for each project to conditionally show Queries button
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
+
+  // "Reason Required" popup state
+  const [reasonPopupOpen, setReasonPopupOpen] = useState(false)
+  const [reasonInputs, setReasonInputs] = useState({})
+  const [savingReasonIds, setSavingReasonIds] = useState({})
 
   // Slim columns for Scientist (matching GH restricted view) - now inside component
   const getTableFields = (isProposal = false) => {
@@ -383,7 +394,7 @@ function ScientistProposals() {
     'updated_by',
     'closer_report',
     'proposal_status',
-    'if_not_reason',
+    // 'if_not_reason',
   ]
 
   // Map API response to UI format
@@ -1614,7 +1625,7 @@ function ScientistProposals() {
       technical_completed_year: values.technical_completed_year || null,
       closer_report: values.closer_report || '',
       updated_by: values.updated_by || currentUserName || '',
-      if_not_reason: values.if_not_reason || '',
+      //if_not_reason: values.if_not_reason || '',
     }
     const isProject = Boolean(editingRecord?.project_number?.toString().trim())
     if (!isProject) {
@@ -1644,6 +1655,81 @@ function ScientistProposals() {
       message.error(error.message || 'Unable to update proposal')
     } finally {
       setSubmitLoading(false)
+    }
+  }
+
+  // Proposals marked "No" that still need an "if_not_reason" filled in
+  const notConvertedNoReasonList = useMemo(
+    () => tableData.filter((item) => isProposalNotConverted(item.proposals_converted, item.if_not_reason)),
+    [tableData],
+  )
+
+  const openReasonPopup = () => {
+    const initialInputs = {}
+    notConvertedNoReasonList.forEach((item) => {
+      initialInputs[item.id] = ''
+    })
+    setReasonInputs(initialInputs)
+    setReasonPopupOpen(true)
+  }
+
+  const handleSaveReason = async (record, reasonText) => {
+    const trimmedReason = (reasonText || '').trim()
+    if (!trimmedReason) {
+      message.error('Please enter a reason before saving')
+      return
+    }
+    setSavingReasonIds((prev) => ({ ...prev, [record.id]: true }))
+    try {
+      const payload = {
+        project_id: record.id,
+        extended_delivery_date: record.extended_delivery_date || '',
+        co_ordinator_remarks: record.co_ordinator_remarks || '',
+        technical_completed_year: record.technical_completed_year || null,
+        closer_report: record.closer_report || '',
+        updated_by: currentUserName || record.updated_by || '',
+        if_not_reason: trimmedReason,
+        proposal_status: record.proposal_status || '',
+      }
+
+      const response = await fetch(`${API_BASE_URL}/proposals/coordinator-update`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to save reason')
+      }
+
+      message.success('Reason saved successfully')
+
+      // Reflect the change locally so the card drops off this list right away
+      const updateRecord = (list) =>
+        list.map((it) => (it.id === record.id ? { ...it, if_not_reason: trimmedReason } : it))
+
+      setTableData(updateRecord)
+      setFilteredData(updateRecord)
+      setOriginalTableData(updateRecord)
+
+      setReasonInputs((prev) => {
+        const next = { ...prev }
+        delete next[record.id]
+        return next
+      })
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to save reason')
+    } finally {
+      setSavingReasonIds((prev) => {
+        const next = { ...prev }
+        delete next[record.id]
+        return next
+      })
     }
   }
 
@@ -1677,7 +1763,7 @@ function ScientistProposals() {
       (item) => item.status === 'On Hold',
     ).length
 
-     const convertedNo = tableData.filter(
+    const convertedNo = tableData.filter(
       (item) => isProposalNotConverted(item.proposals_converted, item.if_not_reason),
     ).length
 
@@ -2009,20 +2095,43 @@ function ScientistProposals() {
                       dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                     ) ? 'bold' : 'normal'
                   }}
-                >
-                  Queries
-                </Button>
+                  title="Queries"
+                />
               )}
               <Button
                 size="small"
                 type="link"
+                icon={<InfoCircleOutlined />}
                 onClick={(e) => {
                   e.stopPropagation()
                   openDetailModal(record)
                 }}
+                title="More Details"
+              />
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'costEstimation',
+                      label: 'Cost Estimation Generator',
+                      onClick: (e) => {
+                        e.domEvent.stopPropagation()
+                        setSelectedProposalForCostEstimation(record)
+                        setCostEstimationModalOpen(true)
+                      },
+                    },
+                  ],
+                }}
+                trigger={['click']}
               >
-                More
-              </Button>
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<FileOutlined />}
+                  onClick={(e) => e.stopPropagation()}
+                  title="Generate/Estimate Cost"
+                />
+              </Dropdown>
             </Space>
           ),
         },
@@ -2215,20 +2324,43 @@ function ScientistProposals() {
                     dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
                   ) ? 'bold' : 'normal'
                 }}
-              >
-                Queries
-              </Button>
+                title="Queries"
+              />
             )}
             <Button
               size="small"
               type="link"
+              icon={<InfoCircleOutlined />}
               onClick={(e) => {
                 e.stopPropagation()
                 openDetailModal(record)
               }}
+              title="More Details"
+            />
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'costEstimation',
+                    label: 'Cost Estimation Generator',
+                    onClick: (e) => {
+                      e.domEvent.stopPropagation()
+                      setSelectedProposalForCostEstimation(record)
+                      setCostEstimationModalOpen(true)
+                    },
+                  },
+                ],
+              }}
+              trigger={['click']}
             >
-              More
-            </Button>
+              <Button
+                size="small"
+                type="link"
+                icon={<FileOutlined />}
+                onClick={(e) => e.stopPropagation()}
+                title="Generate/Estimate Cost"
+              />
+            </Dropdown>
           </Space>
         ),
       },
@@ -2246,12 +2378,22 @@ function ScientistProposals() {
               label: 'Total Proposals Submitted',
               children: (
                 <div className="space-y-6">
+                  <style>{`
+                    @keyframes blinkReasonBtn {
+                      0%, 100% { opacity: 1; }
+                      50% { opacity: 0.45; }
+                    }
+                    .blink-reason-btn {
+                      animation: blinkReasonBtn 1.1s ease-in-out infinite;
+                    }
+                  `}</style>
                   <div className="flex justify-end">
                     <Button
                       danger
-                      type={statusFilter === 'convertedNo' ? 'primary' : 'default'}
+                      type="primary"
                       disabled={!statistics.convertedNo}
-                      onClick={() => setStatusFilter('convertedNo')}
+                      onClick={openReasonPopup}
+                      className={statistics.convertedNo ? 'blink-reason-btn' : ''}
                     >
                       Reason Required ({statistics.convertedNo})
                     </Button>
@@ -2658,6 +2800,79 @@ function ScientistProposals() {
         )}
       </Modal>
 
+
+      {/* Reason Required Popup */}
+      <Modal
+        title={`Proposals Needing a Reason (${notConvertedNoReasonList.length})`}
+        open={reasonPopupOpen}
+        onCancel={() => setReasonPopupOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setReasonPopupOpen(false)}>Close</Button>,
+        ]}
+        width={1000}
+        maskClosable={false}
+      >
+        <Table
+          rowKey="id"
+          dataSource={notConvertedNoReasonList}
+          pagination={false}
+          size="small"
+          columns={[
+            {
+              title: 'SL No',
+              key: 'sl_no',
+              width: 60,
+              render: (_, __, index) => index + 1,
+            },
+            {
+              title: 'Customer Name',
+              dataIndex: 'customer_name',
+              key: 'customer_name',
+              width: 180,
+              render: (value) => wrapWithTooltip(value || '-', 25),
+            },
+            {
+              title: 'Project Name',
+              key: 'project_name',
+              width: 200,
+              render: (_, record) => {
+                const projectName = record.activity && record.activity.trim() !== ''
+                  ? record.activity
+                  : (record.quote_description || '-')
+                return wrapWithTooltip(projectName, 30)
+              },
+            },
+            {
+              title: 'Disclaimeres made in reason required',
+              key: 'if_not_reason',
+              render: (_, record) => (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <TextArea
+                    rows={2}
+                    placeholder="Enter reason..."
+                    value={reasonInputs[record.id] ?? ''}
+                    onChange={(e) =>
+                      setReasonInputs((prev) => ({ ...prev, [record.id]: e.target.value }))
+                    }
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    type="primary"
+                    size="small"
+                    loading={!!savingReasonIds[record.id]}
+                    disabled={!reasonInputs[record.id]?.trim()}
+                    onClick={() => handleSaveReason(record, reasonInputs[record.id])}
+                  >
+                    Save
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+          locale={{ emptyText: 'All proposals have a reason recorded.' }}
+        />
+      </Modal>
+
       {/* Edit Modal */}
       <Modal
         title="Edit Proposal"
@@ -2676,7 +2891,7 @@ function ScientistProposals() {
           initialValues={{ updated_by: currentUserName }}
         >
           <div className="grid gap-4 md:grid-cols-2">
-            {ALL_FIELDS.filter((f) => {
+            {/* {ALL_FIELDS.filter((f) => {
               if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
 
               // For proposals, only allow editing proposal_status, co_ordinator_remarks, and if_not_reason
@@ -2693,7 +2908,23 @@ function ScientistProposals() {
                   const proposalsConverted = editingRecord?.proposals_converted
                   if (!isProposalNotConverted(proposalsConverted)) return false
                 }
+              } */}
+
+            {ALL_FIELDS.filter((f) => {
+              if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
+
+              // For proposals, only allow editing proposal_status and co_ordinator_remarks
+              const isProject = Boolean(editingRecord?.project_number?.toString().trim())
+              if (isProject) {
+                // This is a project - don't show proposal_status
+                if (f.name === 'proposal_status') return false
+              } else {
+                // This is a proposal - only allow these fields
+                return ['proposal_status', 'co_ordinator_remarks', 'updated_by'].includes(f.name)
               }
+
+              return true
+            }).map((field) => {
 
               return true
             }).map((field) => {
@@ -3644,6 +3875,23 @@ function ScientistProposals() {
           </div>
         </div>
       </Modal>
+
+      <CostEstimationModal
+        key={selectedProposalForCostEstimation?.id}
+        open={costEstimationModalOpen}
+        onClose={() => {
+          setCostEstimationModalOpen(false);
+          setSelectedProposalForCostEstimation(null);
+        }}
+        title={
+          selectedProposalForCostEstimation?.activity || 
+          selectedProposalForCostEstimation?.project_number || 
+          selectedProposalForCostEstimation?.quote_description || 
+          (selectedProposalForCostEstimation?.id ? `Proposal No ${selectedProposalForCostEstimation.id}` : "Cost Estimation")
+        }
+        createdBy={currentUserName}
+        projectId={selectedProposalForCostEstimation?.id}
+      />
 
       {/* Remarks Modal */}
       <Modal
