@@ -83,6 +83,8 @@ const COLORS = [
   '#f43f5e', // rose-500
 ]
 
+
+
 const CustomTooltip = ({ active, payload, isAmount }) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload
@@ -553,6 +555,7 @@ function directoranalytics() {
   const [smallValueProjectFilter, setSmallValueProjectFilter] = useState(null)
   const [selectedDateField, setSelectedDateField] = useState('enquiry_date')
   const [dateRange, setDateRange] = useState(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const graphCardRef = useRef(null)
   const [isGraphFullscreen, setIsGraphFullscreen] = useState(false)
 
@@ -2103,6 +2106,17 @@ function directoranalytics() {
     [groups],
   )
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (projectNumberFilter.length > 0) count++
+    if (centreFilter.length > 0) count++
+    if (groupFilter.length > 0) count++
+    if (projectCoordinatorFilter.length > 0) count++
+    if (smallValueProjectFilter !== null) count++
+    if (selectedDateField && dateRange && dateRange.length === 2) count++
+    return count
+  }, [projectNumberFilter, centreFilter, groupFilter, projectCoordinatorFilter, smallValueProjectFilter, selectedDateField, dateRange])
+
   const groupLookup = useMemo(() => {
     const codeByName = {}
     const nameByCode = {}
@@ -2652,165 +2666,209 @@ bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl t
                   </div>
 
                   {/* Search and Filters Section */}
-                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="mb-4">
-                      <Title level={4} className="!mb-0">
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    {/* Header bar */}
+                    <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-3.5 md:flex-row md:items-center md:justify-between">
+                      <Title level={5} className="!mb-0 !text-slate-700">
                         Search & Filters
                       </Title>
                     </div>
-                    <Row gutter={[16, 16]}>
-                      <Col xs={24} sm={12} md={6}>
-                        <Input
-                          placeholder="Search proposals... (type ID to search by PK)"
-                          prefix={<SearchOutlined />}
-                          value={searchText}
-                          onChange={(e) => setSearchText(e.target.value)}
-                          size="large"
-                          allowClear
-                        />
-                      </Col>
-                      {/* Clear Filters button (clears search + all filters) */}
-                      <Col xs={24} sm={12} md={2} className="flex items-center">
-                        <Button
-                          onClick={() => {
-                            setSearchText('')
-                            setCentreFilter([])
-                            setOrderDateRange(null)
-                            setStatusFilter(null)
-                            setProjectNumberFilter([])
-                            setGroupFilter([])
-                            setProjectCoordinatorFilter([])
-                            setIsAcknowledgedFilter(null)
-                            setSmallValueProjectFilter(null)
-                            setSelectedDateField('enquiry_date')
-                            setDateRange(null)
-                          }}
-                          size="large"
-                          style={{ width: '100%' }}
-                        >
-                          Clear Filters
-                        </Button>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          mode="multiple"
-                          placeholder="Filter by Project Number"
-                          value={projectNumberFilter}
-                          onChange={setProjectNumberFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
-                            <Select.Option key={code} value={code}>
+
+                    {/* Search + single Filters toggle */}
+                    <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center">
+                      <Input
+                        placeholder="Search proposals... (type ID to search by PK)"
+                        prefix={<SearchOutlined className="text-slate-400" />}
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        allowClear
+                        className="rounded-full md:max-w-xs"
+                      />
+
+                      <Button
+                        icon={<FilterOutlined />}
+                        onClick={() => setFiltersOpen((prev) => !prev)}
+                        className={filtersOpen ? 'border-blue-500 text-blue-600' : ''}
+                      >
+                        Filters
+                        {activeFilterCount > 0 && (
+                          <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-semibold text-white">
+                            {activeFilterCount}
+                          </span>
+                        )}
+                      </Button>
+
+                      <Button
+                        onClick={() => {
+                          setSearchText('')
+                          setCentreFilter([])
+                          setOrderDateRange(null)
+                          setStatusFilter(null)
+                          setProjectNumberFilter([])
+                          setGroupFilter([])
+                          setProjectCoordinatorFilter([])
+                          setIsAcknowledgedFilter(null)
+                          setSmallValueProjectFilter(null)
+                          setSelectedDateField('enquiry_date')
+                          setDateRange(null)
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    </div>
+
+                    {/* Active filter value chips */}
+                    {(centreFilter.length > 0 ||
+                      projectNumberFilter.length > 0 ||
+                      groupFilter.length > 0 ||
+                      projectCoordinatorFilter.length > 0 ||
+                      smallValueProjectFilter !== null ||
+                      (selectedDateField && dateRange && dateRange.length === 2)) && (
+                        <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
+                          {projectNumberFilter.map((code) => (
+                            <Tag key={`pn-${code}`} closable onClose={() => setProjectNumberFilter(projectNumberFilter.filter((c) => c !== code))}>
                               {code}
-                            </Select.Option>
+                            </Tag>
                           ))}
-                        </Select>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          mode="multiple"
-                          placeholder="Filter by Centre"
-                          value={centreFilter}
-                          onChange={setCentreFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {uniqueCentres.map((center) => (
-                            <Select.Option key={center} value={center}>
-                              {formatCenterName(center)}
-                            </Select.Option>
+                          {centreFilter.map((c) => (
+                            <Tag key={`c-${c}`} closable onClose={() => setCentreFilter(centreFilter.filter((v) => v !== c))}>
+                              {formatCenterName(c)}
+                            </Tag>
                           ))}
-                        </Select>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          mode="multiple"
-                          placeholder="Filter by Group"
-                          value={groupFilter}
-                          onChange={setGroupFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {departmentOptions.map((name) => (
-                            <Select.Option key={name} value={name}>
-                              {formatGroupName(name)}
-                            </Select.Option>
+                          {groupFilter.map((g) => (
+                            <Tag key={`g-${g}`} closable onClose={() => setGroupFilter(groupFilter.filter((v) => v !== g))}>
+                              {formatGroupName(g)}
+                            </Tag>
                           ))}
-                        </Select>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          mode="multiple"
-                          placeholder="Filter by Project Co-ordinator"
-                          value={projectCoordinatorFilter}
-                          onChange={setProjectCoordinatorFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {(projectCoordinatorOptions || []).map((name) => (
-                            <Select.Option key={name} value={name}>
-                              {name}
-                            </Select.Option>
+                          {projectCoordinatorFilter.map((p) => (
+                            <Tag key={`p-${p}`} closable onClose={() => setProjectCoordinatorFilter(projectCoordinatorFilter.filter((v) => v !== p))}>
+                              {p}
+                            </Tag>
                           ))}
-                        </Select>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Filter by Date Field:">
-                          <Select
-                            value={selectedDateField}
-                            onChange={setSelectedDateField}
-                            size="large"
-                            style={{ width: '100%' }}
-                            styles={{ popup: { root: { minWidth: 280 } } }}
-                          >
-                            {DATE_FIELD_OPTIONS.map((option) => (
-                              <Select.Option key={option.value} value={option.value}>
-                                {option.label}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Date Range:">
-                          <RangePicker
-                            placeholder={['Start Date', 'End Date']}
-                            value={dateRange}
-                            onChange={setDateRange}
-                            size="large"
-                            style={{ width: '100%' }}
-                            format={DISPLAY_DATE_FORMAT}
-                          />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Small Value Project:">
-                          <Select
-                            placeholder="Filter by Small Value Project"
-                            value={smallValueProjectFilter}
-                            onChange={setSmallValueProjectFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            <Select.Option value={true}>Yes</Select.Option>
-                            <Select.Option value={false}>No</Select.Option>
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                          {smallValueProjectFilter !== null && (
+                            <Tag closable onClose={() => setSmallValueProjectFilter(null)}>
+                              SVP: {smallValueProjectFilter ? 'Yes' : 'No'}
+                            </Tag>
+                          )}
+                          {selectedDateField && dateRange && dateRange.length === 2 && (
+                            <Tag closable onClose={() => setDateRange(null)}>
+                              {DATE_FIELD_OPTIONS.find((o) => o.value === selectedDateField)?.label}:{' '}
+                              {dateRange[0].format(DISPLAY_DATE_FORMAT)} → {dateRange[1].format(DISPLAY_DATE_FORMAT)}
+                            </Tag>
+                          )}
                         </div>
-                      </Col>
-                    </Row>
+                      )}
+
+                    {/* Expanded filter panel */}
+                    {filtersOpen && (
+                      <div className="mx-5 mb-5 rounded-xl bg-slate-50 p-4">
+                        <Row gutter={[16, 12]}>
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Project Number</div>
+                            <Select
+                              mode="multiple"
+                              placeholder="Select prefix"
+                              value={projectNumberFilter}
+                              onChange={setProjectNumberFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
+                                <Select.Option key={code} value={code}>{code}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Centre</div>
+                            <Select
+                              mode="multiple"
+                              placeholder="Select centre"
+                              value={centreFilter}
+                              onChange={setCentreFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              {uniqueCentres.map((center) => (
+                                <Select.Option key={center} value={center}>{formatCenterName(center)}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Group</div>
+                            <Select
+                              mode="multiple"
+                              placeholder="Select group"
+                              value={groupFilter}
+                              onChange={setGroupFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              {departmentOptions.map((name) => (
+                                <Select.Option key={name} value={name}>{formatGroupName(name)}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Project Co-ordinator</div>
+                            <Select
+                              mode="multiple"
+                              placeholder="Select coordinator"
+                              value={projectCoordinatorFilter}
+                              onChange={setProjectCoordinatorFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              {(projectCoordinatorOptions || []).map((name) => (
+                                <Select.Option key={name} value={name}>{name}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Date Field</div>
+                            <Select
+                              value={selectedDateField}
+                              onChange={setSelectedDateField}
+                              style={{ width: '100%' }}
+                              placeholder="Select Date Field"
+                            >
+                              {DATE_FIELD_OPTIONS.map((option) => (
+                                <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Date Range</div>
+                            <RangePicker
+                              placeholder={['Start Date', 'End Date']}
+                              value={dateRange}
+                              onChange={setDateRange}
+                              style={{ width: '100%' }}
+                              format={DISPLAY_DATE_FORMAT}
+                            />
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-medium text-slate-500">Small Value Project</div>
+                            <Select
+                              placeholder="Select"
+                              value={smallValueProjectFilter}
+                              onChange={setSmallValueProjectFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              <Select.Option value={true}>Yes</Select.Option>
+                              <Select.Option value={false}>No</Select.Option>
+                            </Select>
+                          </Col>
+                        </Row>
+                      </div>
+                    )}
                   </div>
-
-
                   <Modal
                     title="Proposal Details"
                     open={detailModalOpen}

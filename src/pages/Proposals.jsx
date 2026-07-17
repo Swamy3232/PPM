@@ -12,6 +12,12 @@ import {
   MessageOutlined,
   UploadOutlined,
   FileTextOutlined,
+  MoreOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  AppstoreOutlined,
+  DollarCircleOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons'
 import {
   AutoComplete,
@@ -36,6 +42,9 @@ import {
   Col,
   Statistic,
   Dropdown,
+  Segmented,
+  Tooltip,
+  Badge,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import { ExcelRenderer } from 'react-excel-renderer'
@@ -233,6 +242,109 @@ const ActionButtons = ({ label, onAdd }) => (
   </Space>
 )
 
+const FILTER_OPTIONS = [
+  { label: 'Project Number', value: 'projectNumber' },
+  { label: 'Centre', value: 'centre' },
+  { label: 'Date Range', value: 'dateRange' },
+  { label: 'Is Acknowledged', value: 'isAcknowledged' },
+  { label: 'Small Value Project', value: 'smallValueProject' }
+]
+
+const getPiName = (record) =>
+  (record?.project_co_ordinator || record?.quotation_given_by_name || '').trim()
+
+const getGhName = (record) => (record?.group || 'Group Head').trim()
+
+const normalizeName = (v) => (v || '').toString().trim().toLowerCase()
+
+const getThreadEvents = (queries, thread, record) => {
+  const events = []
+  const piName = normalizeName(getPiName(record))
+  const ghName = normalizeName(getGhName(record))
+
+    ; (queries || []).forEach((q) => {
+      const isToAdmin = normalizeName(q.to) === 'admin'
+      const isFromAdmin = normalizeName(q.from_) === 'admin'
+      if (!isToAdmin && !isFromAdmin) return
+
+      // Filter by thread
+      if (thread === 'pi') {
+        const otherIsPi = isToAdmin
+          ? normalizeName(q.from_) === piName
+          : normalizeName(q.to) === piName
+        if (!otherIsPi) return
+      } else {
+        const otherIsGh = isToAdmin
+          ? (normalizeName(q.from_) === ghName || normalizeName(q.from_) === 'group head')
+          : (normalizeName(q.to) === ghName || normalizeName(q.to) === 'group head')
+        if (!otherIsGh) return
+      }
+
+      events.push({
+        id: `${q.id}-msg`,
+        dbId: q.id,
+        content: q.remarks_description,
+        from_: q.from_,
+        timestamp: q.updated_at,
+        message_seen: q.message_seen,
+        reply_seen: q.reply_seen,
+        replyer: q.replyer,
+        respond_to_remarks: q.respond_to_remarks,
+      })
+      if (q.respond_to_remarks) {
+        events.push({
+          id: `${q.id}-reply`,
+          dbId: q.id,
+          content: q.respond_to_remarks,
+          from_: q.to,
+          timestamp: q.updated_at,
+          message_seen: q.message_seen,
+          reply_seen: q.reply_seen,
+          replyer: q.replyer,
+          respond_to_remarks: q.respond_to_remarks,
+        })
+      }
+    })
+  return events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+}
+
+const getThreadUnseenCount = (record, thread) => {
+  if (!record || !record.queries) return 0
+  const piName = normalizeName(getPiName(record))
+  const ghName = normalizeName(getGhName(record))
+
+  return record.queries.filter((q) => {
+    const isToAdmin = normalizeName(q.to) === 'admin'
+    const isFromAdmin = normalizeName(q.from_) === 'admin'
+    if (!isToAdmin && !isFromAdmin) return false
+
+    // 1. Unseen incoming messages to admin
+    if (isToAdmin && q.message_seen === false) {
+      if (thread === 'pi' && normalizeName(q.from_) === piName) return true
+      if (thread === 'gh' && (normalizeName(q.from_) === ghName || normalizeName(q.from_) === 'group head')) return true
+    }
+
+    // 2. Unseen replies to admin's message
+    if (isFromAdmin && q.respond_to_remarks && q.reply_seen === false) {
+      if (thread === 'pi' && normalizeName(q.to) === piName) return true
+      if (thread === 'gh' && (normalizeName(q.to) === ghName || normalizeName(q.to) === 'group head')) return true
+    }
+
+    return false
+  }).length
+}
+
+const countUnseenReplies = (record) => {
+  return getThreadUnseenCount(record, 'pi') + getThreadUnseenCount(record, 'gh')
+}
+
+const isPendingReply = (record) => {
+  const queries = record.queries || []
+  return queries.some(
+    (q) => normalizeName(q.to) === 'admin' && !q.respond_to_remarks
+  )
+}
+
 function Proposals() {
   const [form] = Form.useForm()
   const [tableData, setTableData] = useState([])
@@ -246,6 +358,7 @@ function Proposals() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [searchText, setSearchText] = useState('')
+  const [visibleFilters, setVisibleFilters] = useState([])
   const [deliveryDateMutuallyAgreed, setDeliveryDateMutuallyAgreed] = useState(false)
   const [centreFilter, setCentreFilter] = useState([])
   const [orderDateRange, setOrderDateRange] = useState(null)
@@ -298,26 +411,51 @@ function Proposals() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewDocumentPreviewError, setViewDocumentPreviewError] = useState('')
 
-  // Queries state for admin users
-  const [queriesModalOpen, setQueriesModalOpen] = useState(false)
-  const [queriesData, setQueriesData] = useState([])
-  const [queriesLoading, setQueriesLoading] = useState(false)
-  const [selectedProjectForQueries, setSelectedProjectForQueries] = useState(null)
+  // Chat modal state
+  const [chatModalOpen, setChatModalOpen] = useState(false)
+  const [chatProject, setChatProject] = useState(null)
+  const [chatThread, setChatThread] = useState('pi')
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [showNewMessagesOnly, setShowNewMessagesOnly] = useState(false)
+  const [showPendingReplyOnly, setShowPendingReplyOnly] = useState(false)
+  const messagesEndRef = useRef(null)
 
-  // Response modal state
-  const [responseModalOpen, setResponseModalOpen] = useState(false)
-  const [selectedQuery, setSelectedQuery] = useState(null)
-  const [responseText, setResponseText] = useState('')
-  const [responseLoading, setResponseLoading] = useState(false)
+  const chatEvents = useMemo(
+    () => getThreadEvents(chatMessages, chatThread, chatProject),
+    [chatMessages, chatThread, chatProject]
+  )
 
-  // Unresponded query counts for Query History button logic
-  const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (chatModalOpen) {
+      const timer = setTimeout(() => {
+        scrollToBottom()
+      }, 80)
+      return () => clearTimeout(timer)
+    }
+  }, [chatEvents, chatModalOpen])
+
+  const unreadChatsCount = useMemo(() => {
+    return tableData.filter((item) => countUnseenReplies(item) > 0).length
+  }, [tableData])
+
+  const pendingReplyCount = useMemo(() => {
+    return tableData.filter(isPendingReply).length
+  }, [tableData])
 
   // Acknowledgment modal state
   const [acknowledgmentModalOpen, setAcknowledgmentModalOpen] = useState(false)
   const [selectedProposalForAcknowledgment, setSelectedProposalForAcknowledgment] = useState(null)
   const [acknowledgmentLoading, setAcknowledgmentLoading] = useState(false)
   const [acknowledgmentForm] = Form.useForm()
+
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const fetchProjectDocuments = useCallback(async (projectId) => {
     setDocsLoading(true)
@@ -355,156 +493,156 @@ function Proposals() {
     }
   }, [])
 
-  // Queries functions for admin users
-  const fetchQueriesForProject = useCallback(async (projectId) => {
-    console.log(`Fetching queries for project ${projectId}...`)
-    setQueriesLoading(true)
+  // Chat functions for admin users
+  const loadChatMessages = useCallback(async (record) => {
+    setChatLoading(true)
     try {
       const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
         headers: { accept: 'application/json' },
       })
-      if (!response.ok) {
-        console.error('Failed to fetch queries - Response not ok:', response.status, response.statusText)
-        throw new Error('Failed to fetch queries')
-      }
-      const allQueries = await response.json()
-      console.log('All queries from API:', allQueries)
-
-      // Filter queries TO admin (not from admin) AND for this specific project
-      const adminQueries = Array.isArray(allQueries)
-        ? allQueries.filter(query =>
-          String(query.to) === 'admin' &&
-          String(query.project_id) === String(projectId)
-        )
+      const allQueries = response.ok ? await response.json() : []
+      const projectMessages = Array.isArray(allQueries)
+        ? allQueries.filter((q) => String(q.project_id) === String(record.id))
         : []
-      console.log(`Project ${projectId}: Found ${adminQueries.length} admin queries`)
-
-      const sortedQueries = adminQueries.sort((a, b) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      )
-      console.log('Setting queries data:', sortedQueries)
-      setQueriesData(sortedQueries)
-      return adminQueries.length
+      setChatMessages(projectMessages)
     } catch (error) {
-      console.error('Error fetching queries:', error)
-      message.error('Failed to fetch queries')
-      return 0
+      console.error('Error loading chat:', error)
+      message.error('Unable to load conversation')
     } finally {
-      setQueriesLoading(false)
+      setChatLoading(false)
     }
   }, [])
 
-  const openQueriesModal = useCallback(async (record) => {
-    setSelectedProjectForQueries(record)
-    setQueriesModalOpen(true)
-    // Use existing queries data from record instead of fetching again (like ScientistProposals.jsx)
-    const projectQueries = record.queries || []
-    console.log('Using existing queries from record:', projectQueries)
+  const markSeenForActiveThread = useCallback(async (record, thread) => {
+    if (!record) return
+    const piName = normalizeName(getPiName(record))
+    const ghName = normalizeName(getGhName(record))
+    const sender = thread === 'pi' ? piName : ghName
 
-    // Check if queries exist
-    if (!projectQueries || projectQueries.length === 0) {
-      console.log('No queries found for this project')
-      message.info('No queries found for this project')
-      return
-    }
-
-    // Sort queries by date (newest first) for modal display
-    const sortedQueries = projectQueries.sort((a, b) => {
+    // Case 1: Mark incoming messages from sender to admin as seen
+    const unseenMessages = (record.queries || []).filter(
+      (q) => {
+        const isFromSender = normalizeName(q.from_) === sender || (thread === 'gh' && normalizeName(q.from_) === 'group head')
+        return isFromSender && normalizeName(q.to) === 'admin' && q.message_seen === false
+      }
+    )
+    unseenMessages.forEach(async (q) => {
       try {
-        const dateA = new Date(a.updated_at).getTime()
-        const dateB = new Date(b.updated_at).getTime()
-        return dateB - dateA
-      } catch (error) {
-        console.error('Error sorting queries:', error)
-        return 0
+        await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-seen`, { method: 'PATCH' })
+      } catch (e) {
+        console.warn('mark-seen failed for', q.id, e)
       }
     })
-    console.log('Setting queries data:', sortedQueries)
-    setQueriesData(sortedQueries)
+
+    // Case 2: Mark sender's replies to admin's message as seen
+    const unseenReplies = (record.queries || []).filter(
+      (q) => {
+        const isToSender = normalizeName(q.to) === sender || (thread === 'gh' && normalizeName(q.to) === 'group head')
+        return normalizeName(q.from_) === 'admin' && isToSender && q.respond_to_remarks && q.reply_seen === false
+      }
+    )
+    unseenReplies.forEach(async (q) => {
+      try {
+        await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-reply-seen`, { method: 'PATCH' })
+      } catch (e) {
+        console.warn('mark-reply-seen failed for', q.id, e)
+      }
+    })
+
+    const hasUpdates = unseenMessages.length > 0 || unseenReplies.length > 0
+    if (hasUpdates) fetchProposals()
   }, [])
 
-  const closeQueriesModal = useCallback(() => {
-    setQueriesModalOpen(false)
-    setQueriesData([])
-    setSelectedProjectForQueries(null)
-  }, [])
+  const openChatModal = useCallback(async (record) => {
+    setChatProject(record)
+    const piUnseen = getThreadUnseenCount(record, 'pi')
+    const ghUnseen = getThreadUnseenCount(record, 'gh')
+    const initialThread = ghUnseen > 0 && piUnseen === 0 ? 'gh' : 'pi'
+    setChatThread(initialThread)
+    setChatModalOpen(true)
+    await loadChatMessages(record)
+    await markSeenForActiveThread(record, initialThread)
+  }, [loadChatMessages, markSeenForActiveThread])
 
-  // Response functions for admin users
-  const openResponseModal = useCallback((query) => {
-    setSelectedQuery(query)
-    setResponseText(query.respond_to_remarks || '')
-    setResponseModalOpen(true)
-  }, [])
-
-  const closeResponseModal = useCallback(() => {
-    setResponseModalOpen(false)
-    setSelectedQuery(null)
-    setResponseText('')
-  }, [])
-
-  const handleResponseSubmit = async () => {
-    if (!selectedQuery?.id) {
-      message.error('No query selected')
-      return
+  const switchChatThread = async (thread) => {
+    setChatThread(thread)
+    if (chatProject) {
+      await markSeenForActiveThread(chatProject, thread)
     }
+  }
 
-    if (!responseText.trim()) {
-      message.error('Please enter a response')
-      return
-    }
+  const closeChatModal = useCallback(() => {
+    setChatModalOpen(false)
+    setChatProject(null)
+    setChatMessages([])
+    setChatInput('')
+  }, [])
 
-    setResponseLoading(true)
-
+  const handleSendChatMessage = async () => {
+    if (!chatInput.trim() || !chatProject?.id) return
+    setChatSending(true)
     try {
-      const payload = {
-        from_: selectedQuery.from_,     // Keep same from as original query
-        to: selectedQuery.to,           // Keep same to as original query
-        project_id: selectedQuery.project_id,
-        remarks_description: selectedQuery.remarks_description,
-        respond_to_remarks: responseText.trim()
+      const recipient = chatThread === 'pi' ? getPiName(chatProject) : (chatProject.group || 'Group Head')
+
+      // Find the latest unanswered message from the other party in the current thread
+      const unansweredMsg = [...(chatMessages || [])]
+        .reverse()
+        .find((q) => {
+          const isFromRecipient = normalizeName(q.from_) === normalizeName(recipient) || (chatThread === 'gh' && normalizeName(q.from_) === 'group head')
+          const isToMe = normalizeName(q.to) === 'admin'
+          return isFromRecipient && isToMe && !q.respond_to_remarks
+        })
+
+      if (unansweredMsg) {
+        // REPLY: Update the existing row with respond_to_remarks
+        const payload = {
+          respond_to_remarks: chatInput.trim(),
+          replyer: 'admin',
+          reply_seen: false,  // recipient hasn't seen the reply yet
+        }
+        const response = await fetch(`${API_BASE_URL}/Remarkss/${unansweredMsg.id}`, {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error(err.detail || 'Failed to send reply')
+        }
+      } else {
+        // NEW MESSAGE: Admin is initiating a new conversation thread
+        const payload = {
+          from_: 'admin',
+          to: recipient,
+          project_id: chatProject.id,
+          remarks_description: chatInput.trim(),
+          respond_to_remarks: null,
+          replyer: null,
+          message_seen: false,
+          reply_seen: false,
+        }
+        const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
+          method: 'POST',
+          headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error(err.detail || 'Failed to send message')
+        }
       }
 
-      console.log('Sending response payload:', payload)
-      console.log('API URL:', `${API_BASE_URL}/Remarkss/`)
+      setChatInput('')
+      await loadChatMessages(chatProject)
 
-      const response = await fetch(`${API_BASE_URL}/Remarkss/${selectedQuery.id}`, {
-        method: 'PUT',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || 'Failed to submit response')
-      }
-
-      message.success('Response submitted successfully')
-      closeResponseModal()
-
-      // Refresh queries data
-      if (selectedProjectForQueries) {
-        await fetchQueriesForProject(selectedProjectForQueries.id)
-      }
-
-      // Refresh all queries
-      const allQueriesResponse = await fetch(`${API_BASE_URL}/Remarkss/`, {
-        headers: { accept: 'application/json' },
-      })
-      if (allQueriesResponse.ok) {
-        const data = await allQueriesResponse.json()
-        setAllQueries(data)
-      }
       const fetchEvent = new Event('refresh-proposals')
       window.dispatchEvent(fetchEvent)
-
+      fetchProposals()
     } catch (error) {
-      console.error('Error submitting response:', error)
-      message.error(error.message || 'Failed to submit response')
+      console.error('Error sending message:', error)
+      message.error(error.message || 'Failed to send message')
     } finally {
-      setResponseLoading(false)
+      setChatSending(false)
     }
   }
 
@@ -1443,8 +1581,16 @@ function Proposals() {
       })
     }
 
+    if (showNewMessagesOnly) {
+      filtered = filtered.filter((item) => countUnseenReplies(item) > 0)
+    }
+
+    if (showPendingReplyOnly) {
+      filtered = filtered.filter(isPendingReply)
+    }
+
     setFilteredData(filtered)
-  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, smallValueProjectFilter, tableData, selectedDateField, startDate, endDate])
+  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, smallValueProjectFilter, tableData, selectedDateField, startDate, endDate, showNewMessagesOnly, showPendingReplyOnly])
 
   // Get unique centers for filter
   const uniqueCentres = useMemo(() => {
@@ -1462,6 +1608,17 @@ function Proposals() {
         .sort(),
     [centres],
   )
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (projectNumberFilter.length > 0) count++
+    if (centreFilter.length > 0) count++
+    if (groupFilter.length > 0) count++
+    if (isAcknowledgedFilter !== null) count++
+    if (smallValueProjectFilter !== null) count++
+    if (selectedDateField && startDate && endDate) count++
+    return count
+  }, [projectNumberFilter, centreFilter, groupFilter, isAcknowledgedFilter, smallValueProjectFilter, selectedDateField, startDate, endDate])
 
   const departmentOptions = useMemo(
     () =>
@@ -1825,7 +1982,36 @@ function Proposals() {
         }
       }
 
-      // Default render logic for other fields
+      // Custom render for Customer Type field with soft pastel rounded pill badges
+      if (field.name === 'customer_type') {
+        return {
+          ...baseColumn,
+          render: (value) => {
+            if (!value) return '-'
+            const normalized = String(value).toLowerCase().trim()
+            let bg = '#F3F4F6'
+            let color = '#374151'
+            if (normalized.includes('private')) {
+              bg = '#DCFCE7'
+              color = '#16A34A'
+            } else if (normalized.includes('govt') || normalized.includes('government') || normalized.includes('public')) {
+              bg = '#E0F2FE'
+              color = '#2563EB'
+            } else if (normalized.includes('others')) {
+              bg = '#FFEDD5'
+              color = '#EA580C'
+            } else if (normalized.includes('msme')) {
+              bg = '#FEF9C3'
+              color = '#CA8A04'
+            }
+            return (
+              <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: bg, color: color }}>
+                {value}
+              </span>
+            )
+          }
+        }
+      }
       return {
         ...baseColumn,
         render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
@@ -1982,209 +2168,105 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 170,
-        render: (_, record) => (
-          <Space size="small">
-            <Button
-              size="small"
-              type="link"
-              icon={<EyeOutlined />}
-              onClick={() => openDetailModal(record)}
-            />
-            {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
-              <>
-                <Button
-                  size="small"
-                  type="link"
-                  icon={<EditOutlined />}
-                  onClick={() => openEditModal(record)}
-                />
-                <Popconfirm
-                  title="Confirm delete"
-                  description="This action cannot be undone."
-                  okText="Delete"
-                  okButtonProps={{ danger: true, loading: deletingId === record.id }}
-                  cancelText="Cancel"
-                  onConfirm={() => handleDelete(record)}
-                >
-                  <Button
-                    size="small"
-                    type="link"
-                    danger
-                    icon={<DeleteOutlined />}
-                    loading={deletingId === record.id}
-                  />
-                </Popconfirm>
-              </>
-            )}
-            {record.queries && record.queries.length > 0 && (
-              <Button
-                size="small"
-                type="link"
-                icon={<MessageOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  openQueriesModal(record)
-                }}
-                style={{
-                  color: record.queries?.some(query =>
-                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                  ) ? '#ff4d4f' : '#1890ff',
-                  fontWeight: record.queries?.some(query =>
-                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                  ) ? 'bold' : 'normal'
-                }}
-              >
-                Queries
-              </Button>
-            )}
-            {isProposalConverted(record.proposals_converted) && (
-              <Dropdown
-                menu={{
-                  items: [
+        width: 110,
+        render: (_, record) => {
+          const isGuest = ['guest', 'role'].includes(currentUserRole?.toLowerCase().trim())
+          const unseenCount = countUnseenReplies(record)
+          const pendingReply = isPendingReply(record)
+          const hasBadge = unseenCount > 0 || pendingReply
+
+          const menuItems = [
+            {
+              key: 'chat',
+              label: (
+                <span title={`Chat${unseenCount > 0 ? ` (${unseenCount} new)` : ''}${pendingReply ? ' - Reply needed' : ''}`} style={{ color: unseenCount > 0 ? '#ff4d4f' : undefined, display: 'flex', justifyContent: 'center', fontSize: '16px' }}>
+                  <MessageOutlined />
+                </span>
+              ),
+              onClick: () => openChatModal(record),
+            },
+            ...(isProposalConverted(record.proposals_converted)
+              ? [
+                {
+                  key: 'generators',
+                  label: (
+                    <span title="Document Generators" style={{ display: 'flex', justifyContent: 'center', fontSize: '16px' }}>
+                      <FileTextOutlined />
+                    </span>
+                  ),
+                  children: [
                     {
                       key: 'acknowledgment',
                       label: 'Acknowledgment Generator',
-                      onClick: (e) => {
-                        e.domEvent.stopPropagation()
+                      onClick: () =>
                         openAcknowledgmentModal(
                           record,
                           acknowledgmentForm,
                           setSelectedProposalForAcknowledgment,
                           setAcknowledgmentModalOpen
-                        )
-                      },
+                        ),
                     },
                   ],
-                }}
-                trigger={['click']}
-              >
+                },
+              ]
+              : []),
+            ...(!isGuest
+              ? [
+                { type: 'divider' },
+                {
+                  key: 'delete',
+                  danger: true,
+                  label: 'Delete',
+                  onClick: () => {
+                    Modal.confirm({
+                      title: 'Confirm delete',
+                      content: 'This action cannot be undone.',
+                      okText: 'Delete',
+                      okButtonProps: { danger: true },
+                      cancelText: 'Cancel',
+                      onOk: () => handleDelete(record),
+                    })
+                  },
+                },
+              ]
+              : []),
+          ]
+
+          return (
+            <Space size="small">
+              <Button
+                size="small"
+                type="link"
+                icon={<EyeOutlined />}
+                onClick={() => openDetailModal(record)}
+                title="View"
+              />
+              {!isGuest && (
                 <Button
                   size="small"
                   type="link"
-                  icon={<FileTextOutlined />}
-                  onClick={(e) => e.stopPropagation()}
-                >
-
-                </Button>
+                  icon={<EditOutlined />}
+                  onClick={() => openEditModal(record)}
+                  title="Edit"
+                />
+              )}
+              <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                <Badge dot={hasBadge} color="#ff4d4f" offset={[-2, 2]}>
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<MoreOutlined />}
+                    title="More actions"
+                    style={{ color: hasBadge ? '#ff4d4f' : undefined }}
+                  />
+                </Badge>
               </Dropdown>
-            )}
-          </Space>
-        ),
-      },
-      {
-        title: 'Latest Response',
-        dataIndex: 'latest_response',
-        key: 'latest_response',
-        width: 200,
-        render: (_, record) => {
-          // Show all queries for this project
-          const allQueries = record.queries || []
-
-          if (allQueries.length === 0) {
-            // Don't show anything when no queries for this project
-            return null
-          }
-
-          // Find queries with responses
-          const respondedQueries = allQueries.filter(q => q.respond_to_remarks)
-          const pendingQueries = allQueries.filter(q => !q.respond_to_remarks)
-
-          // Always show Query History button when there are queries
-          return (
-            <div>
-              <div style={{ marginBottom: '8px' }}>
-                {pendingQueries.length > 0 && (
-                  <div style={{
-                    color: '#ff4d4f',
-                    fontWeight: 'bold',
-                    backgroundColor: '#fff2f0',
-                    padding: '4px',
-                    borderRadius: '4px',
-                    border: '1px solid #ffccc7'
-                  }}>
-                    <div>{pendingQueries[0].remarks_description}</div>
-                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-                      From: {pendingQueries[0].from_} | {dayjs(pendingQueries[0].updated_at).format('DD-MM-YYYY HH:mm')}
-                    </div>
-                  </div>
-                )}
-
-                {respondedQueries.length > 0 && (
-                  <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
-                    <div>{respondedQueries[0].respond_to_remarks}</div>
-                    <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-                      From: {respondedQueries[0].from_} | {dayjs(respondedQueries[0].updated_at).format('DD-MM-YYYY HH:mm')}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div style={{ marginTop: '8px' }}>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openQueriesModal(record)
-                  }}
-                >
-                  Query History ({allQueries.length})
-                </Button>
-              </div>
-            </div>
-          )
-
-          // Show latest response if no pending queries
-          const latestResponse = respondedQueries.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]
-          const responseDate = dayjs(latestResponse.updated_at)
-          const today = dayjs().startOf('day')
-          const yesterday = dayjs().subtract(1, 'day').startOf('day')
-          let dateLabel = responseDate.format('DD-MM-YYYY')
-
-          if (responseDate.isSame(today, 'day')) {
-            dateLabel = 'Today ' + responseDate.format('HH:mm')
-          } else if (responseDate.isSame(yesterday, 'day')) {
-            dateLabel = 'Yesterday ' + responseDate.format('HH:mm')
-          }
-
-          return (
-            <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
-              <div>{latestResponse.respond_to_remarks}</div>
-              <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-                From: {latestResponse.from_} | {dateLabel}
-              </div>
-            </div>
-          )
-        },
-      },
-      {
-        title: 'Action',
-        key: 'action',
-        width: 80,
-        render: (_, record) => {
-          // Find pending admin queries
-          const pendingAdminQueries = record.queries?.filter(q =>
-            String(q.to) === 'admin' && !q.respond_to_remarks
-          ) || []
-
-          // Only show Respond button if there are pending admin queries
-          if (pendingAdminQueries.length === 0) {
-            return null
-          }
-
-          return (
-            <Button
-              size="small"
-              type="primary"
-              onClick={() => openResponseModal(pendingAdminQueries[0])}
-            >
-              Respond
-            </Button>
+            </Space>
           )
         },
       },
     ]
-  }, [deletingId, handleDelete, openEditModal, openDetailModal, openDocsModal, openQueriesModal, tableData])
+  }, [deletingId, handleDelete, openEditModal, openDetailModal, openDocsModal, openChatModal, tableData])
 
   // Compact projects view derived from proposals (currently unused, but kept)
   const projectRows = useMemo(
@@ -2397,361 +2479,186 @@ function Proposals() {
               children: (
                 <div className="space-y-6">
                   {/* Statistics Cards */}
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-                    <Card
-                      className="bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                    >
-                      <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Total Proposals Submitted
-                          </span>
-                        }
-                        value={statistics.totalProposals + statistics.totalProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
-                      />
+                  {(() => {
+                    const handleStatusCardClick = (val) => {
+                      setStatusFilter(val)
+                      setShowNewMessagesOnly(false)
+                      setShowPendingReplyOnly(false)
+                    }
 
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('proposals')}
-                    >
-                      <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Pending
-                          </span>
-                        }
-                        value={statistics.totalProposals}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      {statistics.pendingBreakdown && (
-                        <div className="mt-2 text-xs text-white/80">
-                          Ongoing: {statistics.pendingBreakdown.ongoing} | Rejected:{" "}
-                          {statistics.pendingBreakdown.rejected}
-                        </div>
-                      )}
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('totalProjects')}
-                    >
-                      <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Converted to Projects
-                          </span>
-                        }
-                        value={statistics.totalProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
-                          {Object.entries(statistics.projectCodeBreakdown)
-                            .filter(([, count]) => count > 0)
-                            .map(([code, count], idx, arr) => (
-                              <span key={code}>
-                                {code}: {count}
-                                {idx < arr.length - 1 ? ' | ' : ''}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('technicallyCompleted')}
-                    >
-                      <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Technically Completed
-                          </span>
-                        }
-                        value={statistics.technicallyCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      {Object.keys(statistics.technicallyCompletedBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
-                          {Object.entries(statistics.technicallyCompletedBreakdown)
-                            .filter(([, count]) => count > 0)
-                            .map(([code, count], idx, arr) => (
-                              <span key={code}>
-                                {code}: {count}
-                                {idx < arr.length - 1 ? ' | ' : ''}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('financiallyCompleted')}
-                    >
-                      <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Financially Completed
-                          </span>
-                        }
-                        value={statistics.financiallyCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      {Object.keys(statistics.financiallyCompletedBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
-                          {Object.entries(statistics.financiallyCompletedBreakdown)
-                            .filter(([, count]) => count > 0)
-                            .map(([code, count], idx, arr) => (
-                              <span key={code}>
-                                {code}: {count}
-                                {idx < arr.length - 1 ? ' | ' : ''}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('pendingProjects')}
-                    >
-                      <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Ongoing Projects
-                          </span>
-                        }
-                        value={statistics.pendingProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      {Object.keys(statistics.ongoingProjectsBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
-                          {Object.entries(statistics.ongoingProjectsBreakdown)
-                            .filter(([, count]) => count > 0)
-                            .map(([code, count], idx, arr) => (
-                              <span key={code}>
-                                {code}: {count}
-                                {idx < arr.length - 1 ? ' | ' : ''}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                      {statistics.onHoldProjects > 0 && (
-                        <div style={{
-                          fontSize: '12px',
-                          color: '#fff',
-                          opacity: 0.8,
-                          marginTop: '4px'
-                        }}>
-                          On hold: {statistics.onHoldProjects}
-                        </div>
-                      )}
-                    </Card>
-
-                  </div>
-
-                  {/* Search and Filters Section */}
-                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                      <Title level={4} className="!mb-0">
-                        Search & Filters
-                      </Title>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          onClick={() => {
-                            setSearchText('')
-                            setCentreFilter([])
-                            setOrderDateRange(null)
-                            setStatusFilter(null)
-                            setProjectNumberFilter([])
-                            setGroupFilter([])
-                            setIsAcknowledgedFilter(null)
-                            setSmallValueProjectFilter(null)
-                            setSelectedDateField('enquiry_date')
-                            setStartDate(null)
-                            setEndDate(null)
-                          }}
-                          size="default"
+                    return (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
+                        {/* Card 1: Total Proposals */}
+                        <Card
+                          className="bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                          style={{ borderRadius: '16px', border: 'none', minHeight: '135px' }}
+                          onClick={() => handleStatusCardClick(null)}
                         >
-                          Clear Filters
-                        </Button>
-                        <Button
-                          onClick={handleShowDuplicateQuoteRefs}
-                          size="default"
-                        >
-                          Duplicate Quote Refs
-                        </Button>
-                        <Button
-                          type="primary"
-                          icon={<DownloadOutlined />}
-                          size="default"
-                          onClick={handleExportExcel}
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                        >
-                          Export to Excel
-                        </Button>
+                          <FileTextOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+                          <Statistic
+                            title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Total Submitted</span>}
+                            value={statistics.totalProposals + statistics.totalProjects}
+                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
+                          />
+                        </Card>
 
-                        {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
-                          <Button
-                            type="default"
-                            icon={<UploadOutlined />}
-                            size="default"
-                            onClick={() => document.getElementById('excel-import-input').click()}
-                          >
-                            Import Excel
-                          </Button>
-                        )}
+                        {/* Card 2: Pending Proposals */}
+                        <Card
+                          className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                          style={{ borderRadius: '16px', border: 'none', minHeight: '135px' }}
+                          onClick={() => handleStatusCardClick('proposals')}
+                        >
+                          <ClockCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+                          <Statistic
+                            title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Pending</span>}
+                            value={statistics.totalProposals}
+                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
+                          />
+                          {statistics.pendingBreakdown && (
+                            <div className="mt-2 text-[11px] text-white/80 font-medium">
+                              Ongoing: {statistics.pendingBreakdown.ongoing} | Rejected: {statistics.pendingBreakdown.rejected}
+                            </div>
+                          )}
+                        </Card>
+
+                        {/* Card 3: Converted to Projects */}
+                        <Card
+                          className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                          style={{ borderRadius: '16px', border: 'none', minHeight: '135px' }}
+                          onClick={() => handleStatusCardClick('totalProjects')}
+                        >
+                          <CheckCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+                          <Statistic
+                            title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Converted</span>}
+                            value={statistics.totalProjects}
+                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
+                          />
+                          {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
+                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                              {Object.entries(statistics.projectCodeBreakdown)
+                                .filter(([, count]) => count > 0)
+                                .map(([code, count], idx, arr) => (
+                                  <span key={code}>
+                                    {code}: {count}
+                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                        </Card>
+
+                        {/* Card 4: Technically Completed */}
+                        <Card
+                          className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                          style={{ borderRadius: '16px', border: 'none', minHeight: '135px' }}
+                          onClick={() => handleStatusCardClick('technicallyCompleted')}
+                        >
+                          <AppstoreOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+                          <Statistic
+                            title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Tech Completed</span>}
+                            value={statistics.technicallyCompleted}
+                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
+                          />
+                          {Object.keys(statistics.technicallyCompletedBreakdown).length > 0 && (
+                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                              {Object.entries(statistics.technicallyCompletedBreakdown)
+                                .filter(([, count]) => count > 0)
+                                .map(([code, count], idx, arr) => (
+                                  <span key={code}>
+                                    {code}: {count}
+                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                        </Card>
+
+                        {/* Card 5: Financially Completed */}
+                        <Card
+                          className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                          style={{ borderRadius: '16px', border: 'none', minHeight: '135px' }}
+                          onClick={() => handleStatusCardClick('financiallyCompleted')}
+                        >
+                          <DollarCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+                          <Statistic
+                            title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Fin Completed</span>}
+                            value={statistics.financiallyCompleted}
+                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
+                          />
+                          {Object.keys(statistics.financiallyCompletedBreakdown).length > 0 && (
+                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                              {Object.entries(statistics.financiallyCompletedBreakdown)
+                                .filter(([, count]) => count > 0)
+                                .map(([code, count], idx, arr) => (
+                                  <span key={code}>
+                                    {code}: {count}
+                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                        </Card>
+
+                        {/* Card 6: Ongoing Projects */}
+                        <Card
+                          className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                          style={{ borderRadius: '16px', border: 'none', minHeight: '135px' }}
+                          onClick={() => handleStatusCardClick('pendingProjects')}
+                        >
+                          <PlayCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+                          <Statistic
+                            title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Ongoing</span>}
+                            value={statistics.pendingProjects}
+                            valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
+                          />
+                          {Object.keys(statistics.ongoingProjectsBreakdown).length > 0 && (
+                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                              {Object.entries(statistics.ongoingProjectsBreakdown)
+                                .filter(([, count]) => count > 0)
+                                .map(([code, count], idx, arr) => (
+                                  <span key={code}>
+                                    {code}: {count}
+                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                          {statistics.onHoldProjects > 0 && (
+                            <div className="mt-1 text-[11px] text-white/80 font-medium">
+                              On hold: {statistics.onHoldProjects}
+                            </div>
+                          )}
+                        </Card>
                       </div>
+                    )
+                  })()}
 
-                        <input
-                          id="excel-import-input"
-                          type="file"
-                          accept=".xlsx,.xls"
-                          onChange={handleImportFileChange}
-                          style={{ display: 'none' }}
-                        />
-                    </div>
-                    <Row gutter={[16, 16]}>
-                      <Col xs={24} sm={12} md={6}>
-                        <Input
-                          placeholder="Search proposals... (type ID to search by PK)"
-                          prefix={<SearchOutlined />}
-                          value={searchText}
-                          onChange={(e) => setSearchText(e.target.value)}
-                          size="large"
-                          allowClear
-                        />
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          mode="multiple"
-                          placeholder="Filter by Project Number"
-                          value={projectNumberFilter}
-                          onChange={setProjectNumberFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
-                            <Select.Option key={code} value={code}>
-                              {code}
-                            </Select.Option>
-                          ))}
-                        </Select>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          mode="multiple"
-                          placeholder="Filter by Centre"
-                          value={centreFilter}
-                          onChange={setCentreFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {uniqueCentres.map((center) => (
-                            <Select.Option key={center} value={center}>
-                              {formatCenterName(center)}
-                            </Select.Option>
-                          ))}
-                        </Select>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Filter by Date Field:">
-                          <Select
-                            value={selectedDateField}
-                            onChange={setSelectedDateField}
-                            size="large"
-                            style={{ width: '100%' }}
-                            styles={{ popup: { root: { minWidth: 280 } } }}
-                          >
-                            {DATE_FIELD_OPTIONS.map((option) => (
-                              <Select.Option key={option.value} value={option.value}>
-                                {option.label}
-                              </Select.Option>
-                            ))}
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Start Date:">
-                          <DatePicker
-                            placeholder="Start Date"
-                            value={startDate}
-                            onChange={setStartDate}
-                            size="large"
-                            style={{ width: '100%' }}
-                            format={DISPLAY_DATE_FORMAT}
-                          />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="End Date:">
-                          <DatePicker
-                            placeholder="End Date"
-                            value={endDate}
-                            onChange={setEndDate}
-                            size="large"
-                            style={{ width: '100%' }}
-                            format={DISPLAY_DATE_FORMAT}
-                          />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Is Acknowledged:">
-                          <Select
-                            placeholder="Filter by Is Acknowledged"
-                            value={isAcknowledgedFilter}
-                            onChange={setIsAcknowledgedFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            <Select.Option value={true}>Yes</Select.Option>
-                            <Select.Option value={false}>No</Select.Option>
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Form.Item label="Small Value Project:">
-                          <Select
-                            placeholder="Filter by Small Value Project"
-                            value={smallValueProjectFilter}
-                            onChange={setSmallValueProjectFilter}
-                            size="large"
-                            allowClear
-                            style={{ width: '100%' }}
-                          >
-                            <Select.Option value={true}>Yes</Select.Option>
-                            <Select.Option value={false}>No</Select.Option>
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                    </Row>
-                  </div>
+                  <style>{`
+                    @keyframes blinkChatBtn {
+                      0%, 100% { opacity: 1; transform: scale(1); }
+                      50% { opacity: 0.65; transform: scale(0.97); }
+                    }
+                    .blink-chat-btn {
+                      animation: blinkChatBtn 1.2s ease-in-out infinite;
+                      background-color: #fff1f0 !important;
+                      border-color: #ffccc7 !important;
+                      color: #ff4d4f !important;
+                    }
+                    .admin-proposals-table .ant-table-cell {
+                      padding-top: 12px !important;
+                      padding-bottom: 12px !important;
+                    }
+                    .admin-proposals-table .ant-table-row:hover {
+                      background-color: #F8FAFC !important;
+                    }
+                  `}</style>
+                  <input
+                    id="excel-import-input"
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportFileChange}
+                    style={{ display: 'none' }}
+                  />
 
                   {importPreview && (
                     <Modal
@@ -3372,55 +3279,273 @@ function Proposals() {
                   </Modal>
 
                   {/* Proposals Table */}
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div>
                         <Title level={4} className="!mb-1">
                           Proposal / Projects
                         </Title>
                         <p className="text-slate-500 text-sm">
-                          Showing {filteredData.length} of
-                          Proposals / Projects
+                          Showing {filteredData.length} proposals/projects
                         </p>
-                        <div className="flex items-center gap-4 mb-4">
-                          {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
-                            <ActionButtons label="Proposal / Project" onAdd={openAddModal} />
-                          )}
-                          <Space size="middle">
-                            <Button
-                              type="default"
-                              onClick={() => {
-                                // Filter projects with pending admin queries
-                                const projectsWithPendingQueries = tableData.filter(record => {
-                                  const adminQueries = record.queries?.filter(q =>
-                                    String(q.to) === 'admin' && !q.respond_to_remarks
-                                  ) || []
-                                  return adminQueries.length > 0
-                                })
-                                setFilteredData(projectsWithPendingQueries)
-                                message.info(`Showing ${projectsWithPendingQueries.length} projects with pending queries`)
-                              }}
-                            >
-                              Pending Queries ({tableData.filter(record => {
-                                const adminQueries = record.queries?.filter(q =>
-                                  String(q.to) === 'admin' && !q.respond_to_remarks
-                                ) || []
-                                return adminQueries.length > 0
-                              }).length})
-                            </Button>
-                            <Button
-                              type="default"
-                              onClick={() => {
-                                setFilteredData(tableData)
-                                message.info('Showing all projects')
-                              }}
-                            >
-                              All Projects
-                            </Button>
-                          </Space>
-                        </div>
                       </div>
+
+                      {/* Primary Blue CTA Add Button */}
+                      {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
+                        <Button
+                          type="primary"
+                          icon={<PlusOutlined />}
+                          onClick={openAddModal}
+                          className="font-medium rounded-lg h-10 shadow-sm"
+                          style={{ backgroundColor: '#2563EB', borderColor: '#2563EB' }}
+                        >
+                          Add Proposal / Project
+                        </Button>
+                      )}
                     </div>
+
+                    {/* Unified Clean Horizontal Toolbar */}
+                    <div className="flex flex-wrap items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      {/* Search Bar */}
+                      <Input
+                        placeholder="Search proposals..."
+                        prefix={<SearchOutlined className="text-slate-400" />}
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        allowClear
+                        className="rounded-lg md:max-w-xs h-10"
+                      />
+
+                      {/* Filter Toggles */}
+                      <Button
+                        icon={<FilterOutlined />}
+                        onClick={() => setFiltersOpen((prev) => !prev)}
+                        className={`h-10 rounded-lg ${filtersOpen ? 'border-blue-500 text-blue-600 bg-blue-50/50' : ''}`}
+                      >
+                        Filters
+                        {activeFilterCount > 0 && (
+                          <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-semibold text-white">
+                            {activeFilterCount}
+                          </span>
+                        )}
+                      </Button>
+
+                      <Button
+                        type={showNewMessagesOnly ? 'primary' : 'default'}
+                        onClick={() => {
+                          setShowNewMessagesOnly(!showNewMessagesOnly)
+                          setShowPendingReplyOnly(false)
+                        }}
+                        className={`h-10 rounded-lg ${showNewMessagesOnly ? 'shadow-md hover:shadow-lg' : (unreadChatsCount > 0 ? 'blink-chat-btn' : '')}`}
+                        style={showNewMessagesOnly ? {} : (unreadChatsCount > 0 ? {} : { borderColor: '#1890ff', color: '#1890ff' })}
+                      >
+                        💬 Unread Chats ({unreadChatsCount})
+                      </Button>
+
+                      <Button
+                        type={showPendingReplyOnly ? 'primary' : 'default'}
+                        onClick={() => {
+                          setShowPendingReplyOnly(!showPendingReplyOnly)
+                          setShowNewMessagesOnly(false)
+                        }}
+                        className={`h-10 rounded-lg ${showPendingReplyOnly ? 'shadow-md hover:shadow-lg' : ''}`}
+                        style={showPendingReplyOnly ? {} : { borderColor: '#fa8c16', color: '#fa8c16' }}
+                      >
+                        ⚠️ Reply Needed ({pendingReplyCount})
+                      </Button>
+
+                      {/* Spacer */}
+                      <div className="flex-grow" />
+
+                      {/* Action Controls */}
+                      <Space wrap size="small">
+                        <Button
+                          onClick={() => {
+                            setSearchText('')
+                            setCentreFilter([])
+                            setOrderDateRange(null)
+                            setStatusFilter(null)
+                            setProjectNumberFilter([])
+                            setGroupFilter([])
+                            setIsAcknowledgedFilter(null)
+                            setSmallValueProjectFilter(null)
+                            setSelectedDateField('enquiry_date')
+                            setStartDate(null)
+                            setEndDate(null)
+                            setShowNewMessagesOnly(false)
+                            setShowPendingReplyOnly(false)
+                          }}
+                          className="h-10 rounded-lg text-slate-600"
+                        >
+                          Clear Filters
+                        </Button>
+                        <Button onClick={handleShowDuplicateQuoteRefs} className="h-10 rounded-lg text-slate-600">
+                          Duplicate Quote Refs
+                        </Button>
+                        {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
+                          <Button
+                            icon={<UploadOutlined />}
+                            onClick={() => document.getElementById('excel-import-input').click()}
+                            className="h-10 rounded-lg text-slate-600"
+                          >
+                            Import
+                          </Button>
+                        )}
+                        <Button
+                          icon={<DownloadOutlined />}
+                          onClick={handleExportExcel}
+                          className="h-10 rounded-lg text-white font-medium"
+                          style={{ backgroundColor: '#2563EB', borderColor: '#2563EB', color: 'white' }}
+                        >
+                          Export
+                        </Button>
+                      </Space>
+                    </div>
+
+                    {/* Active Filter Chips */}
+                    {(centreFilter.length > 0 ||
+                      projectNumberFilter.length > 0 ||
+                      groupFilter.length > 0 ||
+                      isAcknowledgedFilter !== null ||
+                      smallValueProjectFilter !== null ||
+                      (selectedDateField && startDate && endDate)) && (
+                        <div className="flex flex-wrap items-center gap-2 py-1">
+                          {projectNumberFilter.map((code) => (
+                            <Tag key={`pn-${code}`} closable onClose={() => setProjectNumberFilter(projectNumberFilter.filter((c) => c !== code))}>
+                              {code}
+                            </Tag>
+                          ))}
+                          {centreFilter.map((c) => (
+                            <Tag key={`c-${c}`} closable onClose={() => setCentreFilter(centreFilter.filter((v) => v !== c))}>
+                              {formatCenterName(c)}
+                            </Tag>
+                          ))}
+                          {groupFilter.map((g) => (
+                            <Tag key={`g-${g}`} closable onClose={() => setGroupFilter(groupFilter.filter((v) => v !== g))}>
+                              {formatGroupName(g)}
+                            </Tag>
+                          ))}
+                          {isAcknowledgedFilter !== null && (
+                            <Tag closable onClose={() => setIsAcknowledgedFilter(null)}>
+                              Acknowledged: {isAcknowledgedFilter ? 'Yes' : 'No'}
+                            </Tag>
+                          )}
+                          {smallValueProjectFilter !== null && (
+                            <Tag closable onClose={() => setSmallValueProjectFilter(null)}>
+                              SVP: {smallValueProjectFilter ? 'Yes' : 'No'}
+                            </Tag>
+                          )}
+                          {selectedDateField && startDate && endDate && (
+                            <Tag closable onClose={() => { setStartDate(null); setEndDate(null) }}>
+                              {DATE_FIELD_OPTIONS.find((o) => o.value === selectedDateField)?.label}:{' '}
+                              {startDate.format(DISPLAY_DATE_FORMAT)} → {endDate.format(DISPLAY_DATE_FORMAT)}
+                            </Tag>
+                          )}
+                        </div>
+                      )}
+
+                    {/* All filter controls shown together when Filters button is toggled open */}
+                    {filtersOpen && (
+                      <div className="p-5 rounded-xl bg-slate-50 border border-slate-100">
+                        <Row gutter={[16, 12]}>
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">Project Number</div>
+                            <Select
+                              mode="multiple"
+                              placeholder="Select prefix"
+                              value={projectNumberFilter}
+                              onChange={setProjectNumberFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
+                                <Select.Option key={code} value={code}>{code}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">Centre</div>
+                            <Select
+                              mode="multiple"
+                              placeholder="Select centre"
+                              value={centreFilter}
+                              onChange={setCentreFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              {uniqueCentres.map((center) => (
+                                <Select.Option key={center} value={center}>{formatCenterName(center)}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">Is Acknowledged</div>
+                            <Select
+                              placeholder="Select"
+                              value={isAcknowledgedFilter}
+                              onChange={setIsAcknowledgedFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              <Select.Option value={true}>Yes</Select.Option>
+                              <Select.Option value={false}>No</Select.Option>
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">Small Value Project</div>
+                            <Select
+                              placeholder="Select"
+                              value={smallValueProjectFilter}
+                              onChange={setSmallValueProjectFilter}
+                              allowClear
+                              style={{ width: '100%' }}
+                            >
+                              <Select.Option value={true}>Yes</Select.Option>
+                              <Select.Option value={false}>No</Select.Option>
+                            </Select>
+                          </Col>
+
+                          <Col xs={24} sm={12} md={6}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">Date Field</div>
+                            <Select
+                              value={selectedDateField}
+                              onChange={setSelectedDateField}
+                              style={{ width: '100%' }}
+                              placeholder="Select Date Field"
+                            >
+                              {DATE_FIELD_OPTIONS.map((option) => (
+                                <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+
+                          <Col xs={12} sm={6} md={3}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">Start</div>
+                            <DatePicker
+                              placeholder="Start"
+                              value={startDate}
+                              onChange={setStartDate}
+                              style={{ width: '100%' }}
+                              format={DISPLAY_DATE_FORMAT}
+                            />
+                          </Col>
+
+                          <Col xs={12} sm={6} md={3}>
+                            <div className="mb-1 text-xs font-semibold text-slate-600">End</div>
+                            <DatePicker
+                              placeholder="End"
+                              value={endDate}
+                              onChange={setEndDate}
+                              style={{ width: '100%' }}
+                              format={DISPLAY_DATE_FORMAT}
+                            />
+                          </Col>
+                        </Row>
+                      </div>
+                    )}
                     <Table
                       className="admin-proposals-table"
                       rowKey="key"
@@ -4533,133 +4658,108 @@ function Proposals() {
         </Form>
       </Modal>
 
-      {/* Queries Modal for admin users */}
+      {/* Chronological Chat Modal */}
       <Modal
-        title={`Queries for Project: ${selectedProjectForQueries?.project_number || selectedProjectForQueries?.activity || 'N/A'}`}
-        open={queriesModalOpen}
-        onCancel={closeQueriesModal}
-        width={800}
-        footer={[
-          <Button key="close" onClick={closeQueriesModal}>Close</Button>,
-        ]}
-      >
-        <Table
-          dataSource={queriesData}
-          loading={queriesLoading}
-          rowKey="id"
-          pagination={false}
-          columns={[
-            {
-              title: 'From',
-              dataIndex: 'from_',
-              key: 'from_',
-              width: 100,
-            },
-            {
-              title: 'Query',
-              dataIndex: 'remarks_description',
-              key: 'remarks_description',
-              ellipsis: true,
-              render: (text, record) => (
-                <span style={{
-                  color: record.respond_to_remarks ? '#52c41a' : '#ff4d4f',
-                  fontWeight: record.respond_to_remarks ? 'normal' : 'bold'
-                }}>
-                  {text}
-                </span>
-              ),
-            },
-            {
-              title: 'Date',
-              dataIndex: 'updated_at',
-              key: 'updated_at',
-              width: 120,
-              render: (value) => {
-                if (!value) return '-'
-                const queryDate = dayjs(value)
-                const today = dayjs().startOf('day')
-                const yesterday = dayjs().subtract(1, 'day').startOf('day')
-
-                if (queryDate.isSame(today, 'day')) {
-                  return 'Today ' + queryDate.format('HH:mm')
-                } else if (queryDate.isSame(yesterday, 'day')) {
-                  return 'Yesterday ' + queryDate.format('HH:mm')
-                } else {
-                  return queryDate.format('DD-MM-YYYY')
-                }
-              },
-            },
-            {
-              title: 'Response',
-              dataIndex: 'respond_to_remarks',
-              key: 'respond_to_remarks',
-              ellipsis: true,
-              width: 150,
-              render: (response) => response ? (
-                <span style={{ color: '#52c41a', fontWeight: '500' }}>{response}</span>
-              ) : (
-                <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>No Response</span>
-              ),
-            },
-            {
-              title: 'Action',
-              key: 'action',
-              width: 80,
-              render: (_, record) => (
-                <span>
-                  {/* Only show Respond button if there's no response yet AND query was sent TO admin (from user) */}
-                  {!record.respond_to_remarks && String(record.to) === 'admin' && (
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() => openResponseModal(record)}
-                    >
-                      Respond
-                    </Button>
-                  )}
-                </span>
-              ),
-            },
-          ]}
-        />
-        {queriesData.length === 0 && !queriesLoading && (
-          <div style={{ textAlign: 'center', color: '#6b7280', marginTop: '16px' }}>No queries found for this project.</div>
-        )}
-      </Modal>
-
-      {/* Response Modal for admin users */}
-      <Modal
-        title="Respond to Query"
-        open={responseModalOpen}
-        onCancel={closeResponseModal}
+        title={
+          <div className="flex flex-col gap-2">
+            <span className="text-base font-semibold text-slate-800">
+              {chatProject?.activity || chatProject?.project_number || 'Conversation'}
+            </span>
+            <span className="text-xs text-slate-400">
+              Chat with {chatThread === 'pi' ? 'Scientist' : 'Group Head'}
+            </span>
+            {(() => {
+              const piUnseen = chatProject ? getThreadUnseenCount(chatProject, 'pi') : 0
+              const ghUnseen = chatProject ? getThreadUnseenCount(chatProject, 'gh') : 0
+              return (
+                <Segmented
+                  value={chatThread}
+                  onChange={switchChatThread}
+                  options={[
+                    {
+                      label: (
+                        <Badge count={piUnseen} size="small" offset={[8, -2]}>
+                          <span>Scientist</span>
+                        </Badge>
+                      ),
+                      value: 'pi'
+                    },
+                    {
+                      label: (
+                        <Badge count={ghUnseen} size="small" offset={[8, -2]}>
+                          <span>GH{chatProject ? ` (${getGhName(chatProject)})` : ''}</span>
+                        </Badge>
+                      ),
+                      value: 'gh'
+                    },
+                  ]}
+                />
+              )
+            })()}
+          </div>
+        }
+        open={chatModalOpen}
+        onCancel={closeChatModal}
+        footer={null}
         width={600}
-        footer={[
-          <Button key="cancel" onClick={closeResponseModal}>Cancel</Button>,
-          <Button key="submit" type="primary" loading={responseLoading} onClick={handleResponseSubmit}>
-            Submit Response
-          </Button>,
-        ]}
+        styles={{ body: { padding: 0 } }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>Query:</label>
-            <div style={{ padding: '12px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
-              {selectedQuery?.remarks_description || '-'}
-            </div>
+        <div className="flex flex-col" style={{ height: '65vh' }}>
+          {/* Message thread */}
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-3">
+            {chatLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Spin />
+              </div>
+            ) : chatEvents.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+                No messages yet. Start the conversation below.
+              </div>
+            ) : (
+              chatEvents.map((event) => {
+                const isOwn = normalizeName(event.from_) === 'admin'
+                return (
+                  <div key={event.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 shadow-sm ${isOwn
+                        ? 'rounded-tr-sm bg-blue-500 text-white'
+                        : 'rounded-tl-sm bg-white text-slate-800 border border-slate-200'
+                        }`}
+                    >
+                      <div className="text-sm">{event.content}</div>
+                      <div className={`mt-1 text-[10px] ${isOwn ? 'text-blue-100' : 'text-slate-400'}`}>
+                        {event.from_} · {dayjs(event.timestamp).format('DD MMM, HH:mm')}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+            <div ref={messagesEndRef} />
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>From:</label>
-            <Input value={selectedQuery?.from_ || ''} disabled />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>Your Response:</label>
-            <Input.TextArea
-              rows={4}
-              value={responseText}
-              onChange={(e) => setResponseText(e.target.value)}
-              placeholder="Enter your response..."
-              style={{ width: '100%' }}
+
+          {/* Input bar */}
+          <div className="border-t border-slate-200 bg-white p-3 flex gap-2 items-end">
+            <TextArea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Type a message..."
+              autoSize={{ minRows: 1, maxRows: 3 }}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault()
+                  handleSendChatMessage()
+                }
+              }}
             />
+            <Button
+              type="primary"
+              loading={chatSending}
+              disabled={!chatInput.trim()}
+              onClick={handleSendChatMessage}
+            >
+              Send
+            </Button>
           </div>
         </div>
       </Modal>

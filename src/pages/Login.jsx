@@ -87,6 +87,7 @@ function Login() {
         name: userData.name,
         email: userData.email || values.email,
         role: userData.role.toLowerCase(),
+        dbRole: userData.role.toLowerCase(),
         center: userData.center,
         designation: userData.designation,
         group: userData.group,
@@ -223,7 +224,7 @@ function Login() {
     // Update user payload with selected role
     const updatedUserPayload = {
       ...pendingUserData,
-      role: role
+      role: role.toLowerCase()
     }
     
     try {

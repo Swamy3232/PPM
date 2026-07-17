@@ -6,6 +6,7 @@ import {
   SearchOutlined,
   DownloadOutlined,
   EyeOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -58,6 +59,8 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
   const [wordDocumentLoading, setWordDocumentLoading] = useState(false)
   const [wordDocumentError, setWordDocumentError] = useState(null)
   const [currentUserRole, setCurrentUserRole] = useState('')
+
+  const [expandedRowKeys, setExpandedRowKeys] = useState([])
 
   const fetchPendingProposals = useCallback(async () => {
     setLoading(true)
@@ -144,26 +147,21 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
       const data = await res.json()
       const docs = Array.isArray(data) ? data : []
 
-      const enquiryStage = stageConfig.find(
-        (s) => (s.name || '').toString().trim().toLowerCase() === 'enquiry',
-      )
-      const enquiryStageId = enquiryStage?.id
-
-      const filtered = docs
-        .filter((d) => d.project_id === projectId)
-        .filter((d) => (enquiryStageId ? d.stage_id === enquiryStageId : true))
-
-      const baseName = (enquiryStage?.name || 'Enquiry').toString().trim() || 'Enquiry'
+      const filtered = docs.filter((d) => d.project_id === projectId)
 
       const sortedByDate = [...filtered].sort(
         (a, b) => new Date(a.created_at) - new Date(b.created_at),
       )
 
-      const withVersions = sortedByDate.map((d, idx) => ({
-        ...d,
-        version: idx + 1,
-        display_name: d.name || `${baseName} v${idx + 1}`,
-      }))
+      const withVersions = sortedByDate.map((d, idx) => {
+        const stage = stageConfig.find((s) => s.id === d.stage_id)
+        const stageName = stage?.name || 'Document'
+        return {
+          ...d,
+          version: d.version || (idx + 1),
+          display_name: d.name || `${stageName} v${d.version || (idx + 1)}`,
+        }
+      })
 
       setProjectDocs(withVersions)
     } catch (err) {
@@ -284,46 +282,31 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
     }
   }
 
+  // Essential columns shown directly in the row
   const pendingColumns = [
-
     {
-      title: 'Enquiry Date', dataIndex: 'enquiry_date', key: 'enquiry_date', width: 120,
-      render: (text) => formatDate(text)
+      title: 'Enquiry Date',
+      dataIndex: 'enquiry_date',
+      key: 'enquiry_date',
+      width: 120,
+      render: (text) => formatDate(text),
     },
-
-    { title: 'Customer Type', dataIndex: 'customer_type', key: 'customer_type', width: 120, },
-    { title: 'Customer Name', dataIndex: 'customer_name', key: 'customer_name', width: 120, },
-    { title: 'Address', dataIndex: 'address', key: 'address', width: 120, },
-    { title: 'Email', dataIndex: 'email', key: 'email', width: 120, },
-    { title: 'Phone No', dataIndex: 'phone_no', key: 'phone_no', width: 120, },
-    { title: 'Alternate Contact Details', dataIndex: 'alternate_contact_details', key: 'alternate_contact_details', width: 120, },
-
-    { title: 'Request Type', dataIndex: 'request_type', key: 'request_type', width: 120, },
-    { title: 'Email Reference', dataIndex: 'email_reference', key: 'email_reference', width: 120, },
-    { title: 'Quote Reference', dataIndex: 'quote_reference', key: 'quote_reference', width: 120, },
-
-    { title: 'Quote Description', dataIndex: 'quote_description', key: 'quote_description', width: 120, },
-
+    { title: 'Customer Name', dataIndex: 'customer_name', key: 'customer_name', width: 180, ellipsis: true },
+    { title: 'Customer Type', dataIndex: 'customer_type', key: 'customer_type', width: 130 },
+    { title: 'Quote Reference', dataIndex: 'quote_reference', key: 'quote_reference', width: 160, ellipsis: true },
     {
-      title: 'Quote Date', dataIndex: 'quote_date', key: 'quote_date',
-      render: (text) => formatDate(text), width: 120,
+      title: 'Quote Date',
+      dataIndex: 'quote_date',
+      key: 'quote_date',
+      render: (text) => formatDate(text),
+      width: 120,
     },
-    { title: 'Quote Amount', dataIndex: 'quote_amount', key: 'quote_amount', width: 120, },
-
-    { title: 'Revised/Negotiated', dataIndex: 'revised/negotiated', key: 'revised/negotiated', width: 120, },
-    {
-      title: 'Revised/Negotiated Quote Date', dataIndex: 'revised/negotiated_quote_date', key: 'revised/negotiated_quote_date',
-      render: (text) => formatDate(text), width: 120,
-    },
-    { title: 'Revised/Negotiated Quote Amount', dataIndex: 'revised/negotiated_quote_amount', key: 'revised/negotiated_quote_amount', width: 120, },
-
-    { title: 'Quotation By', dataIndex: 'quotation_given_by_name', key: 'quotation_given_by_name', width: 120, },
-    { title: 'Department', dataIndex: 'quotation_given_by_department', key: 'quotation_given_by_department', width: 120, },
-
+    { title: 'Quote Amount', dataIndex: 'quote_amount', key: 'quote_amount', width: 130 },
+    { title: 'Quotation By', dataIndex: 'quotation_given_by_name', key: 'quotation_given_by_name', width: 150 },
     {
       key: 'enquiry_documents',
-      title: 'Enquiry Documents',
-      width: 160,
+      title: 'Documents',
+      width: 140,
       render: (_, record) => {
         const count = record._docCount
         if (count === undefined) return <span style={{ color: '#999' }}>-</span>
@@ -337,41 +320,100 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
         return <span style={{ color: '#999' }}>No documents</span>
       },
     },
-
-   ...(!isGuest ? [ {
-      title: 'Action',
-      key: 'action',
-      fixed: 'right',
-      width: 150,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="primary"
-            size="small"
-            loading={actionLoading[record.id]}
-            onClick={() => handleAcknowledge(record.id, true)}
-          >
-            Accept
-          </Button>
-          <Popconfirm
-            title="Reject this proposal?"
-            description="This will acknowledge it as rejected."
-            onConfirm={() => handleAcknowledge(record.id, false)}
-            okText="Reject"
-            okButtonProps={{ danger: true }}
-          >
-            <Button
-              danger
-              size="small"
-              loading={actionLoading[record.id]}
-            >
-              Reject
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    }] : []),
+    ...(!isGuest
+      ? [
+        {
+          title: 'Action',
+          key: 'action',
+          fixed: 'right',
+          width: 200,
+          render: (_, record) => (
+            <Space size="small">
+              <Button
+                type="primary"
+                size="small"
+                loading={actionLoading[record.id]}
+                onClick={() => handleAcknowledge(record.id, true)}
+              >
+                Accept
+              </Button>
+              <Popconfirm
+                title="Reject this proposal?"
+                description="This will acknowledge it as rejected."
+                onConfirm={() => handleAcknowledge(record.id, false)}
+                okText="Reject"
+                okButtonProps={{ danger: true }}
+              >
+                <Button danger size="small" loading={actionLoading[record.id]}>
+                  Reject
+                </Button>
+              </Popconfirm>
+              <Button
+                type="text"
+                size="small"
+                icon={<InfoCircleOutlined style={{ fontSize: 16, color: '#1890ff' }} />}
+                onClick={() =>
+                  setExpandedRowKeys((prev) =>
+                    prev.includes(record.key) ? [] : [record.key],
+                  )
+                }
+              />
+            </Space>
+          ),
+        },
+      ]
+      : []),
   ]
+
+  // Everything else lives here, revealed by clicking the row's expand arrow
+  const renderExpandedRow = (record) => (
+    <div className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-lg bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div>
+        <div className="text-xs font-medium text-slate-400">Address</div>
+        <div className="text-sm text-slate-700">{record.address || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Email</div>
+        <div className="text-sm text-slate-700">{record.email || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Phone No</div>
+        <div className="text-sm text-slate-700">{record.phone_no || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Alternate Contact</div>
+        <div className="text-sm text-slate-700">{record.alternate_contact_details || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Request Type</div>
+        <div className="text-sm text-slate-700">{record.request_type || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Email Reference</div>
+        <div className="text-sm text-slate-700">{record.email_reference || '-'}</div>
+      </div>
+      <div className="sm:col-span-2 lg:col-span-3">
+        <div className="text-xs font-medium text-slate-400">Quote Description</div>
+        <div className="text-sm text-slate-700">{record.quote_description || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Revised/Negotiated</div>
+        <div className="text-sm text-slate-700">{record['revised/negotiated'] || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Revised Quote Date</div>
+        <div className="text-sm text-slate-700">{formatDate(record['revised/negotiated_quote_date']) || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Revised Quote Amount</div>
+        <div className="text-sm text-slate-700">{record['revised/negotiated_quote_amount'] || '-'}</div>
+      </div>
+      <div>
+        <div className="text-xs font-medium text-slate-400">Department</div>
+        <div className="text-sm text-slate-700">{record.quotation_given_by_department || '-'}</div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="overflow-x-auto">
@@ -382,8 +424,16 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
         loading={loading}
         pagination={{ pageSize: 15 }}
         bordered
-        scroll={{ x: 1600, y: 500 }}
+        scroll={{ y: 500 }}
         sticky
+        expandable={{
+          expandedRowRender: renderExpandedRow,
+          expandedRowKeys: expandedRowKeys,
+          onExpand: (expanded, record) => {
+            setExpandedRowKeys(expanded ? [record.key] : [])
+          },
+          showExpandColumn: false,
+        }}
         locale={{ emptyText: 'No pending proposals to acknowledge' }}
       />
 

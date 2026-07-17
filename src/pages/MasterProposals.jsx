@@ -299,14 +299,14 @@ function MasterProposals() {
 
           obj[key] = value
         })
-        
+
         // Ensure all required fields exist with empty string as default
         MASTER_FIELDS.forEach((field) => {
           if (!(field.name in obj)) {
             obj[field.name] = ''
           }
         })
-        
+
         return obj
       })
 
@@ -519,104 +519,7 @@ function MasterProposals() {
 
   return (
     <>
-      {/* <div className="rounded-3xl bg-white p-4 md:p-6 shadow-sm">
-        <Title level={3} className="mb-4">Master Proposals</Title>
-        
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm mb-6">
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} lg={6}>
-              <Input
-                placeholder="Search proposals"
-                prefix={<SearchOutlined />}
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                size="large"
-                allowClear
-              />
-            </Col>
-            <Col xs={24} sm={12} lg={4}>
-              <Select
-                placeholder="Filter by department"
-                value={departmentFilter}
-                onChange={setDepartmentFilter}
-                size="large"
-                allowClear
-                style={{ width: '100%' }}
-              >
-                {uniqueDepartments.map((d) => (
-                  <Select.Option key={d} value={d}>
-                    {d}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Col>
-            <Col xs={24} sm={12} lg={7}>
-              <RangePicker
-                size="large"
-                style={{ width: '100%' }}
-                value={quoteDateRange}
-                onChange={setQuoteDateRange}
-                placeholder={['Start quote date', 'End quote date']}
-                format={DISPLAY_DATE_FORMAT}
-              />
-            </Col>
-            <Col xs={24} sm={12} lg={3}>
-              <Button
-                onClick={() => {
-                  setSearchText('')
-                  setCenterFilter(null)
-                  setDepartmentFilter(null)
-                  setQuoteDateRange(null)
-                }}
-                size="large"
-                style={{ width: '100%' }}
-              >
-                Clear
-              </Button>
-            </Col>
-          </Row>
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              style={{ display: 'none' }}
-              onChange={handleImportFileChange}
-            />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Import Excel
-            </Button>
-            <Button
-              danger
-              icon={<DownloadOutlined />}
-              onClick={handleExportExcel}
-            >
-              Export Excel
-            </Button>
-          </div>
-        </div>
-      </div> */}
-
-        {/* Master Proposals Table - Responsive with fixed header on vertical scroll */}
-        {/* <div className="overflow-x-auto">
-          <Table
-            rowKey="key"
-            columns={columns}
-            dataSource={filteredData}
-            loading={tableLoading}
-            pagination={{ pageSize: 20 }}
-            bordered
-            scroll={{ x: 'max-content', y: 600 }}
-            sticky
-            title={() => 'Master Proposals'}
-          />
-        </div> */}
-
+      {/* Master Proposals Table - Responsive with fixed header on vertical scroll */}
       <div className="rounded-3xl bg-white p-4 md:p-6 shadow-sm mt-8">
         <Title level={3} className="mb-4">
           Acknowledge Proposals Submitted by Project Coordinators
@@ -642,8 +545,8 @@ function MasterProposals() {
         {viewingRecord && (
           <div className="grid gap-6">
             {/* Primary Information Section */}
-            <Card 
-              title="Primary Information" 
+            <Card
+              title="Primary Information"
               size="small"
               className="bg-blue-50"
             >
@@ -683,8 +586,8 @@ function MasterProposals() {
             </Card>
 
             {/* Additional Details Section */}
-            <Card 
-              title="Additional Details" 
+            <Card
+              title="Additional Details"
               size="small"
               className="bg-gray-50"
             >
@@ -718,8 +621,8 @@ function MasterProposals() {
             </Card>
 
             {/* Order Information Section */}
-            <Card 
-              title="Order Information" 
+            <Card
+              title="Order Information"
               size="small"
               className="bg-green-50"
             >
@@ -759,7 +662,7 @@ function MasterProposals() {
           form
             .validateFields()
             .then(handleSubmit)
-            .catch(() => {})
+            .catch(() => { })
         }}
         okText={editingRecord ? 'Update' : 'Create'}
         maskClosable={false}

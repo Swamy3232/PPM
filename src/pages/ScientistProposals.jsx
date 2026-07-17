@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import {
   PlusOutlined,
   SearchOutlined,
@@ -34,6 +34,8 @@ import {
   AutoComplete,
   Upload,
   Tooltip,
+  Badge,
+  Segmented,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import { ExcelRenderer } from 'react-excel-renderer'
@@ -190,6 +192,136 @@ const isProposalConverted = (proposalsConverted) => {
   const convertedValue = String(proposalsConverted).toLowerCase().trim()
   return convertedValue === 'yes'
 }
+const getPiName = (record) =>
+  (record?.project_co_ordinator || record?.quotation_given_by_name || '').trim()
+
+const getGhName = (record) => (record?.group || 'Group Head').trim()
+
+const normalizeName = (v) => (v || '').toString().trim().toLowerCase()
+
+// thread: 'admin' | 'gh'
+const getThreadEvents = (queries, thread, record, currentUserName) => {
+  const events = []
+  const piName = normalizeName(currentUserName || getPiName(record))
+  const ghName = normalizeName(getGhName(record))
+
+  let dbRole = ''
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      dbRole = normalizeName(JSON.parse(rawUser).dbRole || '')
+    }
+  } catch {}
+
+  const isSamePerson = dbRole === 'gh'
+
+  ;(queries || []).forEach((q) => {
+    const isToAdmin = normalizeName(q.to) === 'admin'
+    const isFromAdmin = normalizeName(q.from_) === 'admin'
+
+    if (thread === 'admin') {
+      // Chat between Scientist (PI) and Admin
+      if (isToAdmin) {
+        const fromName = normalizeName(q.from_)
+        if (isSamePerson) {
+          if (fromName !== piName && fromName !== ghName && fromName !== 'group head') return
+        } else {
+          if (fromName !== piName) return
+        }
+      } else if (isFromAdmin) {
+        const toName = normalizeName(q.to)
+        if (isSamePerson) {
+          if (toName !== piName && toName !== ghName && toName !== 'group head') return
+        } else {
+          if (toName !== piName) return
+        }
+      } else {
+        return
+      }
+    } else {
+      // Chat between Scientist (PI) and Group Head (GH)
+      if (isToAdmin || isFromAdmin) return
+
+      const isToPi = normalizeName(q.to) === piName
+      const isFromPi = normalizeName(q.from_) === piName
+      const isToGh = normalizeName(q.to) === ghName || normalizeName(q.to) === 'group head'
+      const isFromGh = normalizeName(q.from_) === ghName || normalizeName(q.from_) === 'group head'
+
+      const isGhToPi = isFromGh && isToPi
+      const isPiToGh = isFromPi && isToGh
+
+      if (!isGhToPi && !isPiToGh) return
+    }
+
+    events.push({ id: `${q.id}-msg`, dbId: q.id, content: q.remarks_description, from_: q.from_, timestamp: q.updated_at, reply_seen: q.reply_seen, respond_to_remarks: q.respond_to_remarks })
+    if (q.respond_to_remarks) {
+      events.push({ id: `${q.id}-reply`, dbId: q.id, content: q.respond_to_remarks, from_: q.to, timestamp: q.updated_at, reply_seen: q.reply_seen, respond_to_remarks: q.respond_to_remarks })
+    }
+  })
+  return events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+}
+
+const getThreadUnseenCount = (record, currentUserName, thread) => {
+  if (!record || !record.queries) return 0
+  const myName = normalizeName(currentUserName || '')
+  const myGroupName = normalizeName(record.group || '')
+  const sender = thread === 'admin' ? 'admin' : myGroupName
+
+  let dbRole = ''
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      dbRole = normalizeName(JSON.parse(rawUser).dbRole || '')
+    }
+  } catch {}
+
+  const isSamePerson = dbRole === 'gh'
+
+  return record.queries.filter((q) => {
+    // Case 1: Incoming message from sender to me
+    const isFromSender = normalizeName(q.from_) === normalizeName(sender) || (sender !== 'admin' && normalizeName(q.from_) === 'group head')
+    const isToMe = thread === 'admin'
+      ? (isSamePerson
+          ? (normalizeName(q.to) === myName || normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head')
+          : normalizeName(q.to) === myName)
+      : normalizeName(q.to) === myName
+
+    if (isFromSender && isToMe && q.message_seen === false) {
+      return true
+    }
+
+    // Case 2: Reply from sender to my message
+    const isToSender = normalizeName(q.to) === normalizeName(sender) || (sender !== 'admin' && normalizeName(q.to) === 'group head')
+    const isFromMe = thread === 'admin'
+      ? (isSamePerson
+          ? (normalizeName(q.from_) === myName || normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head')
+          : normalizeName(q.from_) === myName)
+      : normalizeName(q.from_) === myName
+
+    if (isFromMe && isToSender && q.respond_to_remarks && q.reply_seen === false) {
+      return true
+    }
+    return false
+  }).length
+}
+
+const countUnseenReplies = (record, currentUserName, userRole) => {
+  return getThreadUnseenCount(record, currentUserName, 'admin') + getThreadUnseenCount(record, currentUserName, 'gh')
+}
+
+const isPendingReply = (record, currentUserName, userRole) => {
+  const queries = record.queries || []
+  const myName = normalizeName(currentUserName || '')
+  const myGroupName = normalizeName(record?.group || '')
+
+  // ⚠️ Reply Needed for scientist when:
+  // Admin or GH sent a NEW message directly to scientist (to=scientist)
+  // AND that message has NOT been replied to yet (no respond_to_remarks)
+  return queries.some((q) => {
+    const isFromSender = normalizeName(q.from_) === 'admin' || normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head'
+    return isFromSender && normalizeName(q.to) === myName && !q.respond_to_remarks
+  })
+}
 
 const isProposalNotConverted = (proposalsConverted, ifNotReason) => {
   if (!proposalsConverted) return false
@@ -215,9 +347,36 @@ function ScientistProposals() {
   const [dateRange, setDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState('totalProjects')
   const [projectNumberFilter, setProjectNumberFilter] = useState(null)
-  const [currentUserName, setCurrentUserName] = useState('')
-  const [currentUserCenter, setCurrentUserCenter] = useState('')
-  const [currentUserGroup, setCurrentUserGroup] = useState('')
+  const [currentUserName, setCurrentUserName] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser)
+        return (parsed.name || '').trim()
+      }
+    } catch {}
+    return ''
+  })
+  const [currentUserCenter, setCurrentUserCenter] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser)
+        return parsed.center || ''
+      }
+    } catch {}
+    return ''
+  })
+  const [currentUserGroup, setCurrentUserGroup] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser)
+        return parsed.group || ''
+      }
+    } catch {}
+    return ''
+  })
   const [stats, setStats] = useState({
     totalProposals: 0,
     totalProjects: 0,
@@ -229,11 +388,6 @@ function ScientistProposals() {
   const [costEstimationModalOpen, setCostEstimationModalOpen] = useState(false)
   const [selectedProposalForCostEstimation, setSelectedProposalForCostEstimation] = useState(null)
 
-  // Remarks modal state
-  const [remarksModalOpen, setRemarksModalOpen] = useState(false)
-  const [remarksDescription, setRemarksDescription] = useState('')
-  const [remarksLoading, setRemarksLoading] = useState(false)
-  const [remarksTarget, setRemarksTarget] = useState('admin')
   const [coordinatorSubmitLoading, setCoordinatorSubmitLoading] = useState(false)
   const [customerOptions, setCustomerOptions] = useState([])
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
@@ -241,11 +395,24 @@ function ScientistProposals() {
   const [addressOptions, setAddressOptions] = useState([])
   const [phoneOptions, setPhoneOptions] = useState([])
   const [emailOptions, setEmailOptions] = useState([])
-  const [userRole, setUserRole] = useState('')
+  const [userRole, setUserRole] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        const role = parsedUser.dbRole || parsedUser.role
+        return role?.toLowerCase() || ''
+      }
+    } catch (e) {
+      console.error(e)
+    }
+    return ''
+  })
 
   // Unacknowledged proposals state
   const [unacknowledgedCount, setUnacknowledgedCount] = useState(0)
   const [showUnacknowledgedOnly, setShowUnacknowledgedOnly] = useState(false)
+  const [showNewMessagesOnly, setShowNewMessagesOnly] = useState(false)
   const [originalTableData, setOriginalTableData] = useState([])
 
   // Document modal state
@@ -278,15 +445,7 @@ function ScientistProposals() {
   const [enquiryAttachments, setEnquiryAttachments] = useState([])
   const [proposalAttachments, setProposalAttachments] = useState([])
 
-  // Queries/Remarks state
-  const [queriesModalOpen, setQueriesModalOpen] = useState(false)
-  const [queriesData, setQueriesData] = useState([])
-  const [queriesLoading, setQueriesLoading] = useState(false)
-  const [selectedProjectForQueries, setSelectedProjectForQueries] = useState(null)
-  const [responseModalOpen, setResponseModalOpen] = useState(false)
-  const [selectedQuery, setSelectedQuery] = useState(null)
-  const [responseText, setResponseText] = useState('')
-  const [responseLoading, setResponseLoading] = useState(false)
+
 
   // Store unresponded query counts for each project to conditionally show Queries button
   const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
@@ -295,6 +454,43 @@ function ScientistProposals() {
   const [reasonPopupOpen, setReasonPopupOpen] = useState(false)
   const [reasonInputs, setReasonInputs] = useState({})
   const [savingReasonIds, setSavingReasonIds] = useState({})
+
+  const [chatModalOpen, setChatModalOpen] = useState(false)
+  const [chatProject, setChatProject] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [chatThread, setChatThread] = useState('admin') // 'admin' | 'gh'
+  const [showPendingReplyOnly, setShowPendingReplyOnly] = useState(false)
+
+  const messagesEndRef = useRef(null)
+
+  const chatEvents = useMemo(
+    () => getThreadEvents(chatMessages, chatThread, chatProject, currentUserName),
+    [chatMessages, chatThread, chatProject, currentUserName],
+  )
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (chatModalOpen) {
+      const timer = setTimeout(() => {
+        scrollToBottom()
+      }, 80)
+      return () => clearTimeout(timer)
+    }
+  }, [chatEvents, chatModalOpen])
+
+  const unreadChatsCount = useMemo(() => {
+    return tableData.filter((item) => countUnseenReplies(item, currentUserName, userRole) > 0).length
+  }, [tableData, currentUserName, userRole])
+
+  const pendingReplyCount = useMemo(() => {
+    return tableData.filter((item) => isPendingReply(item, currentUserName, userRole)).length
+  }, [tableData, currentUserName, userRole])
 
   // Slim columns for Scientist (matching GH restricted view) - now inside component
   const getTableFields = (isProposal = false) => {
@@ -317,73 +513,7 @@ function ScientistProposals() {
   }
 
   const TABLE_FIELDS = [
-    ...getTableFields(false), // Default for projects
-    {
-      name: 'latest_query', label: 'Latest Query', width: 200, render: (text, record) => {
-        const allQueries = record.queries || []
-        const unrespondedQueries = allQueries.filter(q => !q.respond_to_remarks) || []
-
-        // If no queries at all, return null (don't show anything)
-        if (allQueries.length === 0) {
-          return null
-        }
-
-        if (unrespondedQueries.length === 0) {
-          // Show Query History button when there are queries but all are responded
-          // Check if any query is within first two days
-          const hasRecentQuery = allQueries.some(query => {
-            const queryDate = dayjs(query.updated_at)
-            const twoDaysAgo = dayjs().subtract(2, 'day').startOf('day')
-            return queryDate.isAfter(twoDaysAgo)
-          })
-
-          return (
-            <Button
-              size="small"
-              type="link"
-              onClick={(e) => {
-                e.stopPropagation()
-                openQueriesModal(record)
-              }}
-              style={{
-                color: hasRecentQuery ? '#ff4d4f' : '#1890ff',
-                fontWeight: hasRecentQuery ? 'bold' : 'normal'
-              }}
-            >
-              Query History
-            </Button>
-          )
-        }
-
-        // Sort by date (newest to oldest) and get the latest
-        const sortedQueries = unrespondedQueries.sort((a, b) => {
-          const dateA = new Date(a.updated_at)
-          const dateB = new Date(b.updated_at)
-          return dateB - dateA
-        })
-
-        const latestQuery = sortedQueries[0]
-        const queryDate = dayjs(latestQuery.updated_at)
-        const today = dayjs().startOf('day')
-        const yesterday = dayjs().subtract(1, 'day').startOf('day')
-        let dateLabel = queryDate.format('DD-MM-YYYY')
-
-        if (queryDate.isSame(today, 'day')) {
-          dateLabel = 'Today ' + queryDate.format('HH:mm')
-        } else if (queryDate.isSame(yesterday, 'day')) {
-          dateLabel = 'Yesterday ' + queryDate.format('HH:mm')
-        }
-
-        return (
-          <div style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
-            <div>{latestQuery.remarks_description}</div>
-            <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-              From: {latestQuery.from_} | {dateLabel}
-            </div>
-          </div>
-        )
-      }
-    },
+    ...getTableFields(false),
   ]
 
   // Scientist can only edit certain fields
@@ -420,7 +550,8 @@ function ScientistProposals() {
         setCurrentUserName(name)
         setCurrentUserCenter(parsedUser.center || '')
         setCurrentUserGroup(parsedUser.group || '')
-        setUserRole(parsedUser.role?.toLowerCase() || '')
+        const role = parsedUser.dbRole || parsedUser.role
+        setUserRole(role?.toLowerCase() || '')
       }
     } catch (storageError) {
       console.error('Failed to read user from localStorage', storageError)
@@ -1144,228 +1275,158 @@ function ScientistProposals() {
     setSelectedRecord(null)
   }, [])
 
-  // Remarks modal functions
-  const openRemarksModal = useCallback((record) => {
-    setSelectedRecord(record)
-    setRemarksModalOpen(true)
-  }, [])
 
-  const closeRemarksModal = useCallback(() => {
-    setRemarksModalOpen(false)
-    setSelectedRecord(null)
-    setRemarksDescription('')
-    setRemarksTarget('admin')
-  }, [])
-
-  const handleRemarksSubmit = async () => {
-    if (!selectedRecord?.id) {
-      message.error('No record selected')
-      return
-    }
-
-    if (!remarksDescription.trim()) {
-      message.error('Please enter remarks description')
-      return
-    }
-
-    setRemarksLoading(true)
-
-    try {
-      const payload = {
-        from_: currentUserName || 'Scientist',
-        to: 'admin',
-        project_id: selectedRecord.id,
-        remarks_description: remarksDescription.trim(),
-        respond_to_remarks: null  // Send null for new remarks
-      }
-
-      console.log('Sending payload:', payload)
-      console.log('API URL:', `${API_BASE_URL}/Remarkss/`)
-
-      const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      console.log('Response status:', response.status)
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}))
-        console.error('Error response:', errorBody)
-        throw new Error(errorBody.detail || 'Failed to submit remarks')
-      }
-
-      message.success('Remarks submitted successfully')
-      closeRemarksModal()
-
-      // Refresh queries data after submitting remarks
-      if (selectedProjectForQueries?.id) {
-        await fetchQueriesForProject(selectedProjectForQueries.id)
-      }
-
-    } catch (error) {
-      console.error('Error submitting remarks:', error)
-      message.error(error.message || 'Failed to submit remarks')
-    } finally {
-      setRemarksLoading(false)
-    }
-  }
-
-  // Queries/Remarks functionality
-  const fetchQueriesForProject = useCallback(async (projectId) => {
-    console.log(`Fetching queries for project ${projectId}...`)
-    setQueriesLoading(true)
+  const loadChatMessages = useCallback(async (record, thread) => {
+    setChatLoading(true)
     try {
       const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
         headers: { accept: 'application/json' },
       })
-      if (!response.ok) {
-        console.error('Failed to fetch queries - Response not ok:', response.status, response.statusText)
-        throw new Error('Failed to fetch queries')
-      }
-
-      const allQueries = await response.json()
-      console.log('All queries from API:', allQueries)
-
-      const projectQueries = Array.isArray(allQueries)
-        ? allQueries.filter(query => String(query.project_id) === String(projectId))
+      const allQueries = response.ok ? await response.json() : []
+      const projectMessages = Array.isArray(allQueries)
+        ? allQueries.filter((q) => String(q.project_id) === String(record.id))
         : []
-
-      console.log(`Project ${projectId}: Found ${projectQueries.length} total queries`)
-      console.log('Filtered queries:', projectQueries)
-      console.log('Queries details:', projectQueries.map(q => ({
-        id: q.id,
-        from: q.from_,
-        query: q.remarks_description,
-        responded: !!q.respond_to_remarks,
-        date: q.updated_at
-      })))
-
-      // Sort queries by date (newest first) for modal display
-      const sortedQueries = projectQueries.sort((a, b) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      )
-
-      console.log('Setting queries data:', sortedQueries)
-      setQueriesData(sortedQueries)
-
-      // Count only unresponded queries for button display
-      const unrespondedCount = projectQueries.filter(query => !query.respond_to_remarks).length
-      console.log(`Unresponded count: ${unrespondedCount}`)
-      return unrespondedCount
+      setChatMessages(projectMessages)
     } catch (error) {
-      console.error('Error fetching queries:', error)
-      message.error('Failed to fetch queries')
-      return 0
+      console.error('Error loading chat:', error)
+      message.error('Unable to load conversation')
     } finally {
-      setQueriesLoading(false)
+      setChatLoading(false)
     }
   }, [])
 
-  const openQueriesModal = useCallback(async (record) => {
-    console.log('openQueriesModal called with record:', record)
+  const markSeenForActiveThread = useCallback(async (record, thread) => {
+    if (!record) return
+    const myName = normalizeName(currentUserName || '')
+    const myGroupName = normalizeName(record.group || '')
 
-    // Use existing queries data from record instead of fetching again
-    const projectQueries = record.queries || []
-    console.log('Using existing queries from record:', projectQueries)
+    // Who is the sender of incoming messages in this thread?
+    const sender = thread === 'admin' ? 'admin' : myGroupName
 
-    // Check if queries exist
-    if (!projectQueries || projectQueries.length === 0) {
-      console.log('No queries found for this project')
-      message.info('No queries found for this project')
-      return
-    }
-
-    // Sort queries by date (newest first) for modal display
-    const sortedQueries = projectQueries.sort((a, b) => {
+    // Case 1: Mark incoming messages to me from the active thread sender as seen
+    const unseenMessages = (record.queries || []).filter(
+      (q) => {
+        const isFromSender = normalizeName(q.from_) === normalizeName(sender) || (sender !== 'admin' && normalizeName(q.from_) === 'group head')
+        return isFromSender && normalizeName(q.to) === myName && q.message_seen === false
+      }
+    )
+    unseenMessages.forEach(async (q) => {
       try {
-        const dateA = new Date(a.updated_at).getTime()
-        const dateB = new Date(b.updated_at).getTime()
-        return dateB - dateA
-      } catch (error) {
-        console.error('Error sorting queries:', error)
-        return 0
+        await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-seen`, { method: 'PATCH' })
+      } catch (e) {
+        console.warn('mark-seen failed for', q.id, e)
       }
     })
 
-    console.log('Setting queries data:', sortedQueries)
-    setQueriesData(sortedQueries)
+    // Case 2: Mark replies from the active thread sender to my messages as seen
+    const unseenReplies = (record.queries || []).filter(
+      (q) => {
+        const isToSender = normalizeName(q.to) === normalizeName(sender) || (sender !== 'admin' && normalizeName(q.to) === 'group head')
+        return normalizeName(q.from_) === myName && isToSender && q.respond_to_remarks && q.reply_seen === false
+      }
+    )
+    unseenReplies.forEach(async (q) => {
+      try {
+        await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-reply-seen`, { method: 'PATCH' })
+      } catch (e) {
+        console.warn('mark-reply-seen failed for', q.id, e)
+      }
+    })
 
-    setSelectedProjectForQueries(record)
-    console.log('About to set modal open to true')
-    setQueriesModalOpen(true)
+    const hasUpdates = unseenMessages.length > 0 || unseenReplies.length > 0
+    if (hasUpdates) fetchProposals()
+  }, [currentUserName])
 
-    console.log('openQueriesModal completed - modal should be visible')
-  }, [])
+  const openChatModal = useCallback(async (record, thread = 'admin') => {
+    setChatProject(record)
+    setChatThread(thread)
+    setChatModalOpen(true)
+    await loadChatMessages(record, thread)
+    await markSeenForActiveThread(record, thread)
+  }, [loadChatMessages, markSeenForActiveThread])
 
-  const closeQueriesModal = useCallback(() => {
-    setQueriesModalOpen(false)
-    setQueriesData([])
-    setSelectedProjectForQueries(null)
-  }, [])
-
-  const openResponseModal = useCallback((query) => {
-    setSelectedQuery(query)
-    setResponseText(query.respond_to_remarks || '')
-    setResponseModalOpen(true)
-  }, [])
-
-  const closeResponseModal = useCallback(() => {
-    setResponseModalOpen(false)
-    setSelectedQuery(null)
-    setResponseText('')
-  }, [])
-
-  const handleResponseSubmit = async () => {
-    if (!selectedQuery?.id || !responseText.trim()) {
-      message.error('Response text is required')
-      return
+  const switchChatThread = useCallback(async (thread) => {
+    setChatThread(thread)
+    if (chatProject) {
+      await loadChatMessages(chatProject, thread)
+      await markSeenForActiveThread(chatProject, thread)
     }
+  }, [chatProject, loadChatMessages, markSeenForActiveThread])
 
-    setResponseLoading(true)
+  const closeChatModal = useCallback(() => {
+    setChatModalOpen(false)
+    setChatProject(null)
+    setChatMessages([])
+    setChatInput('')
+  }, [])
+
+  const handleSendChatMessage = async () => {
+    if (!chatInput.trim() || !chatProject?.id) return
+    setChatSending(true)
     try {
-      // Get the current query data and include all required fields
-      const payload = {
-        from_: selectedQuery.from_,
-        to: selectedQuery.to,
-        project_id: selectedQuery.project_id,
-        remarks_description: selectedQuery.remarks_description,
-        respond_to_remarks: responseText.trim()
+      const myName = normalizeName(currentUserName || 'scientist')
+      const myGroupName = normalizeName(getGhName(chatProject) || '')
+      const recipient = chatThread === 'admin' ? 'admin' : myGroupName
+
+      // Find the latest unanswered message FROM the active thread sender TO scientist (no respond_to_remarks yet)
+      const unansweredMsg = [...(chatMessages || [])]
+        .reverse()
+        .find((q) => {
+          const isFromRecipient = normalizeName(q.from_) === recipient || (recipient !== 'admin' && normalizeName(q.from_) === 'group head')
+          return isFromRecipient && normalizeName(q.to) === myName && !q.respond_to_remarks
+        })
+
+      if (unansweredMsg) {
+        // REPLY to message: PUT on the existing row
+        const payload = {
+          respond_to_remarks: chatInput.trim(),
+          replyer: currentUserName || 'Scientist',
+          reply_seen: false,
+        }
+        const response = await fetch(`${API_BASE_URL}/Remarkss/${unansweredMsg.id}`, {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error(err.detail || 'Failed to send reply')
+        }
+      } else {
+        // NEW MESSAGE from scientist to admin or GH
+        const payload = {
+          from_: currentUserName || 'Scientist',
+          to: chatThread === 'admin' ? 'admin' : getGhName(chatProject),
+          project_id: chatProject.id,
+          remarks_description: chatInput.trim(),
+          respond_to_remarks: null,
+          replyer: null,
+          message_seen: false,
+          reply_seen: false,
+        }
+        const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
+          method: 'POST',
+          headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error(err.detail || 'Failed to send message')
+        }
       }
 
-      console.log('Sending update payload:', payload)
-
-      const response = await fetch(`${API_BASE_URL}/Remarkss/${selectedQuery.id}`, {
-        method: 'PUT',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      console.log('Response status:', response.status)
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}))
-        console.error('Error response:', errorBody)
-        throw new Error(errorBody.detail || 'Failed to submit response')
-      }
-
-      message.success('Response submitted successfully')
-      closeResponseModal()
-      await fetchQueriesForProject(selectedProjectForQueries?.id)
+      setChatInput('')
+      await loadChatMessages(chatProject, chatThread)
+      await fetchAllQueryCounts()
     } catch (error) {
-      console.error('Error submitting response:', error)
-      message.error(error.message || 'Failed to submit response')
+      console.error('Error sending message:', error)
+      message.error(error.message || 'Failed to send message')
     } finally {
-      setResponseLoading(false)
+      setChatSending(false)
     }
   }
+
+
 
   // Open/Close Coordinator Add Modal
   const openCoordinatorAddModal = () => {
@@ -1888,6 +1949,14 @@ function ScientistProposals() {
       })
     }
 
+    if (showNewMessagesOnly) {
+      filtered = filtered.filter((item) => countUnseenReplies(item, currentUserName, userRole) > 0)
+    }
+
+    if (showPendingReplyOnly) {
+      filtered = filtered.filter((item) => isPendingReply(item, currentUserName, userRole))
+    }
+
     // Sort data: newest to oldest by latest query date or project date
     filtered.sort((a, b) => {
       // Get latest query date for each project
@@ -1924,7 +1993,7 @@ function ScientistProposals() {
     })
 
     setFilteredData(filtered)
-  }, [searchText, dateRange, statusFilter, projectNumberFilter, tableData, unrespondedQueryCounts])
+  }, [searchText, dateRange, statusFilter, projectNumberFilter, tableData, unrespondedQueryCounts, showNewMessagesOnly, currentUserName, userRole, showPendingReplyOnly])
 
 
   const handleExportExcel = () => {
@@ -2077,27 +2146,32 @@ function ScientistProposals() {
           width: 120,
           render: (_, record) => (
             <Space size="small">
-              {/* Show Queries button if there are any queries for this project */}
-              {record.queries && record.queries.length > 0 && (
-                <Button
-                  size="small"
-                  type="link"
-                  icon={<MessageOutlined />}
-                  onClick={(e) => {
+              {/* Chat button - replaces the old Queries button */}
+              <Space size={4}>
+                <Badge count={countUnseenReplies(record, currentUserGroup || currentUserName, userRole)} size="small" offset={[-2, 2]}>
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<MessageOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openChatModal(record)
+                    }}
+                    style={{
+                      color: countUnseenReplies(record, currentUserGroup || currentUserName, userRole) > 0 ? '#ff4d4f' : '#1890ff',
+                    }}
+                    title="Chat"
+                  />
+                </Badge>
+                {isPendingReply(record, currentUserName, userRole) && (
+                  <span title="Reply Needed" style={{ cursor: 'pointer', fontSize: '14px' }} onClick={(e) => {
                     e.stopPropagation()
-                    openQueriesModal(record)
-                  }}
-                  style={{
-                    color: record.queries?.some(query =>
-                      dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                    ) ? '#ff4d4f' : '#1890ff',
-                    fontWeight: record.queries?.some(query =>
-                      dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                    ) ? 'bold' : 'normal'
-                  }}
-                  title="Queries"
-                />
-              )}
+                    openChatModal(record)
+                  }}>
+                    ⚠️
+                  </span>
+                )}
+              </Space>
               <Button
                 size="small"
                 type="link"
@@ -2306,27 +2380,32 @@ function ScientistProposals() {
         width: 120,
         render: (_, record) => (
           <Space size="small">
-            {/* Show Queries button if there are any queries for this project */}
-            {record.queries && record.queries.length > 0 && (
-              <Button
-                size="small"
-                type="link"
-                icon={<MessageOutlined />}
-                onClick={(e) => {
+            {/* Chat button - replaces the old Queries button */}
+            <Space size={4}>
+              <Badge count={countUnseenReplies(record, currentUserName, userRole)} size="small" offset={[-2, 2]}>
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<MessageOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openChatModal(record)
+                  }}
+                  style={{
+                    color: countUnseenReplies(record, currentUserName, userRole) > 0 ? '#ff4d4f' : '#1890ff',
+                  }}
+                  title="Chat"
+                />
+              </Badge>
+              {isPendingReply(record, currentUserName, userRole) && (
+                <span title="Reply Needed" style={{ cursor: 'pointer', fontSize: '14px' }} onClick={(e) => {
                   e.stopPropagation()
-                  openQueriesModal(record)
-                }}
-                style={{
-                  color: record.queries?.some(query =>
-                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                  ) ? '#ff4d4f' : '#1890ff',
-                  fontWeight: record.queries?.some(query =>
-                    dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))
-                  ) ? 'bold' : 'normal'
-                }}
-                title="Queries"
-              />
-            )}
+                  openChatModal(record)
+                }}>
+                  ⚠️
+                </span>
+              )}
+            </Space>
             <Button
               size="small"
               type="link"
@@ -2365,7 +2444,7 @@ function ScientistProposals() {
         ),
       },
     ]
-  }, [openEditModal, openDetailModal, openDocsModal, openQueriesModal, statusFilter])
+  }, [openEditModal, openDetailModal, openDocsModal, openChatModal, statusFilter, currentUserName, userRole])
 
   return (
     <>
@@ -2378,15 +2457,25 @@ function ScientistProposals() {
               label: 'Total Proposals Submitted',
               children: (
                 <div className="space-y-6">
-                  <style>{`
-                    @keyframes blinkReasonBtn {
-                      0%, 100% { opacity: 1; }
-                      50% { opacity: 0.45; }
-                    }
-                    .blink-reason-btn {
-                      animation: blinkReasonBtn 1.1s ease-in-out infinite;
-                    }
-                  `}</style>
+                   <style>{`
+                     @keyframes blinkReasonBtn {
+                       0%, 100% { opacity: 1; }
+                       50% { opacity: 0.45; }
+                     }
+                     .blink-reason-btn {
+                       animation: blinkReasonBtn 1.1s ease-in-out infinite;
+                     }
+                     @keyframes blinkChatBtn {
+                       0%, 100% { opacity: 1; transform: scale(1); }
+                       50% { opacity: 0.65; transform: scale(0.97); }
+                     }
+                     .blink-chat-btn {
+                       animation: blinkChatBtn 1.2s ease-in-out infinite;
+                       background-color: #fff1f0 !important;
+                       border-color: #ffccc7 !important;
+                       color: #ff4d4f !important;
+                     }
+                   `}</style>
                   <div className="flex justify-end">
                     <Button
                       danger
@@ -2398,95 +2487,82 @@ function ScientistProposals() {
                       Reason Required ({statistics.convertedNo})
                     </Button>
                   </div>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-                    <Card
-                      className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer"
-                      onClick={() => setStatusFilter(null)}
-                    >
-                      <Statistic title={<span className="text-white/90">Total Proposals Submitted</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer"
-                      onClick={() => setStatusFilter('proposals')}
-                    >
-                      <Statistic title={<span className="text-white/90">Pending</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer"
-                      onClick={() => setStatusFilter('totalProjects')}
-                    >
-                      <Statistic title={<span className="text-white/90"> Converted to Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                      {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
-                          {Object.entries(statistics.projectCodeBreakdown)
-                            .filter(([, count]) => count > 0)
-                            .map(([code, count], idx, arr) => (
-                              <span key={code}>
-                                {code}: {count}
-                                {idx < arr.length - 1 ? ' | ' : ''}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer"
-                      onClick={() => setStatusFilter('technicallyCompleted')}
-                    >
-                      <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white cursor-pointer"
-                      onClick={() => setStatusFilter('financiallyNotCompleted')}
-                    >
-                      <Statistic title={<span className="text-white/90">Financially Not Completed</span>} value={statistics.financiallyNotCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer"
-                      onClick={() => setStatusFilter('financiallyCompleted')}
-                    >
-                      <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    </Card>
-                    <Card
-                      className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer"
-                      onClick={() => setStatusFilter('pendingProjects')}
-                    >
-                      <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                      {statistics.onHoldProjects > 0 && (
-                        <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
-                          On hold: {statistics.onHoldProjects}
-                        </div>
-                      )}
-                    </Card>
-                  </div>
+                  {(() => {
+                    const handleStatusCardClick = (val) => {
+                      setStatusFilter(val)
+                      setShowNewMessagesOnly(false)
+                      setShowPendingReplyOnly(false)
+                    }
+                    return (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
+                        <Card
+                          className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick(null)}
+                        >
+                          <Statistic title={<span className="text-white/90">Total Proposals Submitted</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        </Card>
+                        <Card
+                          className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick('proposals')}
+                        >
+                          <Statistic title={<span className="text-white/90">Pending</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        </Card>
+                        <Card
+                          className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick('totalProjects')}
+                        >
+                          <Statistic title={<span className="text-white/90"> Converted to Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                          {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
+                            <div className="mt-2 text-xs text-white/80">
+                              {Object.entries(statistics.projectCodeBreakdown)
+                                .filter(([, count]) => count > 0)
+                                .map(([code, count], idx, arr) => (
+                                  <span key={code}>
+                                    {code}: {count}
+                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                  </span>
+                                ))}
+                            </div>
+                          )}
+                        </Card>
+                        <Card
+                          className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick('technicallyCompleted')}
+                        >
+                          <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        </Card>
+                        <Card
+                          className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick('financiallyNotCompleted')}
+                        >
+                          <Statistic title={<span className="text-white/90">Financially Not Completed</span>} value={statistics.financiallyNotCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        </Card>
+                        <Card
+                          className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick('financiallyCompleted')}
+                        >
+                          <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        </Card>
+                        <Card
+                          className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer"
+                          onClick={() => handleStatusCardClick('pendingProjects')}
+                        >
+                          <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                          {statistics.onHoldProjects > 0 && (
+                            <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
+                              On hold: {statistics.onHoldProjects}
+                            </div>
+                          )}
+                        </Card>
+                      </div>
+                    )
+                  })()}
 
                   <div className="flex flex-col gap-6">
                     {/* Search & Filters */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div className="mb-4">
                         <Title level={4} className="!mb-0">Search & Filters</Title>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            onClick={() => {
-                              setSearchText('')
-                              setDateRange(null)
-                              setStatusFilter(null)
-                              setProjectNumberFilter(null)
-                            }}
-                            size="default"
-                          >
-                            Clear Filters
-                          </Button>
-                          <Button
-                            type="primary"
-                            icon={<DownloadOutlined />}
-                            size="default"
-                            onClick={handleExportExcel}
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                          >
-                            Export to Excel
-                          </Button>
-                        </div>
                       </div>
                       <Row gutter={[16, 16]}>
                         <Col xs={24} sm={12} md={6}>
@@ -2525,30 +2601,64 @@ function ScientistProposals() {
                             format={DISPLAY_DATE_FORMAT}
                           />
                         </Col>
+                        <Col xs={24} sm={12} md={6} className="flex items-center">
+                          <Button
+                            onClick={() => {
+                              setSearchText('')
+                              setDateRange(null)
+                              setStatusFilter(null)
+                              setProjectNumberFilter(null)
+                              setShowNewMessagesOnly(false)
+                              setShowPendingReplyOnly(false)
+                            }}
+                            size="large"
+                            style={{ width: '100%' }}
+                          >
+                            Clear Filters
+                          </Button>
+                        </Col>
+                        <Col xs={24} sm={12} md={6} className="flex items-center">
+                          <Button
+                            type="primary"
+                            icon={<DownloadOutlined />}
+                            size="large"
+                            onClick={handleExportExcel}
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg w-full"
+                          >
+                            Export to Excel
+                          </Button>
+                        </Col>
                       </Row>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <Title level={4} className="!mb-1">My Proposals</Title>
-                          <p className="text-slate-500 text-sm">
-                            Showing {filteredData.length} of {tableData.length} proposals
-                          </p>
-                        </div>
-                        <Space wrap>
-                          {statusFilter === 'proposals' && (
-                            <Button
-                              type={showUnacknowledgedOnly ? 'primary' : 'default'}
-                              size="large"
-                              danger
-                              disabled={!unacknowledgedCount}
-                              onClick={handleUnacknowledgedToggle}
-                              className={showUnacknowledgedOnly ? 'shadow-md hover:shadow-lg' : ''}
-                            >
-                              ⚠️ Unacknowledged
-                            </Button>
-                          )}
+                      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-4">
+                        <Title level={4} className="!mb-0">Proposals List</Title>
+                        <Space size="small" className="flex-wrap">
+                          <Button
+                            type={showNewMessagesOnly ? 'primary' : 'default'}
+                            size="large"
+                            onClick={() => {
+                              setShowNewMessagesOnly(!showNewMessagesOnly)
+                              setShowPendingReplyOnly(false)
+                            }}
+                            className={showNewMessagesOnly ? 'shadow-md hover:shadow-lg' : (unreadChatsCount > 0 ? 'blink-chat-btn' : '')}
+                            style={showNewMessagesOnly ? {} : (unreadChatsCount > 0 ? {} : { borderColor: '#1890ff', color: '#1890ff' })}
+                          >
+                            💬 Unread Chats ({unreadChatsCount})
+                          </Button>
+                          <Button
+                            type={showPendingReplyOnly ? 'primary' : 'default'}
+                            size="large"
+                            onClick={() => {
+                              setShowPendingReplyOnly(!showPendingReplyOnly)
+                              setShowNewMessagesOnly(false)
+                            }}
+                            className={showPendingReplyOnly ? 'shadow-md hover:shadow-lg' : ''}
+                            style={showPendingReplyOnly ? {} : { borderColor: '#fa8c16', color: '#fa8c16' }}
+                          >
+                            ⚠️ Reply Needed ({pendingReplyCount})
+                          </Button>
                           <Button
                             type="primary"
                             size="large"
@@ -2604,19 +2714,19 @@ function ScientistProposals() {
           >
             Upload
           </Button>,
-          <Button
-            key="remarks"
-            type="default"
-            disabled={!selectedRecord?.id}
-            onClick={() => {
-              if (selectedRecord?.id) {
-                closeDetailModal()
-                openRemarksModal(selectedRecord)
-              }
-            }}
-          >
-            Remarks
-          </Button>,
+          // <Button
+          //   key="remarks"
+          //   type="default"
+          //   disabled={!selectedRecord?.id}
+          //   onClick={() => {
+          //     if (selectedRecord?.id) {
+          //       closeDetailModal()
+          //       openRemarksModal(selectedRecord)
+          //     }
+          //   }}
+          // >
+          //   Remarks
+          // </Button>,
           <Button key="edit" type="primary" onClick={() => {
             closeDetailModal()
             openEditModal(selectedRecord)
@@ -2892,25 +3002,6 @@ function ScientistProposals() {
           initialValues={{ updated_by: currentUserName }}
         >
           <div className="grid gap-4 md:grid-cols-2">
-            {/* {ALL_FIELDS.filter((f) => {
-              if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
-
-              // For proposals, only allow editing proposal_status, co_ordinator_remarks, and if_not_reason
-              const isProject = Boolean(editingRecord?.project_number?.toString().trim())
-              if (isProject) {
-                // This is a project - don't show proposal_status and if_not_reason
-                if (f.name === 'proposal_status' || f.name === 'if_not_reason') return false
-              } else {
-                // This is a proposal - only allow these fields
-                const allowedFields = ['proposal_status', 'co_ordinator_remarks', 'updated_by', 'if_not_reason']
-                if (!allowedFields.includes(f.name)) return false
-                // Only show if_not_reason when proposals_converted = "NO"
-                if (f.name === 'if_not_reason') {
-                  const proposalsConverted = editingRecord?.proposals_converted
-                  if (!isProposalNotConverted(proposalsConverted)) return false
-                }
-              } */}
-
             {ALL_FIELDS.filter((f) => {
               if (!SCIENTIST_EDITABLE_FIELDS.includes(f.name)) return false
 
@@ -3726,156 +3817,145 @@ function ScientistProposals() {
         })()}
       </Modal>
 
-      {/* Queries Modal */}
-      <Modal
-        title={`Queries for Project: ${selectedProjectForQueries?.project_number || selectedProjectForQueries?.activity || 'N/A'}`}
-        open={queriesModalOpen}
-        onCancel={closeQueriesModal}
-        width={800}
-        footer={[
-          <Button key="close" onClick={closeQueriesModal}>Close</Button>,
-        ]}
-      >
-        <div className="mb-4">
-          <Button
-            type="primary"
-            onClick={() => {
-              if (selectedProjectForQueries) {
-                closeQueriesModal()
-                openRemarksModal(selectedProjectForQueries)
-              }
-            }}
-          >
-            Add Remarks
-          </Button>
-        </div>
-        <div>Modal is open! Queries count: {queriesData.length}</div>
-        <Table
-          dataSource={queriesData}
-          loading={queriesLoading}
-          rowKey="id"
-          pagination={false}
-          columns={[
-            {
-              title: 'From',
-              dataIndex: 'from_',
-              key: 'from_',
-              width: 100,
-            },
-            {
-              title: 'Query',
-              dataIndex: 'remarks_description',
-              key: 'remarks_description',
-              ellipsis: true,
-              render: (text, record) => (
-                <span style={{
-                  color: record.respond_to_remarks ? '#52c41a' : '#ff4d4f',
-                  fontWeight: record.respond_to_remarks ? 'normal' : 'bold'
-                }}>
-                  {text}
-                </span>
-              ),
-            },
-            {
-              title: 'Date',
-              dataIndex: 'updated_at',
-              key: 'updated_at',
-              width: 120,
-              render: (value) => {
-                if (!value) return '-'
-                const queryDate = dayjs(value)
-                const today = dayjs().startOf('day')
-                const yesterday = dayjs().subtract(1, 'day').startOf('day')
 
-                if (queryDate.isSame(today, 'day')) {
-                  return 'Today ' + queryDate.format('HH:mm')
-                } else if (queryDate.isSame(yesterday, 'day')) {
-                  return 'Yesterday ' + queryDate.format('HH:mm')
-                } else {
-                  return queryDate.format('DD-MM-YYYY HH:mm')
-                }
-              },
-            },
-            {
-              title: 'Response',
-              dataIndex: 'respond_to_remarks',
-              key: 'respond_to_remarks',
-              ellipsis: true,
-              width: 150,
-              render: (response) => response ? (
-                <span style={{ color: '#52c41a', fontWeight: '500' }}>{response}</span>
-              ) : (
-                <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>No Response</span>
-              ),
-            },
-            {
-              title: 'Action',
-              key: 'action',
-              width: 80,
-              render: (_, record) => (
-                <span>
-                  {/* Only show Respond button if there's no response yet AND query was sent TO the current scientist (not to admin) */}
-                  {!record.respond_to_remarks && String(record.to) !== 'admin' && (
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() => openResponseModal(record)}
-                    >
-                      Respond
-                    </Button>
-                  )}
-                </span>
-              ),
-            },
-          ]}
-        />
-        {queriesData.length === 0 && !queriesLoading && (
-          <div className="text-center text-gray-500 mt-4">No queries found for this project.</div>
-        )}
-      </Modal>
-
-      {/* Response Modal */}
       <Modal
-        title="Respond to Query"
-        open={responseModalOpen}
-        onCancel={closeResponseModal}
+        title={
+          <div className="flex flex-col gap-2">
+            <span className="text-base font-semibold text-slate-800">
+              {chatProject?.activity || chatProject?.project_number || 'Conversation'}
+            </span>
+            {['group head', 'gh'].includes(userRole?.toLowerCase()) ? (
+              <span className="text-xs text-slate-400">
+                Chat with Admin
+              </span>
+            ) : (
+              <>
+                <span className="text-xs text-slate-400">
+                  Chat with {chatThread === 'admin' ? 'Admin' : 'Group Head'}
+                </span>
+                 {(() => {
+                  const adminUnseen = chatProject ? getThreadUnseenCount(chatProject, currentUserName, 'admin') : 0
+                  const ghUnseen = chatProject ? getThreadUnseenCount(chatProject, currentUserName, 'gh') : 0
+                  return (
+                    <Segmented
+                      value={chatThread}
+                      onChange={switchChatThread}
+                      options={[
+                        {
+                          label: (
+                            <Badge count={adminUnseen} size="small" offset={[8, -2]}>
+                              <span>Admin</span>
+                            </Badge>
+                          ),
+                          value: 'admin'
+                        },
+                        {
+                          label: (
+                            <Badge count={ghUnseen} size="small" offset={[8, -2]}>
+                              <span>GH{chatProject ? ` (${getGhName(chatProject)})` : ''}</span>
+                            </Badge>
+                          ),
+                          value: 'gh'
+                        },
+                      ]}
+                    />
+                  )
+                })()}
+              </>
+            )}
+          </div>
+        }
+        open={chatModalOpen}
+        onCancel={closeChatModal}
+        footer={null}
         width={600}
-        footer={[
-          <Button key="cancel" onClick={closeResponseModal}>Cancel</Button>,
-          <Button
-            key="submit"
-            type="primary"
-            loading={responseLoading}
-            onClick={handleResponseSubmit}
-          >
-            Submit Response
-          </Button>,
-        ]}
+        styles={{ body: { padding: 0 } }}
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Query:</label>
-            <div className="p-3 bg-gray-50 rounded border">
-              {selectedQuery?.remarks_description || '-'}
-            </div>
+        <div className="flex flex-col" style={{ height: '65vh' }}>
+          {/* Message thread */}
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-3">
+            {chatLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Spin />
+              </div>
+            ) : chatEvents.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+                No messages yet. Start the conversation below.
+              </div>
+            ) : (
+              chatEvents.map((event) => {
+                const isOwn = (() => {
+                  const fromName = normalizeName(event.from_)
+                  const myName = normalizeName(currentUserName)
+                  const myGroupName = normalizeName(chatProject?.group || '')
+
+                  let dbRole = ''
+                  try {
+                    const rawUser = window.localStorage.getItem('ppm_user')
+                    if (rawUser) {
+                      dbRole = normalizeName(JSON.parse(rawUser).dbRole || '')
+                    }
+                  } catch {}
+                  const isSamePerson = dbRole === 'gh'
+
+                  if (chatThread === 'admin') {
+                    if (isSamePerson) {
+                      return fromName === myName || fromName === myGroupName || fromName === 'group head'
+                    } else {
+                      return fromName === myName
+                    }
+                  } else {
+                    return fromName === myName
+                  }
+                })()
+                return (
+                  <div key={event.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 shadow-sm ${isOwn
+                        ? 'rounded-tr-sm bg-blue-500 text-white'
+                        : 'rounded-tl-sm bg-white text-slate-800 border border-slate-200'
+                        }`}
+                    >
+                      <div className="text-sm">{event.content}</div>
+                      <div className={`mt-1 text-[10px] ${isOwn ? 'text-blue-100' : 'text-slate-400'}`}>
+                        {event.from_} · {dayjs(event.timestamp).format('DD MMM, HH:mm')}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+            <div ref={messagesEndRef} />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">From:</label>
-            <Input value={selectedQuery?.from_ || ''} disabled />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Your Response:</label>
+          {/* Input bar */}
+          <div className="border-t border-slate-200 bg-white p-3 flex gap-2 items-end">
             <TextArea
-              rows={4}
-              value={responseText}
-              onChange={(e) => setResponseText(e.target.value)}
-              placeholder="Enter your response..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Type a message..."
+              autoSize={{ minRows: 1, maxRows: 3 }}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault()
+                  handleSendChatMessage()
+                }
+              }}
             />
+            <Button
+              type="primary"
+              loading={chatSending}
+              disabled={!chatInput.trim()}
+              onClick={handleSendChatMessage}
+            >
+              Send
+            </Button>
           </div>
         </div>
       </Modal>
+
+
+
 
       <CostEstimationModal
         key={selectedProposalForCostEstimation?.id}
@@ -3894,63 +3974,7 @@ function ScientistProposals() {
         projectId={selectedProposalForCostEstimation?.id}
       />
 
-      {/* Remarks Modal */}
-      <Modal
-        title="Create Remarks"
-        open={remarksModalOpen}
-        onCancel={closeRemarksModal}
-        width={600}
-        footer={[
-          <Button key="cancel" onClick={closeRemarksModal}>Cancel</Button>,
-          <Button
-            key="submit"
-            type="primary"
-            loading={remarksLoading}
-            onClick={handleRemarksSubmit}
-          >
-            Submit Remarks
-          </Button>,
-        ]}
-        maskClosable={false}
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">From:</label>
-            <Input
-              value={currentUserName || 'Scientist'}
-              disabled
-              className="w-full"
-            />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">To:</label>
-            <Input
-              value="admin"
-              disabled
-              className="w-full"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Project ID:</label>
-            <Input
-              value={selectedRecord?.id || ''}
-              disabled
-              className="w-full"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Remarks Description:</label>
-            <Input
-              value={remarksDescription}
-              onChange={(e) => setRemarksDescription(e.target.value)}
-              className="w-full"
-            />
-          </div>
-        </div>
-      </Modal>
     </>
   )
 }

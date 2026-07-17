@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import {
   SearchOutlined,
   DownloadOutlined,
@@ -8,6 +8,7 @@ import {
   UploadOutlined,
   EyeOutlined,
   MessageOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -31,6 +32,8 @@ import {
   Upload,
   Radio,
   Tooltip,
+  Badge,
+  Segmented,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import { ExcelRenderer } from 'react-excel-renderer'
@@ -45,20 +48,171 @@ import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/d
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
 
-// Helper function to wrap content in tooltip for full text display
 const wrapWithTooltip = (content, maxLength = 30) => {
   if (!content || content === '-' || typeof content !== 'string') {
     return content || '-'
   }
-  
+
   const displayText = content.length > maxLength ? content.substring(0, maxLength) + '...' : content
-  
+
   return (
     <Tooltip title={content} placement="topLeft">
       <span>{displayText}</span>
     </Tooltip>
   )
 }
+
+const getPiName = (record) =>
+  (record?.project_co_ordinator || record?.quotation_given_by_name || '').trim()
+
+const getGhName = (record) => (record?.group || 'Group Head').trim()
+
+const getLastSeenMap = () => {
+  try {
+    return JSON.parse(window.localStorage.getItem('gh_chat_last_seen') || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const markThreadAsSeen = (projectId, thread) => {
+  const map = getLastSeenMap()
+  map[`${projectId}_${thread}`] = new Date().toISOString()
+  window.localStorage.setItem('gh_chat_last_seen', JSON.stringify(map))
+}
+
+const normalizeName = (v) => (v || '').toString().trim().toLowerCase()
+
+const getThreadEvents = (queries, thread, record) => {
+  const events = []
+  const piName = normalizeName(getPiName(record))
+  const ghName = normalizeName(getGhName(record))
+
+  let curName = ''
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      curName = normalizeName(JSON.parse(rawUser).name || '')
+    }
+  } catch {}
+
+  const isSamePerson = curName && piName && (curName === piName || curName.includes(piName) || piName.includes(curName))
+
+  ;(queries || []).forEach((q) => {
+    const isToAdmin = normalizeName(q.to) === 'admin'
+    const isFromAdmin = normalizeName(q.from_) === 'admin'
+
+    if (thread === 'admin') {
+      // Chat with Admin
+      if (isToAdmin) {
+        const fromName = normalizeName(q.from_)
+        if (isSamePerson) {
+          if (fromName !== ghName && fromName !== 'group head' && fromName !== piName) return
+        } else {
+          if (fromName !== ghName && fromName !== 'group head') return
+        }
+      } else if (isFromAdmin) {
+        const toName = normalizeName(q.to)
+        if (isSamePerson) {
+          if (toName !== ghName && toName !== 'group head' && toName !== piName) return
+        } else {
+          if (toName !== ghName && toName !== 'group head') return
+        }
+      } else {
+        return
+      }
+    } else {
+      // Chat between Group Head and Scientist (PI)
+      if (isToAdmin || isFromAdmin) return
+
+      const isToPi = normalizeName(q.to) === piName
+      const isFromPi = normalizeName(q.from_) === piName
+      const isToGh = normalizeName(q.to) === ghName || normalizeName(q.to) === 'group head'
+      const isFromGh = normalizeName(q.from_) === ghName || normalizeName(q.from_) === 'group head'
+
+      const isGhToPi = isFromGh && isToPi
+      const isPiToGh = isFromPi && isToGh
+
+      if (!isGhToPi && !isPiToGh) return
+    }
+
+    events.push({
+      id: `${q.id}-msg`,
+      content: q.remarks_description,
+      from_: q.from_,
+      timestamp: q.updated_at,
+    })
+    if (q.respond_to_remarks) {
+      events.push({
+        id: `${q.id}-reply`,
+        content: q.respond_to_remarks,
+        from_: q.to,
+        timestamp: q.updated_at,
+      })
+    }
+  })
+  return events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+}
+
+const getThreadUnseenCount = (record, currentUserGroup, thread) => {
+  if (!record || !record.queries) return 0
+  const myGroupName = normalizeName(currentUserGroup || 'group head')
+  const piName = normalizeName(getPiName(record))
+  
+  let curName = ''
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      curName = normalizeName(JSON.parse(rawUser).name || '')
+    }
+  } catch {}
+
+  const isSamePerson = curName && piName && (curName === piName || curName.includes(piName) || piName.includes(curName))
+  const sender = thread === 'admin' ? 'admin' : piName
+
+  return record.queries.filter((q) => {
+    // Case 1: Incoming message from sender to me
+    const isFromSender = normalizeName(q.from_) === normalizeName(sender)
+    const isToMe = thread === 'admin'
+      ? (isSamePerson
+          ? (normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head' || normalizeName(q.to) === piName)
+          : (normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head'))
+      : (normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head')
+
+    if (isFromSender && isToMe && q.message_seen === false) {
+      return true
+    }
+
+    // Case 2: Reply from sender to my message
+    const isToSender = normalizeName(q.to) === normalizeName(sender)
+    const isFromMe = thread === 'admin'
+      ? (isSamePerson
+          ? (normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head' || normalizeName(q.from_) === piName)
+          : (normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head'))
+      : (normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head')
+
+    if (isFromMe && isToSender && q.respond_to_remarks && q.reply_seen === false) {
+      return true
+    }
+    return false
+  }).length
+}
+
+const countUnseenReplies = (record, currentUserGroup) => {
+  return getThreadUnseenCount(record, currentUserGroup, 'admin') + getThreadUnseenCount(record, currentUserGroup, 'pi')
+}
+
+const isPendingReply = (record, currentUserName, currentUserGroup) => {
+  const queries = record.queries || []
+  const myGroupName = normalizeName(currentUserGroup || 'group head')
+
+  return queries.some((q) => {
+    const isToMe = normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head'
+    return isToMe && !q.respond_to_remarks
+  })
+}
+
+
 
 const { Title } = Typography
 const { TextArea } = Input
@@ -220,144 +374,103 @@ function Proposals() {
   const [form] = Form.useForm() // For existing edit modal (if any)
 
   const [tableData, setTableData] = useState([])
-const [filteredData, setFilteredData] = useState([])
-const [tableLoading, setTableLoading] = useState(false)
-const [submitLoading, setSubmitLoading] = useState(false)
+  const [filteredData, setFilteredData] = useState([])
+  const [tableLoading, setTableLoading] = useState(false)
+  const [submitLoading, setSubmitLoading] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [selectedRecord, setSelectedRecord] = useState(null)
+  const [editingRecord, setEditingRecord] = useState(null)
 
-const [modalOpen, setModalOpen] = useState(false)
-const [detailModalOpen, setDetailModalOpen] = useState(false)
-const [remarksModalOpen, setRemarksModalOpen] = useState(false)
-const [selectedRecord, setSelectedRecord] = useState(null)
-const [editingRecord, setEditingRecord] = useState(null)
-const [remarksTarget, setRemarksTarget] = useState('admin')
-const [remarksDescription, setRemarksDescription] = useState('')
-const [remarksLoading, setRemarksLoading] = useState(false)
 
-// Queries/Remarks state for GH users
-const [queriesModalOpen, setQueriesModalOpen] = useState(false)
-const [queriesData, setQueriesData] = useState([])
-const [queriesLoading, setQueriesLoading] = useState(false)
-const [selectedProjectForQueries, setSelectedProjectForQueries] = useState(null)
-const [unrespondedQueryCounts, setUnrespondedQueryCounts] = useState({})
+  const [chatModalOpen, setChatModalOpen] = useState(false)
+  const [chatProject, setChatProject] = useState(null)
+  const [chatThread, setChatThread] = useState('admin') // 'admin' | 'pi'
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
 
-// Move TABLE_FIELDS inside component to access state and functions
-const TABLE_FIELDS = [
-  { name: 'id', label: 'SL NO', width: 80, render: (text, record, index) => index + 1 },
-  { name: 'project_number', label: 'Project Number', width: 140 },
-  { name: 'activity', label: 'Project Name', width: 160 },
-  { name: 'customer_name', label: 'Customer Name', width: 180 },
-  { name: 'order_date', label: 'Order Date', width: 130 },
-  { name: 'delivery_date', label: 'Delivery Date', width: 140 },
-  { name: 'extended_delivery_date', label: 'Extended Delivery', width: 150 },
-  { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 170 },
-  { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
-  { name: 'key_deliverables', label: 'Key Deliverables', width: 220, input: 'textarea' },
-  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
-  { name: 'center', label: 'Centre', width: 120 },
-  { name: 'group', label: 'Group', width: 120 },
-  { name: 'status', label: 'Status', width: 130, input: 'select' },
-  { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
-  { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
-  { name: 'proposal_status', label: 'Proposal Status', width: 160, input: 'select' },
-  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
-  { name: 'closer_report', label: 'Closure Report', width: 180, input: 'textarea' },
-  { name: 'latest_response', label: 'Latest Response', width: 200, render: (text, record) => {
-    const ghQueries = record.queries?.filter(q => q.from_ === (currentUserGroup || 'Group Head')) || []
-    
-    console.log(`Project ${record.project_number}: GH Queries:`, ghQueries.map(q => ({
-      id: q.id,
-      from: q.from_,
-      to: q.to,
-      query: q.remarks_description,
-      responded: !!q.respond_to_remarks,
-      date: q.updated_at
-    })))
-    
-    if (ghQueries.length === 0) {
-      // Don't show anything when no queries
-      return null
+  const messagesEndRef = useRef(null)
+
+  const chatEvents = useMemo(
+    () => getThreadEvents(chatMessages, chatThread, chatProject),
+    [chatMessages, chatThread, chatProject]
+  )
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (chatModalOpen) {
+      const timer = setTimeout(() => {
+        scrollToBottom()
+      }, 80)
+      return () => clearTimeout(timer)
     }
-    
-    // Find queries with responses
-    const respondedQueries = ghQueries.filter(q => q.respond_to_remarks)
-    const pendingQueries = ghQueries.filter(q => !q.respond_to_remarks)
-    
-    console.log(`Project ${record.project_number}: Pending: ${pendingQueries.length}, Responded: ${respondedQueries.length}`)
-    
-    // Always show pending queries if any exist (regardless of responded queries)
-    if (pendingQueries.length > 0) {
-      // Show pending queries with red highlighting if any query is newer than 2 days
-      const latestQuery = pendingQueries.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]
-      const queryDate = dayjs(latestQuery.updated_at)
-      const today = dayjs().startOf('day')
-      const yesterday = dayjs().subtract(1, 'day').startOf('day')
-      const twoDaysAgo = dayjs().subtract(2, 'day').startOf('day')
-      let dateLabel = queryDate.format('DD-MM-YYYY')
-      
-      if (queryDate.isSame(today, 'day')) {
-        dateLabel = 'Today ' + queryDate.format('HH:mm')
-      } else if (queryDate.isSame(yesterday, 'day')) {
-        dateLabel = 'Yesterday ' + queryDate.format('HH:mm')
-      }
-      
-      // Check if any query is newer than 2 days - highlight in red
-      const hasRecentQuery = ghQueries.some(query => 
-        dayjs(query.updated_at).isAfter(twoDaysAgo)
-      )
-      
-      console.log(`Project ${record.project_number}: Has recent query: ${hasRecentQuery}`)
-      
-      return (
-        <div style={{ 
-          color: hasRecentQuery ? '#ff4d4f' : '#1890ff', 
-          fontWeight: 'bold',
-          backgroundColor: hasRecentQuery ? '#fff2f0' : 'transparent',
-          padding: hasRecentQuery ? '4px' : '0',
-          borderRadius: hasRecentQuery ? '4px' : '0',
-          border: hasRecentQuery ? '1px solid #ffccc7' : 'none'
-        }}>
-          <div>{latestQuery.remarks_description}</div>
-          <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-            To: {latestQuery.to} | {dateLabel}
-            {hasRecentQuery && <span style={{ marginLeft: '8px', color: '#ff4d4f' }}>🔥 New</span>}
-          </div>
-        </div>
-      )
-    }
-    
-    // Show latest response if no pending queries
-    const latestResponse = respondedQueries.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]
-    const responseDate = dayjs(latestResponse.updated_at)
-    const today = dayjs().startOf('day')
-    const yesterday = dayjs().subtract(1, 'day').startOf('day')
-    let dateLabel = responseDate.format('DD-MM-YYYY')
-    
-    if (responseDate.isSame(today, 'day')) {
-      dateLabel = 'Today ' + responseDate.format('HH:mm')
-    } else if (responseDate.isSame(yesterday, 'day')) {
-      dateLabel = 'Yesterday ' + responseDate.format('HH:mm')
-    }
-    
-    return (
-      <div style={{ color: '#52c41a', fontWeight: 'bold' }}>
-        <div>{latestResponse.respond_to_remarks}</div>
-        <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
-          From: {latestResponse.to} | {dateLabel}
-        </div>
-      </div>
-    )
-  }},
-]
+  }, [chatEvents, chatModalOpen])
 
-const [searchText, setSearchText] = useState('')
-const [coordinatorFilter, setCoordinatorFilter] = useState(null)
-const [orderDateRange, setOrderDateRange] = useState(null)
-const [enquiryDateRange, setEnquiryDateRange] = useState(null)
+
+  // Move TABLE_FIELDS inside component to access state and functions
+  const TABLE_FIELDS = [
+    { name: 'id', label: 'SL NO', width: 80, render: (text, record, index) => index + 1 },
+    { name: 'project_number', label: 'Project Number', width: 140 },
+    { name: 'activity', label: 'Project Name', width: 160 },
+    { name: 'customer_name', label: 'Customer Name', width: 180 },
+    { name: 'order_date', label: 'Order Date', width: 130 },
+    { name: 'delivery_date', label: 'Delivery Date', width: 140 },
+    { name: 'extended_delivery_date', label: 'Extended Delivery', width: 150 },
+    { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 170 },
+    { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
+    { name: 'key_deliverables', label: 'Key Deliverables', width: 220, input: 'textarea' },
+    { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
+    { name: 'center', label: 'Centre', width: 120 },
+    { name: 'group', label: 'Group', width: 120 },
+    { name: 'status', label: 'Status', width: 130, input: 'select' },
+    { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
+    { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
+    { name: 'proposal_status', label: 'Proposal Status', width: 160, input: 'select' },
+    { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
+    { name: 'closer_report', label: 'Closure Report', width: 180, input: 'textarea' },
+  ]
+
+  const [searchText, setSearchText] = useState('')
+  const [coordinatorFilter, setCoordinatorFilter] = useState(null)
+  const [orderDateRange, setOrderDateRange] = useState(null)
+  const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
   const [projectCodePrefix, setProjectCodePrefix] = useState('')
-  const [currentUserName, setCurrentUserName] = useState('')
-  const [currentUserCentre, setCurrentUserCentre] = useState('')
-  const [currentUserGroup, setCurrentUserGroup] = useState('')
+  const [currentUserName, setCurrentUserName] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser)
+        return (parsed.name || '').trim()
+      }
+    } catch { }
+    return ''
+  })
+  const [currentUserCentre, setCurrentUserCentre] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser)
+        return parsed.center || ''
+      }
+    } catch { }
+    return ''
+  })
+  const [currentUserGroup, setCurrentUserGroup] = useState(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser)
+        return parsed.group || ''
+      }
+    } catch { }
+    return ''
+  })
   const [proposalCount, setProposalCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -365,9 +478,19 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   // Unacknowledged proposals state
   const [unacknowledgedCount, setUnacknowledgedCount] = useState(0)
   const [showUnacknowledgedOnly, setShowUnacknowledgedOnly] = useState(false)
+  const [showNewMessagesOnly, setShowNewMessagesOnly] = useState(false)
+  const [showPendingReplyOnly, setShowPendingReplyOnly] = useState(false)
   const [originalTableData, setOriginalTableData] = useState([])
   const [trueOriginalData, setTrueOriginalData] = useState([]) // Store the complete original dataset
   const [activeTab, setActiveTab] = useState('proposals') // Track active tab
+
+  const unreadChatsCount = useMemo(() => {
+    return tableData.filter((item) => countUnseenReplies(item, currentUserGroup) > 0).length
+  }, [tableData, currentUserGroup])
+
+  const pendingReplyCount = useMemo(() => {
+    return tableData.filter((item) => isPendingReply(item, currentUserName, currentUserGroup)).length
+  }, [tableData, currentUserName, currentUserGroup])
 
   // Upload documents immediately after proposal creation (needs project_id)
   const [stageConfig, setStageConfig] = useState([])
@@ -425,120 +548,170 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     form.resetFields()
   }, [form])
 
-  const openRemarksModal = useCallback((record) => {
-    setSelectedRecord(record)
-    setRemarksTarget('admin')
-    setRemarksModalOpen(true)
-  }, [])
-
-  const closeRemarksModal = useCallback(() => {
-    setRemarksModalOpen(false)
-    setSelectedRecord(null)
-    setRemarksTarget('admin')
-  }, [])
-
-  // Queries functionality for GH users
-  const fetchQueriesForProject = useCallback(async (projectId) => {
-    setQueriesLoading(true)
+  const loadChatMessages = useCallback(async (record, thread) => {
+    setChatLoading(true)
     try {
       const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
         headers: { accept: 'application/json' },
       })
-      if (!response.ok) throw new Error('Failed to fetch queries')
-      
-      const allQueries = await response.json()
-      const projectQueries = Array.isArray(allQueries) 
-        ? allQueries.filter(query => String(query.project_id) === String(projectId))
+      const allQueries = response.ok ? await response.json() : []
+      const projectMessages = Array.isArray(allQueries)
+        ? allQueries.filter((q) => String(q.project_id) === String(record.id))
         : []
-      
-      // Sort queries by date (newest first) for modal display
-      const sortedQueries = projectQueries.sort((a, b) => {
+      setChatMessages(projectMessages)
+    } catch (error) {
+      console.error('Error loading chat:', error)
+      message.error('Unable to load conversation')
+    } finally {
+      setChatLoading(false)
+    }
+  }, [])
+
+  const openChatModal = useCallback(async (record, thread = 'admin') => {
+    setChatProject(record)
+    setChatThread(thread)
+    setChatModalOpen(true)
+    await loadChatMessages(record, thread)
+
+    const myGroupName = normalizeName(currentUserGroup || 'group head')
+
+    // Mark incoming messages as seen
+    const unseenMessages = (record.queries || []).filter(
+      (q) => (normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head') && q.message_seen === false
+    )
+    unseenMessages.forEach(async (q) => {
+      try {
+        await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-seen`, { method: 'PATCH' })
+      } catch (e) {
+        console.warn('mark-seen failed for', q.id, e)
+      }
+    })
+
+    // Mark replies as seen
+    const unseenReplies = (record.queries || []).filter(
+      (q) => (normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head') && q.respond_to_remarks && q.reply_seen === false
+    )
+    unseenReplies.forEach(async (q) => {
+      try {
+        await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-reply-seen`, { method: 'PATCH' })
+      } catch (e) {
+        console.warn('mark-reply-seen failed for', q.id, e)
+      }
+    })
+
+    const hasUpdates = unseenMessages.length > 0 || unseenReplies.length > 0
+    if (hasUpdates) fetchProposals()
+  }, [loadChatMessages, currentUserGroup])
+
+  const switchChatThread = useCallback(async (thread) => {
+    setChatThread(thread)
+    if (chatProject) {
+      await loadChatMessages(chatProject, thread)
+
+      const myGroupName = normalizeName(currentUserGroup || 'group head')
+
+      // Mark incoming messages as seen
+      const unseenMessages = (chatProject.queries || []).filter(
+        (q) => (normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head') && q.message_seen === false
+      )
+      unseenMessages.forEach(async (q) => {
         try {
-          const dateA = new Date(a.updated_at).getTime()
-          const dateB = new Date(b.updated_at).getTime()
-          return dateB - dateA // Newest first
-        } catch (error) {
-          console.error('Error sorting queries:', error)
-          return 0
+          await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-seen`, { method: 'PATCH' })
+        } catch (e) {
+          console.warn('mark-seen failed for', q.id, e)
         }
       })
-      
-      setQueriesData(sortedQueries)
-      return sortedQueries.length
-    } catch (error) {
-      console.error('Error fetching queries:', error)
-      message.error('Failed to fetch queries')
-      return 0
-    } finally {
-      setQueriesLoading(false)
-    }
-  }, [])
 
-  const openQueriesModal = useCallback(async (record) => {
-    setSelectedProjectForQueries(record)
-    setQueriesModalOpen(true)
-    await fetchQueriesForProject(record.id)
-  }, [fetchQueriesForProject])
-
-  const closeQueriesModal = useCallback(() => {
-    setQueriesModalOpen(false)
-    setQueriesData([])
-    setSelectedProjectForQueries(null)
-  }, [])
-
-  const handleRemarksSubmit = async () => {
-    if (!selectedRecord?.id) {
-      message.error('No record selected')
-      return
-    }
-
-    setRemarksLoading(true)
-    
-    try {
-      const payload = {
-        from_: currentUserGroup || 'Group Head',
-        to: remarksTarget === 'admin' ? 'admin' : (selectedRecord.project_co_ordinator || selectedRecord.quotation_given_by_name || 'Unknown'),
-        project_id: selectedRecord.id,
-        remarks_description: remarksDescription,
-        respond_to_remarks: null  // Send null for new remarks
-      }
-
-      console.log('Sending payload:', payload)
-      console.log('API URL:', `${API_BASE_URL}/Remarkss/`)
-      
-      const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+      // Mark replies as seen
+      const unseenReplies = (chatProject.queries || []).filter(
+        (q) => (normalizeName(q.from_) === myGroupName || normalizeName(q.from_) === 'group head') && q.respond_to_remarks && q.reply_seen === false
+      )
+      unseenReplies.forEach(async (q) => {
+        try {
+          await fetch(`${API_BASE_URL}/Remarkss/${q.id}/mark-reply-seen`, { method: 'PATCH' })
+        } catch (e) {
+          console.warn('mark-reply-seen failed for', q.id, e)
+        }
       })
 
-      console.log('Response status:', response.status)
-      console.log('Response ok:', response.ok)
+      const hasUpdates = unseenMessages.length > 0 || unseenReplies.length > 0
+      if (hasUpdates) fetchProposals()
+    }
+  }, [chatProject, loadChatMessages, currentUserGroup])
 
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}))
-        throw new Error(errorBody.detail || 'Failed to create remark')
-      }
+  const closeChatModal = useCallback(() => {
+    setChatModalOpen(false)
+    setChatProject(null)
+    setChatMessages([])
+    setChatInput('')
+  }, [])
 
-      message.success('Remark created successfully')
-      closeRemarksModal()
-    } catch (error) {
-      console.error('Full error object:', error)
-      console.error('Error type:', typeof error)
-      console.error('Error message:', error.message)
-      console.error('Error stack:', error.stack)
-      
-      // Check if it's a network error
-      if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        message.error('Network error: Unable to connect to server. Please check if backend server is running.')
+  const handleSendChatMessage = async () => {
+    if (!chatInput.trim() || !chatProject?.id) return
+    setChatSending(true)
+    try {
+      const myGroupName = normalizeName(currentUserGroup || 'group head')
+      const piName = getPiName(chatProject) || 'Scientist'
+
+      // Determine who we are communicating with in this thread
+      const recipient = chatThread === 'admin' ? 'admin' : piName
+
+      // Check if we are replying to an unanswered message from that recipient
+      const unansweredMsg = [...(chatMessages || [])]
+        .reverse()
+        .find((q) => {
+          const isFromRecipient = normalizeName(q.from_) === normalizeName(recipient)
+          const isToMe = normalizeName(q.to) === myGroupName || normalizeName(q.to) === 'group head'
+          return isFromRecipient && isToMe && !q.respond_to_remarks
+        })
+
+      if (unansweredMsg) {
+        // REPLY: Update the existing row with respond_to_remarks
+        const payload = {
+          respond_to_remarks: chatInput.trim(),
+          replyer: currentUserGroup || 'Group Head',
+          reply_seen: false,
+        }
+        const response = await fetch(`${API_BASE_URL}/Remarkss/${unansweredMsg.id}`, {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error(err.detail || 'Failed to send reply')
+        }
       } else {
-        message.error(error.message || 'Unable to create remark')
+        // NEW MESSAGE: initiate a new thread row
+        const payload = {
+          from_: currentUserGroup || 'Group Head',
+          to: recipient,
+          project_id: chatProject.id,
+          remarks_description: chatInput.trim(),
+          respond_to_remarks: null,
+          replyer: null,
+          message_seen: false,
+          reply_seen: false,
+        }
+        const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
+          method: 'POST',
+          headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error(err.detail || 'Failed to send message')
+        }
       }
+
+      setChatInput('')
+      await loadChatMessages(chatProject, chatThread)
+      await fetchProposals() // refresh badge counts across the table
+    } catch (error) {
+      console.error('Error sending message:', error)
+      message.error(error.message || 'Failed to send message')
     } finally {
-      setRemarksLoading(false)
+      setChatSending(false)
     }
   }
   const handleCloseUploadModal = () => {
@@ -591,7 +764,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     }
 
     setSubmitLoading(true)
-    
+
     // Build payload for coordinator-update endpoint (only allowed fields)
     const payload = {
       project_id: editingRecord.id,
@@ -669,7 +842,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             })
             if (queriesResponse.ok) {
               const allQueries = await queriesResponse.json()
-              const projectQueries = Array.isArray(allQueries) 
+              const projectQueries = Array.isArray(allQueries)
                 ? allQueries.filter(query => String(query.project_id) === String(proposal.id))
                 : []
               console.log(`Proposal ${proposal.id}: Found ${projectQueries.length} queries`)
@@ -681,7 +854,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           return { ...proposal, queries: [] }
         })
       )
-      
+
       console.log('Proposals with queries loaded:', proposalsWithQueries.map(p => ({
         id: p.id,
         project_number: p.project_number,
@@ -691,7 +864,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
 
       setOriginalTableData(proposalsWithQueries)
       setTrueOriginalData(proposalsWithQueries) // Store the complete original dataset
-      
+
       setTableData(proposalsWithQueries)
       setFilteredData(proposalsWithQueries)
       setCurrentPage(1)
@@ -737,14 +910,14 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         const data = await response.json()
         console.log('Raw unacknowledged data from API:', data)
         console.log('Current user group:', currentUserGroup)
-        
+
         let filteredData = Array.isArray(data) ? data : []
-        
+
         // Filter by current user's group for Group Heads
         if (currentUserGroup) {
           const cleanCurrentGroup = currentUserGroup.trim().toLowerCase()
           console.log('Fetching unacknowledged count for group:', cleanCurrentGroup)
-          
+
           filteredData = filteredData.filter(item => {
             const cleanItemGroup = (item.group || '').trim().toLowerCase()
             const matches = cleanItemGroup === cleanCurrentGroup
@@ -757,7 +930,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             return matches
           })
         }
-        
+
         const count = filteredData.length
         setUnacknowledgedCount(count)
         console.log('Final unacknowledged count for group:', count)
@@ -777,12 +950,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       if (!response.ok) throw new Error('Unable to fetch unacknowledged proposals')
       const payload = await response.json()
       let normalized = Array.isArray(payload) ? payload.map(mapApiToUi) : []
-      
+
       // Filter by current user's group for Group Heads
       if (currentUserGroup) {
         const cleanCurrentGroup = currentUserGroup.trim().toLowerCase()
         console.log('Fetching unacknowledged proposals for group:', cleanCurrentGroup)
-        
+
         normalized = normalized.filter(item => {
           const cleanItemGroup = (item.group || '').trim().toLowerCase()
           const matches = cleanItemGroup === cleanCurrentGroup
@@ -796,7 +969,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           return matches
         })
       }
-      
+
       setTableData(normalized)
       setFilteredData(normalized)
       setOriginalTableData(normalized) // Update original data to maintain consistency
@@ -851,9 +1024,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     const stages = Array.isArray(stageConfig) ? stageConfig : []
     const enquiryStage = stages.find((s) => (s.name || '').toString().trim().toLowerCase() === 'enquiry')
     const proposalStage = stages.find((s) => (s.name || '').toString().trim().toLowerCase() === 'proposal')
-    
+
     const isProposal = defaultType === 'proposal'
-    const stage = isProposal 
+    const stage = isProposal
       ? (proposalStage || enquiryStage || stages[0] || { id: uploadStageId, name: 'Proposal' })
       : (enquiryStage || stages[0] || { id: uploadStageId, name: 'Enquiry' })
 
@@ -874,15 +1047,15 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const handleDocTypeChange = (e) => {
     const newType = e.target.value
     setUploadDocType(newType)
-    
+
     const stages = Array.isArray(stageConfig) ? stageConfig : []
     const enquiryStage = stages.find((s) => (s.name || '').toString().trim().toLowerCase() === 'enquiry')
     const proposalStage = stages.find((s) => (s.name || '').toString().trim().toLowerCase() === 'proposal')
-    
+
     const stage = newType === 'proposal'
       ? (proposalStage || { id: uploadStageId, name: 'Proposal' })
       : (enquiryStage || { id: uploadStageId, name: 'Enquiry' })
-    
+
     setSelectedStageForUpload({ stage_id: stage.id, stage_name: stage.name || (newType === 'proposal' ? 'Proposal' : 'Enquiry') })
     setUploadStageId(stage.id)
     setDocumentName(stage.name || (newType === 'proposal' ? 'Proposal' : 'Enquiry'))
@@ -931,36 +1104,36 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     await fetchProjectDocuments(projectId)
   }
 
-    const handleShowDuplicateQuoteRefs = useCallback(() => {
-      // Count occurrences of each quote_reference (ignore empty/null)
-      const refCounts = {}
-      tableData.forEach((item) => {
-        const ref = (item.quote_reference || '').trim()
-        if (ref) {
-          refCounts[ref] = (refCounts[ref] || 0) + 1
-        }
-      })
-  
-      // Keep only refs that appear more than once
-      const duplicateRefs = new Set(
-        Object.entries(refCounts)
-          .filter(([, count]) => count > 1)
-          .map(([ref]) => ref)
-      )
-  
-      if (duplicateRefs.size === 0) {
-        message.info('No duplicate Quote References found')
-        setFilteredData(tableData)
-        return
+  const handleShowDuplicateQuoteRefs = useCallback(() => {
+    // Count occurrences of each quote_reference (ignore empty/null)
+    const refCounts = {}
+    tableData.forEach((item) => {
+      const ref = (item.quote_reference || '').trim()
+      if (ref) {
+        refCounts[ref] = (refCounts[ref] || 0) + 1
       }
-  
-      const duplicates = tableData.filter((item) =>
-        duplicateRefs.has((item.quote_reference || '').trim())
-      )
-  
-      setFilteredData(duplicates)
-      message.info(`Showing ${duplicates.length} records with duplicate Quote References (${duplicateRefs.size} unique refs)`)
-    }, [tableData])
+    })
+
+    // Keep only refs that appear more than once
+    const duplicateRefs = new Set(
+      Object.entries(refCounts)
+        .filter(([, count]) => count > 1)
+        .map(([ref]) => ref)
+    )
+
+    if (duplicateRefs.size === 0) {
+      message.info('No duplicate Quote References found')
+      setFilteredData(tableData)
+      return
+    }
+
+    const duplicates = tableData.filter((item) =>
+      duplicateRefs.has((item.quote_reference || '').trim())
+    )
+
+    setFilteredData(duplicates)
+    message.info(`Showing ${duplicates.length} records with duplicate Quote References (${duplicateRefs.size} unique refs)`)
+  }, [tableData])
 
   const viewDocument = (doc) => {
     if (!doc?.url) {
@@ -977,18 +1150,18 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
 
     try {
       console.log('Loading Excel file with react-excel-renderer:', url)
-      
+
       // Fetch the Excel file
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Excel file: ${response.status}`)
       }
-      
+
       const blob = await response.blob()
-      
+
       // Use react-excel-renderer to parse the file
       const file = new File([blob], 'excel.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      
+
       ExcelRenderer(file, (err, resp) => {
         if (err) {
           console.error('ExcelRenderer error:', err)
@@ -998,18 +1171,18 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           console.log('ExcelRenderer success:', resp)
           console.log('Rows structure:', resp.rows?.[0])
           console.log('Cols structure:', resp.cols)
-          
+
           // Check if multiple sheets are available
           if (resp.sheets && resp.sheets.length > 1) {
             console.log('Multiple sheets found:', resp.sheets.map(s => s.name))
           }
-          
+
           setExcelRendererData(resp)
           setActiveSheetIndex(0)
           setExcelRendererLoading(false)
         }
       })
-      
+
     } catch (error) {
       console.error('Error loading Excel file:', error)
       setExcelRendererError(`Error loading Excel file: ${error.message}`)
@@ -1024,15 +1197,15 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
 
     try {
       console.log('Loading Word document with mammoth.js:', url)
-      
+
       // Fetch the Word document
       const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`Failed to fetch Word document: ${response.status}`)
       }
-      
+
       const arrayBuffer = await response.arrayBuffer()
-      
+
       // Use mammoth.js to convert Word document to HTML
       const result = await mammoth.convertToHtml(
         { arrayBuffer: arrayBuffer },
@@ -1047,11 +1220,11 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           ]
         }
       )
-      
+
       console.log('Mammoth.js conversion success:', result)
       setWordDocumentContent(result.value)
       setWordDocumentLoading(false)
-      
+
     } catch (error) {
       console.error('Error loading Word document:', error)
       setWordDocumentError(`Error loading Word document: ${error.message}`)
@@ -1082,7 +1255,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   useEffect(() => {
     const currentUrl = viewDocumentUrl || ''
     if (!currentUrl) return
-    
+
     const urlNoQuery = currentUrl.split('#')[0].split('?')[0]
     const ext = (urlNoQuery.split('.').pop() || '').toLowerCase()
     const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
@@ -1101,7 +1274,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const statistics = useMemo(() => {
     // Always use true original data to show normal counts regardless of filters
     const dataSource = trueOriginalData.length > 0 ? trueOriginalData : tableData
-    
+
     const totalProposals = dataSource.filter((item) => !item.project_number || item.project_number.trim() === '').length
     const totalProjects = dataSource.filter((item) => item.project_number && item.project_number.trim() !== '').length
     const technicallyCompleted = dataSource.filter(
@@ -1169,12 +1342,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
     }
 
     if (coordinatorFilter) filtered = filtered.filter((item) => {
-  const itemCoordinator = (item.project_co_ordinator || '').toString().trim().toLowerCase()
-  const itemProposalGivenBy = (item.quotation_given_by_name || '').toString().trim().toLowerCase()
-  const filterCoordinator = coordinatorFilter.toString().trim().toLowerCase()
-  return itemCoordinator === filterCoordinator || itemProposalGivenBy === filterCoordinator
-})
-    
+      const itemCoordinator = (item.project_co_ordinator || '').toString().trim().toLowerCase()
+      const itemProposalGivenBy = (item.quotation_given_by_name || '').toString().trim().toLowerCase()
+      const filterCoordinator = coordinatorFilter.toString().trim().toLowerCase()
+      return itemCoordinator === filterCoordinator || itemProposalGivenBy === filterCoordinator
+    })
+
     if (projectCodePrefix) {
       const prefix = projectCodePrefix.trim().slice(0, 3).toLowerCase()
       filtered = filtered.filter(
@@ -1233,29 +1406,37 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       filtered = filtered.filter((item) => item.project_number && item.project_number.trim() !== '')
     }
 
+    if (showNewMessagesOnly) {
+      filtered = filtered.filter((item) => countUnseenReplies(item, currentUserGroup) > 0)
+    }
+
+    if (showPendingReplyOnly) {
+      filtered = filtered.filter((item) => isPendingReply(item, currentUserName))
+    }
+
     setFilteredData(filtered)
     setCurrentPage(1)
-  }, [searchText, coordinatorFilter, orderDateRange, enquiryDateRange, statusFilter, projectCodePrefix, tableData])
+  }, [searchText, coordinatorFilter, orderDateRange, enquiryDateRange, statusFilter, projectCodePrefix, tableData, showNewMessagesOnly, currentUserGroup, showPendingReplyOnly, currentUserName])
 
- const uniqueCoordinators = useMemo(() => {
-  const seen = new Set()
-  const result = []
-  
-  tableData.forEach((item) => {
-    const coordinator = item.project_co_ordinator
-    if (coordinator) {
-      const normalized = coordinator.toString().trim().toLowerCase()
-      if (!seen.has(normalized)) {
-        seen.add(normalized)
-        // Store the original case version for display
-        result.push(coordinator)
+  const uniqueCoordinators = useMemo(() => {
+    const seen = new Set()
+    const result = []
+
+    tableData.forEach((item) => {
+      const coordinator = item.project_co_ordinator
+      if (coordinator) {
+        const normalized = coordinator.toString().trim().toLowerCase()
+        if (!seen.has(normalized)) {
+          seen.add(normalized)
+          // Store the original case version for display
+          result.push(coordinator)
+        }
       }
-    }
-  })
-  
-  // Sort case-insensitively
-  return result.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-}, [tableData])
+    })
+
+    // Sort case-insensitively
+    return result.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  }, [tableData])
   const uniqueProjectPrefixes = useMemo(() => {
     const prefixes = tableData
       .map((i) => i.project_number)
@@ -1301,22 +1482,22 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
 
 
   const columns = useMemo(() => {
-  const parseEnquiryDate = (val) => {
-    if (!val || val === '') return Number.MIN_SAFE_INTEGER // Empty dates go to end
+    const parseEnquiryDate = (val) => {
+      if (!val || val === '') return Number.MIN_SAFE_INTEGER // Empty dates go to end
 
-    // Try native/ISO parsing first (covers "2024-06-01", "2024-06-01T00:00:00Z", etc.)
-    let parsed = dayjs(val)
-    if (parsed.isValid()) return parsed.valueOf()
+      // Try native/ISO parsing first (covers "2024-06-01", "2024-06-01T00:00:00Z", etc.)
+      let parsed = dayjs(val)
+      if (parsed.isValid()) return parsed.valueOf()
 
-    // Fallback: explicit DD-MM-YYYY strings
-    parsed = dayjs(val, 'DD-MM-YYYY', true)
-    if (parsed.isValid()) return parsed.valueOf()
+      // Fallback: explicit DD-MM-YYYY strings
+      parsed = dayjs(val, 'DD-MM-YYYY', true)
+      if (parsed.isValid()) return parsed.valueOf()
 
-    // Fallback: explicit DD/MM/YYYY strings
-    parsed = dayjs(val, 'DD/MM/YYYY', true)
-    if (parsed.isValid()) return parsed.valueOf()
+      // Fallback: explicit DD/MM/YYYY strings
+      parsed = dayjs(val, 'DD/MM/YYYY', true)
+      if (parsed.isValid()) return parsed.valueOf()
 
-    return Number.MIN_SAFE_INTEGER // Invalid dates treated as empty
+      return Number.MIN_SAFE_INTEGER // Invalid dates treated as empty
     }
 
     if (statusFilter === 'proposals') {
@@ -1329,7 +1510,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           render: (text, record, index) => index + 1,
         },
         {
-           key: 'enquiry_date',
+          key: 'enquiry_date',
           dataIndex: 'enquiry_date',
           title: 'Enquiry Date',
           width: 150,
@@ -1379,40 +1560,37 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           key: 'actions',
           title: 'Actions',
           width: 100,
-          render: (_, record) => {
-            // For proposals, show all queries
-            const allQueries = record.queries || []
-            return (
-              <Space size="small">
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={(e) => {
+          render: (_, record) => (
+            <Space size="small">
+              <Button
+                size="small"
+                type="link"
+                icon={<InfoCircleOutlined />}
+                onClick={(e) => { e.stopPropagation(); openDetailModal(record) }}
+                title="More Details"
+              />
+              <Space size={4}>
+                <Badge count={countUnseenReplies(record, currentUserGroup)} size="small" offset={[-2, 2]}>
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<MessageOutlined />}
+                    onClick={(e) => { e.stopPropagation(); openChatModal(record, 'admin') }}
+                    style={{ color: countUnseenReplies(record, currentUserGroup) > 0 ? '#ff4d4f' : '#1890ff' }}
+                    title="Chat"
+                  />
+                </Badge>
+                {isPendingReply(record, currentUserName, currentUserGroup) && (
+                  <span title="Reply Needed" style={{ cursor: 'pointer', fontSize: '14px' }} onClick={(e) => {
                     e.stopPropagation()
-                    openDetailModal(record)
-                  }}
-                >
-                  More
-                </Button>
-                {allQueries.length > 0 && (
-                  <Button 
-                    size="small" 
-                    type="link" 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      openQueriesModal(record)
-                    }}
-                    style={{
-                      color: allQueries.some(query => dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))) ? '#ff4d4f' : '#1890ff',
-                      fontWeight: allQueries.some(query => dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))) ? 'bold' : 'normal'
-                    }}
-                  >
-                    Queries ({allQueries.length})
-                  </Button>
+                    openChatModal(record, 'admin')
+                  }}>
+                    ⚠️
+                  </span>
                 )}
               </Space>
-            )
-          },
+            </Space>
+          ),
         },
       ]
     }
@@ -1521,42 +1699,38 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         {
           key: 'actions',
           title: 'Actions',
-          width: 120,
-          render: (_, record) => {
-            console.log('Record:', record.project_number, 'Queries:', record.queries, 'StatusFilter:', statusFilter)
-            // For proposals, show all queries (not just GH-specific ones)
-            const allQueries = record.queries || []
-            const ghQueries = statusFilter === 'proposals' ? allQueries : allQueries.filter(q => q.from_ === (currentUserGroup || 'Group Head')) || []
-            console.log('All Queries:', allQueries.length, 'GH Queries:', ghQueries.length)
-            
-            const queriesToShow = statusFilter === 'proposals' ? allQueries : ghQueries
-            return (
-              <Space size="small">
-                <Button size="small" type="link" onClick={(e) => {
-                  e.stopPropagation()
-                  openDetailModal(record)
-                }}>
-                  More
-                </Button>
-                {queriesToShow.length > 0 && (
-                <Button 
-                  size="small" 
-                  type="link" 
-                  onClick={(e) => {
+          width: 100,
+          render: (_, record) => (
+            <Space size="small">
+              <Button
+                size="small"
+                type="link"
+                icon={<InfoCircleOutlined />}
+                onClick={(e) => { e.stopPropagation(); openDetailModal(record) }}
+                title="More Details"
+              />
+              <Space size={4}>
+                <Badge count={countUnseenReplies(record, currentUserGroup)} size="small" offset={[-2, 2]}>
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<MessageOutlined />}
+                    onClick={(e) => { e.stopPropagation(); openChatModal(record, 'admin') }}
+                    style={{ color: countUnseenReplies(record, currentUserGroup) > 0 ? '#ff4d4f' : '#1890ff' }}
+                    title="Chat"
+                  />
+                </Badge>
+                {isPendingReply(record, currentUserName, currentUserGroup) && (
+                  <span title="Reply Needed" style={{ cursor: 'pointer', fontSize: '14px' }} onClick={(e) => {
                     e.stopPropagation()
-                    openQueriesModal(record)
-                  }}
-                  style={{
-                    color: queriesToShow.some(query => dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))) ? '#ff4d4f' : '#1890ff',
-                    fontWeight: queriesToShow.some(query => dayjs(query.updated_at).isAfter(dayjs().subtract(2, 'day').startOf('day'))) ? 'bold' : 'normal'
-                  }}
-                >
-                  Queries ({queriesToShow.length})
-                </Button>
+                    openChatModal(record, 'admin')
+                  }}>
+                    ⚠️
+                  </span>
                 )}
               </Space>
-            )
-          },
+            </Space>
+          ),
         },
       ]
     }
@@ -1621,16 +1795,16 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             return parseEnquiryDate(a.enquiry_date) - parseEnquiryDate(b.enquiry_date)
           },
           sortDirections: ['ascend', 'descend'],
-          render: f.render ?? (dateFields.has(f.name) 
-            ? (value) => formatDate(value) 
+          render: f.render ?? (dateFields.has(f.name)
+            ? (value) => formatDate(value)
             : (value) => wrapWithTooltip(value, f.width ? Math.floor(f.width / 8) : 30)),
         }
       }
 
       return {
         ...baseColumn,
-        render: f.render ?? (dateFields.has(f.name) 
-          ? (value) => formatDate(value) 
+        render: f.render ?? (dateFields.has(f.name)
+          ? (value) => formatDate(value)
           : (value) => wrapWithTooltip(value, f.width ? Math.floor(f.width / 8) : 30)),
       }
     })
@@ -1649,17 +1823,41 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
       {
         key: 'actions',
         title: 'Actions',
-        width: 80,
+        width: 100,
         render: (_, record) => (
           <Space size="small">
-            <Button size="small" type="link" onClick={() => openRemarksModal(record)}>
-              Remarks
-            </Button>
+            <Button
+              size="small"
+              type="link"
+              icon={<InfoCircleOutlined />}
+              onClick={(e) => { e.stopPropagation(); openDetailModal(record) }}
+              title="More Details"
+            />
+            <Space size={4}>
+              <Badge count={countUnseenReplies(record, currentUserGroup)} size="small" offset={[-2, 2]}>
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<MessageOutlined />}
+                  onClick={(e) => { e.stopPropagation(); openChatModal(record, 'admin') }}
+                  style={{ color: countUnseenReplies(record, currentUserGroup) > 0 ? '#ff4d4f' : '#1890ff' }}
+                  title="Chat"
+                />
+              </Badge>
+              {isPendingReply(record, currentUserName, currentUserGroup) && (
+                <span title="Reply Needed" style={{ cursor: 'pointer', fontSize: '14px' }} onClick={(e) => {
+                  e.stopPropagation()
+                  openChatModal(record, 'admin')
+                }}>
+                  ⚠️
+                </span>
+              )}
+            </Space>
           </Space>
         ),
       },
     ]
-  }, [openRemarksModal, openQueriesModal, currentUserCentre, currentUserGroup, statusFilter])
+  }, [openDetailModal, openChatModal, currentUserCentre, currentUserGroup, statusFilter, currentUserName])
 
   return (
     <>
@@ -1667,147 +1865,201 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         <Tabs defaultActiveKey="proposals">
           <Tabs.TabPane tab="Proposals" key="proposals">
             <div className="space-y-6">
-              {/* Header: Stats + Add Button */}
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1">
-                  <Card className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer" onClick={() => setStatusFilter(null)}>
-                    <Statistic title={<span className="text-white/90">Total Proposals Submitted</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                  </Card>
-                  <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer" onClick={() => setStatusFilter('proposals')}>
-                    <Statistic title={<span className="text-white/90">Pending</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                  </Card>
-                  <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer" onClick={() => setStatusFilter('totalProjects')}>
-                    <Statistic title={<span className="text-white/90"> Converted to Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
-                      <div className="mt-2 text-xs text-white/80">
-                        {Object.entries(statistics.projectCodeBreakdown)
-                          .filter(([, count]) => count > 0)
-                          .map(([code, count], idx, arr) => (
-                            <span key={code}>
-                              {code}: {count}
-                              {idx < arr.length - 1 ? ' | ' : ''}
-                            </span>
-                          ))}
-                      </div>
-                    )}
-                  </Card>
-                  <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer" onClick={() => setStatusFilter('technicallyCompleted')}>
-                    <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                  </Card>
-                  <Card className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white cursor-pointer" onClick={() => setStatusFilter('financiallyNotCompleted')}>
-                    <Statistic title={<span className="text-white/90">Financially Not Completed</span>} value={statistics.financiallyNotCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                  </Card>
-                  <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer" onClick={() => setStatusFilter('financiallyCompleted')}>
-                    <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                  </Card>
-                  <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer" onClick={() => setStatusFilter('pendingProjects')}>
-                    <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
-                    {statistics.onHoldProjects > 0 && (
-                      <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
-                        On hold: {statistics.onHoldProjects}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-
-                
-              </div>
-
-              {/* Search & Filters */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <Title level={4} className="!mb-4">Search & Filters</Title>
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} md={6}>
-                    <Input placeholder="Search proposals..." prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} allowClear size="large" />
-                  </Col>
-                  <Col xs={24} md={4}>
-                    <Select placeholder="Project Code Prefix" value={projectCodePrefix || undefined} onChange={setProjectCodePrefix} allowClear size="large" style={{ width: '100%' }}>
-                      {uniqueProjectPrefixes.map((p) => (<Select.Option key={p} value={p}>{p}</Select.Option>))}
-                    </Select>
-                  </Col>
-                  <Col xs={24} md={4}>
-                    <Select placeholder="Project Coordinator" value={coordinatorFilter} onChange={setCoordinatorFilter} allowClear size="large" style={{ width: '100%' }}>
-                      {uniqueCoordinators.map((c) => (<Select.Option key={c} value={c}>{c}</Select.Option>))}
-                    </Select>
-                  </Col>
-                  <Col xs={24} md={5}>
-                    <RangePicker placeholder={['Order Date Start', 'End']} value={orderDateRange} onChange={setOrderDateRange} size="large" style={{ width: '100%' }} format={DISPLAY_DATE_FORMAT} />
-                  </Col>
-                  <Col xs={24} md={5}>
-                    <RangePicker placeholder={['Enquiry Start', 'End']} value={enquiryDateRange} onChange={setEnquiryDateRange} size="large" style={{ width: '100%' }} format={DISPLAY_DATE_FORMAT} />
-                  </Col>
-                </Row>
-                <div className="mt-4 flex justify-between">
-                  <Button onClick={() => {
-                    setSearchText('')
-                    setCentreFilter(null)
-                    setOrderDateRange(null)
-                    setEnquiryDateRange(null)
-                    setStatusFilter(null)
-                    setProjectCodePrefix('')
-                  }}>
-                    Clear Filters
-                  </Button>
-                  <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportExcel}>
-                    Export to Excel
-                  </Button>
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <Title level={4} className="!mb-1">Proposal / Projects</Title>
-                    <p className="text-slate-500 text-sm">Showing {filteredData.length} records</p>
+              <style>{`
+                @keyframes blinkChatBtn {
+                  0%, 100% { opacity: 1; transform: scale(1); }
+                  50% { opacity: 0.65; transform: scale(0.97); }
+                }
+                .blink-chat-btn {
+                }
+              `}</style>
+              {(() => {
+                const handleStatusCardClick = (val) => {
+                  setStatusFilter(val)
+                  setShowNewMessagesOnly(false)
+                  setShowPendingReplyOnly(false)
+                }
+                return (
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1">
+                      <Card className="bg-gradient-to-br from-slate-500 to-slate-700 text-white cursor-pointer" onClick={() => handleStatusCardClick(null)}>
+                        <Statistic title={<span className="text-white/90">Total Proposals Submitted</span>} value={statistics.allCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      </Card>
+                      <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer" onClick={() => handleStatusCardClick('proposals')}>
+                        <Statistic title={<span className="text-white/90">Pending</span>} value={statistics.totalProposals} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      </Card>
+                      <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer" onClick={() => handleStatusCardClick('totalProjects')}>
+                        <Statistic title={<span className="text-white/90"> Converted to Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
+                          <div className="mt-2 text-xs text-white/80">
+                            {Object.entries(statistics.projectCodeBreakdown)
+                              .filter(([, count]) => count > 0)
+                              .map(([code, count], idx, arr) => (
+                                <span key={code}>
+                                  {code}: {count}
+                                  {idx < arr.length - 1 ? ' | ' : ''}
+                                </span>
+                              ))}
+                          </div>
+                        )}
+                      </Card>
+                      <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer" onClick={() => handleStatusCardClick('technicallyCompleted')}>
+                        <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      </Card>
+                      <Card className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white cursor-pointer" onClick={() => handleStatusCardClick('financiallyNotCompleted')}>
+                        <Statistic title={<span className="text-white/90">Financially Not Completed</span>} value={statistics.financiallyNotCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      </Card>
+                      <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer" onClick={() => handleStatusCardClick('financiallyCompleted')}>
+                        <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                      </Card>
+                      <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer" onClick={() => handleStatusCardClick('pendingProjects')}>
+                        <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                        {statistics.onHoldProjects > 0 && (
+                          <div style={{ fontSize: '12px', color: '#fff', opacity: 0.8, marginTop: '4px' }}>
+                            On hold: {statistics.onHoldProjects}
+                          </div>
+                        )}
+                      </Card>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    {statusFilter === 'proposals' && (
-                      <Button
-                        type={showUnacknowledgedOnly ? 'primary' : 'default'}
-                        size="large"
-                        danger
-                        disabled={!unacknowledgedCount}
-                        onClick={handleUnacknowledgedToggle}
-                        className={showUnacknowledgedOnly ? 'shadow-md hover:shadow-lg' : ''}
-                      >
-                        ⚠️ Unacknowledged
+                )
+              })()}
+
+              <div className="flex flex-col gap-6 mt-6">
+                {/* Search & Filters */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="mb-4">
+                    <Title level={4} className="!mb-0">Search & Filters</Title>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <Input
+                      placeholder="Search proposals..."
+                      prefix={<SearchOutlined />}
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                    />
+                    <Select
+                      placeholder="Filter by Project Number"
+                      value={projectCodePrefix}
+                      onChange={setProjectCodePrefix}
+                      allowClear
+                    >
+                      {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT'].map((code) => (
+                        <Select.Option key={code} value={code}>
+                          {code}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                    <RangePicker
+                      placeholder={['Enquiry Start', 'Enquiry End']}
+                      value={enquiryDateRange}
+                      onChange={setEnquiryDateRange}
+                      format={DISPLAY_DATE_FORMAT}
+                    />
+                    <RangePicker
+                      placeholder={['Order Start', 'Order End']}
+                      value={orderDateRange}
+                      onChange={setOrderDateRange}
+                      format={DISPLAY_DATE_FORMAT}
+                    />
+                    <div className="flex gap-2">
+                      <Button onClick={() => {
+                        setSearchText('')
+                        setOrderDateRange(null)
+                        setEnquiryDateRange(null)
+                        setStatusFilter(null)
+                        setProjectCodePrefix('')
+                        setShowNewMessagesOnly(false)
+                        setShowPendingReplyOnly(false)
+                      }}>
+                        Clear Filters
                       </Button>
-                    )}
+                      <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportExcel}>
+                        Export to Excel
+                      </Button>
+                    </div>
                   </div>
                 </div>
-                <Table
-  className="role-proposals-table"
-  rowKey="id"
-  columns={columns}
-  dataSource={filteredData}
-  loading={tableLoading}
-  pagination={{
-    current: currentPage,
-    pageSize: pageSize,
-    showSizeChanger: true,
-    pageSizeOptions: ['10', '20', '50', '100'],
-    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-    onChange: (page, size) => {
-      setCurrentPage(page)
-      setPageSize(size)
-    },
-    onShowSizeChange: (current, size) => {
-      setCurrentPage(1)
-      setPageSize(size)
-    },
-  }}
-  tableLayout="fixed"
-  sticky
-  bordered
-  onRow={(record) => ({
-    onClick: () => openDetailModal(record),
-    style: { 
-      cursor: 'pointer',
-      backgroundColor: record.status === 'On Hold' ? '#fff2e8' : 'transparent',
-    },
-  })}
-/>
+
+                {/* Table */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <Title level={4} className="!mb-1">Proposal / Projects</Title>
+                      <p className="text-slate-500 text-sm">Showing {filteredData.length} records</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type={showNewMessagesOnly ? 'primary' : 'default'}
+                        size="large"
+                        onClick={() => {
+                          setShowNewMessagesOnly(!showNewMessagesOnly)
+                          setShowPendingReplyOnly(false)
+                        }}
+                        className={showNewMessagesOnly ? 'shadow-md hover:shadow-lg' : (unreadChatsCount > 0 ? 'blink-chat-btn' : '')}
+                        style={showNewMessagesOnly ? {} : (unreadChatsCount > 0 ? {} : { borderColor: '#1890ff', color: '#1890ff' })}
+                      >
+                        💬 Unread Chats ({unreadChatsCount})
+                      </Button>
+                      <Button
+                        type={showPendingReplyOnly ? 'primary' : 'default'}
+                        size="large"
+                        onClick={() => {
+                          setShowPendingReplyOnly(!showPendingReplyOnly)
+                          setShowNewMessagesOnly(false)
+                        }}
+                        className={showPendingReplyOnly ? 'shadow-md hover:shadow-lg' : ''}
+                        style={showPendingReplyOnly ? {} : { borderColor: '#fa8c16', color: '#fa8c16' }}
+                      >
+                        ⚠️ Reply Needed ({pendingReplyCount})
+                      </Button>
+                      {statusFilter === 'proposals' && (
+                        <Button
+                          type={showUnacknowledgedOnly ? 'primary' : 'default'}
+                          size="large"
+                          danger
+                          disabled={!unacknowledgedCount}
+                          onClick={handleUnacknowledgedToggle}
+                          className={showUnacknowledgedOnly ? 'shadow-md hover:shadow-lg' : ''}
+                        >
+                          ⚠️ Unacknowledged
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <Table
+                    className="role-proposals-table"
+                    rowKey="id"
+                    columns={columns}
+                    dataSource={filteredData}
+                    loading={tableLoading}
+                    pagination={{
+                      current: currentPage,
+                      pageSize: pageSize,
+                      showSizeChanger: true,
+                      pageSizeOptions: ['10', '20', '50', '100'],
+                      showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+                      onChange: (page, size) => {
+                        setCurrentPage(page)
+                        setPageSize(size)
+                      },
+                      onShowSizeChange: (current, size) => {
+                        setCurrentPage(1)
+                        setPageSize(size)
+                      },
+                    }}
+                    tableLayout="fixed"
+                    sticky
+                    bordered
+                    onRow={(record) => ({
+                      onClick: () => openDetailModal(record),
+                      style: {
+                        cursor: 'pointer',
+                        backgroundColor: record.status === 'On Hold' ? '#fff2e8' : 'transparent',
+                      },
+                    })}
+                  />
+                </div>
               </div>
             </div>
           </Tabs.TabPane>
@@ -1847,10 +2099,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
           // >
           //   {/* Upload */}
           // </Button>,
-          <Button key="remarks" type="primary" onClick={() => {
+          <Button key="chat" type="primary" onClick={() => {
             closeDetailModal()
-            openRemarksModal(selectedRecord)
-          }}>Remarks</Button>,
+            openChatModal(selectedRecord, 'admin')
+          }}>Chat</Button>,
         ]}
         maskClosable={false}
       >
@@ -2102,8 +2354,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         width={600}
       >
         <Space direction="vertical" size="large" className="w-full">
-          <Radio.Group 
-            value={uploadDocType} 
+          <Radio.Group
+            value={uploadDocType}
             onChange={handleDocTypeChange}
             buttonStyle="solid"
             className="w-full"
@@ -2122,11 +2374,11 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
             onRemove: () => setFileToUpload(null),
             fileList: fileToUpload
               ? [{
-                  uid: fileToUpload.uid || fileToUpload.name,
-                  name: fileToUpload.name,
-                  status: 'done',
-                  originFileObj: fileToUpload,
-                }]
+                uid: fileToUpload.uid || fileToUpload.name,
+                name: fileToUpload.name,
+                status: 'done',
+                originFileObj: fileToUpload,
+              }]
               : [],
           }}>
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
@@ -2213,11 +2465,10 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                             {excelRendererData.sheets.map((sheet, index) => (
                               <button
                                 key={index}
-                                className={`px-3 py-1 text-sm border-b-2 transition-colors ${
-                                  activeSheetIndex === index
-                                    ? 'border-blue-500 text-blue-600 font-medium'
-                                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                                }`}
+                                className={`px-3 py-1 text-sm border-b-2 transition-colors ${activeSheetIndex === index
+                                  ? 'border-blue-500 text-blue-600 font-medium'
+                                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                                  }`}
                                 onClick={() => setActiveSheetIndex(index)}
                               >
                                 {sheet.name || `Sheet ${index + 1}`}
@@ -2227,14 +2478,14 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         )}
                       </div>
                       <div className="space-x-2">
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           onClick={() => setIsFullscreen(!isFullscreen)}
                         >
                           {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                         </Button>
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           icon={<DownloadOutlined />}
                           onClick={() => window.open(currentUrl, '_blank')}
                         >
@@ -2242,7 +2493,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         </Button>
                       </div>
                     </div>
-                    
+
                     <style>{`
                       .excel-scroll-container {
                         overflow: auto;
@@ -2284,7 +2535,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                       const currentSheet = excelRendererData.sheets ? excelRendererData.sheets[activeSheetIndex] : excelRendererData
                       const currentRows = currentSheet?.rows || excelRendererData.rows || []
                       const currentCols = currentSheet?.cols || excelRendererData.cols || []
-                      
+
                       return currentRows.length > 0 ? (
                         <div className="excel-scroll-container h-full">
                           <table className="excel-table">
@@ -2299,8 +2550,8 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                               {currentRows.map((row, rowIndex) => (
                                 <tr key={rowIndex}>
                                   {row.map((cell, cellIndex) => (
-                                    <td 
-                                      key={cellIndex} 
+                                    <td
+                                      key={cellIndex}
                                       title={cell}
                                     >
                                       {cell}
@@ -2321,7 +2572,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                 )
               }
             }
-            
+
             // For Word documents, use mammoth.js
             if (ext === 'docx' || ext === 'doc') {
               if (wordDocumentLoading) {
@@ -2360,14 +2611,14 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-lg font-semibold">Word Document Viewer - Mammoth.js</h3>
                       <div className="space-x-2">
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           onClick={() => setIsFullscreen(!isFullscreen)}
                         >
                           {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                         </Button>
-                        <Button 
-                          size="small" 
+                        <Button
+                          size="small"
                           icon={<DownloadOutlined />}
                           onClick={() => window.open(currentUrl, '_blank')}
                         >
@@ -2375,7 +2626,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                         </Button>
                       </div>
                     </div>
-                    <div 
+                    <div
                       className={`overflow-auto border border-gray-300 rounded-lg p-4 ${isFullscreen ? 'h-[90vh]' : 'h-[70vh]'}`}
                       dangerouslySetInnerHTML={{ __html: wordDocumentContent }}
                     />
@@ -2383,7 +2634,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                 )
               }
             }
-            
+
             // For other Office files (PowerPoint, etc.)
             return (
               <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
@@ -2461,7 +2712,7 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
               const isTextArea = field.input === 'textarea'
               const isUpdatedByField = field.name === 'updated_by'
               const isProposalStatusField = field.name === 'proposal_status'
-              
+
               // Date fields that should use DatePicker
               const dateFields = [
                 'enquiry_date',
@@ -2474,12 +2725,12 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                 'dispatch_date',
               ]
               const isDateField = dateFields.includes(field.name)
-              
+
               return (
                 <Col span={12} key={field.name}>
-                  <Form.Item 
-                    name={field.name} 
-                    label={field.label} 
+                  <Form.Item
+                    name={field.name}
+                    label={field.label}
                     rules={field.required ? [{ required: true, message: `${field.label} is required` }] : []}
                     getValueProps={(value) => {
                       // AntD `Select` with `mode="tags"` expects an array value.
@@ -2544,9 +2795,9 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
                     ) : isTextArea ? (
                       <TextArea rows={3} placeholder={`Enter ${field.label}`} disabled={isUpdatedByField && editingRecord} />
                     ) : isDateField ? (
-                      <DatePicker 
-                        style={{ width: '100%' }} 
-                        format="DD.MM.YYYY" 
+                      <DatePicker
+                        style={{ width: '100%' }}
+                        format="DD.MM.YYYY"
                         placeholder={`Select ${field.label}`}
                       />
                     ) : (
@@ -2560,173 +2811,114 @@ const [enquiryDateRange, setEnquiryDateRange] = useState(null)
         </Form>
       </Modal>
 
-      {/* Remarks Modal */}
       <Modal
-        title="Create Remarks"
-        open={remarksModalOpen}
-        onCancel={closeRemarksModal}
+        title={
+          <div className="flex flex-col gap-2">
+            <span className="text-base font-semibold text-slate-800">
+              {chatProject?.activity || chatProject?.project_number || 'Conversation'}
+            </span>
+            {(() => {
+              const pi = normalizeName(chatProject?.project_co_ordinator || chatProject?.quotation_given_by_name)
+              const cur = normalizeName(currentUserName)
+              return pi && cur && (pi.includes(cur) || cur.includes(pi))
+            })() ? (
+              <span className="text-xs text-slate-400">Chat with Admin</span>
+            ) : (
+              (() => {
+                const adminUnseen = chatProject ? getThreadUnseenCount(chatProject, currentUserGroup, 'admin') : 0
+                const piUnseen = chatProject ? getThreadUnseenCount(chatProject, currentUserGroup, 'pi') : 0
+                return (
+                  <Segmented
+                    value={chatThread}
+                    onChange={switchChatThread}
+                    options={[
+                      {
+                        label: (
+                          <Badge count={adminUnseen} size="small" offset={[8, -2]}>
+                            <span>Admin</span>
+                          </Badge>
+                        ),
+                        value: 'admin'
+                      },
+                      {
+                        label: (
+                          <Badge count={piUnseen} size="small" offset={[8, -2]}>
+                            <span>PI{chatProject ? ` (${getPiName(chatProject) || 'Unassigned'})` : ''}</span>
+                          </Badge>
+                        ),
+                        value: 'pi'
+                      },
+                    ]}
+                  />
+                )
+              })()
+            )}
+          </div>
+        }
+        open={chatModalOpen}
+        onCancel={closeChatModal}
+        footer={null}
         width={600}
-        footer={[
-          <Button key="cancel" onClick={closeRemarksModal}>Cancel</Button>,
-          <Button
-            key="submit"
-            type="primary"
-            loading={remarksLoading}
-            onClick={handleRemarksSubmit}
-          >
-            Submit Remarks
-          </Button>,
-        ]}
-        maskClosable={false}
+        styles={{ body: { padding: 0 } }}
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Target:</label>
-            <Radio.Group 
-              value={remarksTarget} 
-              onChange={(e) => setRemarksTarget(e.target.value)}
-              buttonStyle="solid"
-              className="w-full"
-            >
-              <Radio.Button value="admin" className="w-1/2 text-center">Admin</Radio.Button>
-              <Radio.Button value="pi" className="w-1/2 text-center">PI</Radio.Button>
-            </Radio.Group>
+        <div className="flex flex-col" style={{ height: '60vh' }}>
+          <div className="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-3">
+            {chatLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Spin />
+              </div>
+            ) : chatEvents.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+                No messages yet. Start the conversation below.
+              </div>
+            ) : (
+              chatEvents.map((event) => {
+                const isOwn = chatThread === 'admin'
+                  ? normalizeName(event.from_) !== 'admin'
+                  : normalizeName(event.from_) !== normalizeName(getPiName(chatProject) || '')
+                return (
+                  <div key={event.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 shadow-sm ${isOwn
+                        ? 'rounded-tr-sm bg-blue-500 text-white'
+                        : 'rounded-tl-sm bg-white text-slate-800 border border-slate-200'
+                        }`}
+                    >
+                      <div className="text-sm">{event.content}</div>
+                      <div className={`mt-1 text-[10px] ${isOwn ? 'text-blue-100' : 'text-slate-400'}`}>
+                        {event.from_} · {dayjs(event.timestamp).format('DD MMM, HH:mm')}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+            <div ref={messagesEndRef} />
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">From:</label>
-            <Input 
-              value={currentUserGroup || 'Group Head'} 
-              disabled 
-              className="w-full" 
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">To:</label>
-            <Input 
-              value={remarksTarget === 'admin' ? 'admin' : (selectedRecord?.project_co_ordinator || selectedRecord?.quotation_given_by_name || 'Unknown')} 
-              disabled 
-              className="w-full" 
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Project ID:</label>
-            <Input 
-              value={selectedRecord?.id || ''} 
-              disabled 
-              className="w-full" 
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Remarks Description:</label>
-            <Input 
-              value={remarksDescription} 
-              onChange={(e) => setRemarksDescription(e.target.value)}
-              className="w-full" 
-            />
-          </div>
-        </div>
-      </Modal>
 
-      {/* Queries Modal for GH users */}
-      <Modal
-        title={`Queries for Project: ${selectedProjectForQueries?.project_number || selectedProjectForQueries?.activity || 'N/A'}`}
-        open={queriesModalOpen}
-        onCancel={closeQueriesModal}
-        width={800}
-        footer={[
-          <Button key="close" onClick={closeQueriesModal}>Close</Button>,
-        ]}
-      >
-        <div className="mb-4">
-          <Button 
-            type="primary" 
-            onClick={() => {
-              if (selectedProjectForQueries) {
-                closeQueriesModal()
-                openRemarksModal(selectedProjectForQueries)
-              }
-            }}
-          >
-            Add Remarks
-          </Button>
-        </div>
-        <Table
-          dataSource={queriesData}
-          loading={queriesLoading}
-          rowKey="id"
-          pagination={false}
-          columns={[
-            {
-              title: 'From',
-              dataIndex: 'from_',
-              key: 'from_',
-              width: 100,
-            },
-            {
-              title: 'To',
-              dataIndex: 'to',
-              key: 'to',
-              width: 100,
-            },
-            {
-              title: 'Query',
-              dataIndex: 'remarks_description',
-              key: 'remarks_description',
-              ellipsis: true,
-              render: (text, record) => (
-                <span style={{ 
-                  color: record.respond_to_remarks ? '#52c41a' : '#ff4d4f',
-                  fontWeight: record.respond_to_remarks ? 'normal' : 'bold'
-                }}>
-                  {text}
-                </span>
-              ),
-            },
-            {
-              title: 'Date',
-              dataIndex: 'updated_at',
-              key: 'updated_at',
-              width: 120,
-              render: (value) => {
-                if (!value) return '-'
-                const queryDate = dayjs(value)
-                const today = dayjs().startOf('day')
-                const yesterday = dayjs().subtract(1, 'day').startOf('day')
-                
-                if (queryDate.isSame(today, 'day')) {
-                  return 'Today ' + queryDate.format('HH:mm')
-                } else if (queryDate.isSame(yesterday, 'day')) {
-                  return 'Yesterday ' + queryDate.format('HH:mm')
-                } else {
-                  return queryDate.format('DD-MM-YYYY HH:mm')
+          <div className="border-t border-slate-200 bg-white p-3 flex gap-2 items-end">
+            <TextArea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Type a message..."
+              autoSize={{ minRows: 1, maxRows: 3 }}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault()
+                  handleSendChatMessage()
                 }
-              },
-            },
-            {
-              title: 'Response',
-              dataIndex: 'respond_to_remarks',
-              key: 'respond_to_remarks',
-              ellipsis: true,
-              width: 150,
-              render: (response) => response ? (
-                <Tooltip title={response} placement="topLeft">
-                  <span style={{ color: '#52c41a', fontWeight: '500', cursor: 'pointer' }}>
-                    {response}
-                  </span>
-                </Tooltip>
-              ) : (
-                <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>No Response</span>
-              ),
-            },
-          ]}
-        />
-        {queriesData.length === 0 && !queriesLoading && (
-          <div className="text-center text-gray-500 mt-4">No queries found for this project.</div>
-        )}
+              }}
+            />
+            <Button
+              type="primary"
+              loading={chatSending}
+              disabled={!chatInput.trim()}
+              onClick={handleSendChatMessage}
+            >
+              Send
+            </Button>
+          </div>
+        </div>
       </Modal>
     </>
   )

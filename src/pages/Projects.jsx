@@ -17,7 +17,8 @@ import {
   Popconfirm,
   Form,
   DatePicker,
-  Select
+  Select,
+  Tabs
 } from 'antd'
 import {
   EyeOutlined,
@@ -1159,6 +1160,7 @@ function Projects() {
 
   const [searchText, setSearchText] = useState('')
   const [selectedCenter, setSelectedCenter] = useState(undefined)   // “center” field in your project objects
+  const [selectedProjectType, setSelectedProjectType] = useState('ALL')
 
   // Extract unique centers-centers for the dropdown (you can adjust the field name if it’s different)
   const centerOptions = useMemo(() => {
@@ -1194,6 +1196,7 @@ function Projects() {
   const handleClearFilters = () => {
     setSearchText('')
     setSelectedCenter(undefined)
+    setSelectedProjectType('ALL')
   }
 
   // Helper to get project type from project number
@@ -2700,11 +2703,31 @@ function Projects() {
         )}
       </Text>
 
+      <Tabs
+        activeKey={selectedProjectType}
+        onChange={setSelectedProjectType}
+        className="mb-6"
+        items={[
+          {
+            key: 'ALL',
+            label: `All (${filteredCards.length})`,
+          },
+          ...projectTypeOrder.map((type) => {
+            const count = groupedProjects[type]?.length || 0
+            return {
+              key: type,
+              label: `${type} (${count})`,
+            }
+          }),
+        ]}
+      />
+
       {filteredCards.length === 0 ? (
         <Empty description="No projects match the current filters" />
       ) : (
         <div className="space-y-8">
           {projectTypeOrder.map((type) => {
+            if (selectedProjectType !== 'ALL' && selectedProjectType !== type) return null
             const projects = groupedProjects[type]
             if (!projects || projects.length === 0) return null
 
