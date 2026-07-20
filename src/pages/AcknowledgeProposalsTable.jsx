@@ -22,8 +22,14 @@ import {
   Select,
   Row,
   Col,
-  Popover
+  Popover,
+  Card,
+  Statistic
 } from 'antd'
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons'
 
 import { ExcelRenderer } from 'react-excel-renderer'
 import mammoth from 'mammoth'

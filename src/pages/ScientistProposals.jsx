@@ -345,7 +345,7 @@ function ScientistProposals() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [dateRange, setDateRange] = useState(null)
-  const [statusFilter, setStatusFilter] = useState('totalProjects')
+  const [statusFilter, setStatusFilter] = useState(null)
   const [projectNumberFilter, setProjectNumberFilter] = useState(null)
   const [currentUserName, setCurrentUserName] = useState(() => {
     try {
@@ -1279,14 +1279,11 @@ function ScientistProposals() {
   const loadChatMessages = useCallback(async (record, thread) => {
     setChatLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
+      const response = await fetch(`${API_BASE_URL}/Remarkss/?project_id=${record.id}`, {
         headers: { accept: 'application/json' },
       })
-      const allQueries = response.ok ? await response.json() : []
-      const projectMessages = Array.isArray(allQueries)
-        ? allQueries.filter((q) => String(q.project_id) === String(record.id))
-        : []
-      setChatMessages(projectMessages)
+      const projectMessages = response.ok ? await response.json() : []
+      setChatMessages(Array.isArray(projectMessages) ? projectMessages : [])
     } catch (error) {
       console.error('Error loading chat:', error)
       message.error('Unable to load conversation')

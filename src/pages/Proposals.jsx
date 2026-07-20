@@ -364,6 +364,7 @@ function Proposals() {
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
   const [projectNumberFilter, setProjectNumberFilter] = useState([])
   const [groupFilter, setGroupFilter] = useState([])
   const [isAcknowledgedFilter, setIsAcknowledgedFilter] = useState(null)
@@ -497,14 +498,11 @@ function Proposals() {
   const loadChatMessages = useCallback(async (record) => {
     setChatLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/Remarkss/`, {
+      const response = await fetch(`${API_BASE_URL}/Remarkss/?project_id=${record.id}`, {
         headers: { accept: 'application/json' },
       })
-      const allQueries = response.ok ? await response.json() : []
-      const projectMessages = Array.isArray(allQueries)
-        ? allQueries.filter((q) => String(q.project_id) === String(record.id))
-        : []
-      setChatMessages(projectMessages)
+      const projectMessages = response.ok ? await response.json() : []
+      setChatMessages(Array.isArray(projectMessages) ? projectMessages : [])
     } catch (error) {
       console.error('Error loading chat:', error)
       message.error('Unable to load conversation')
@@ -1230,16 +1228,15 @@ function Proposals() {
 
     if (duplicates.size === 0) {
       message.info('No duplicate Quote References found')
-      setFilteredData(tableData)
+      setShowDuplicatesOnly(false)
       return
     }
 
+    setShowDuplicatesOnly(true)
     const duplicateRows = tableData.filter((item) => {
       const ref = (item.quote_reference || '').trim().toLowerCase()
       return ref && duplicates.has(ref)
     })
-
-    setFilteredData(duplicateRows)
     message.warning(`Found ${duplicateRows.length} proposals with duplicate Quote References`)
   }
 
@@ -1589,8 +1586,26 @@ function Proposals() {
       filtered = filtered.filter(isPendingReply)
     }
 
+    if (showDuplicatesOnly) {
+      const seen = new Map()
+      const duplicates = new Set()
+      tableData.forEach((item) => {
+        const ref = (item.quote_reference || '').trim().toLowerCase()
+        if (!ref) return
+        if (seen.has(ref)) {
+          duplicates.add(ref)
+        } else {
+          seen.set(ref, true)
+        }
+      })
+      filtered = filtered.filter((item) => {
+        const ref = (item.quote_reference || '').trim().toLowerCase()
+        return ref && duplicates.has(ref)
+      })
+    }
+
     setFilteredData(filtered)
-  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, smallValueProjectFilter, tableData, selectedDateField, startDate, endDate, showNewMessagesOnly, showPendingReplyOnly])
+  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, isAcknowledgedFilter, smallValueProjectFilter, tableData, selectedDateField, startDate, endDate, showNewMessagesOnly, showPendingReplyOnly, showDuplicatesOnly])
 
   // Get unique centers for filter
   const uniqueCentres = useMemo(() => {
@@ -2490,6 +2505,7 @@ function Proposals() {
                       setStatusFilter(val)
                       setShowNewMessagesOnly(false)
                       setShowPendingReplyOnly(false)
+                      setShowDuplicatesOnly(false)
                     }
 
                     return (
@@ -3324,22 +3340,53 @@ function Proposals() {
 
                       {/* Filter Toggles */}
                       <Button
+                        type="default"
                         icon={<FilterOutlined />}
                         onClick={() => setFiltersOpen((prev) => !prev)}
-                        className={`h-10 rounded-lg ${filtersOpen ? 'border-blue-500 text-blue-600 bg-blue-50/50' : ''}`}
+                        className={`h-10 rounded-lg font-medium`}
+                        style={{
+                          borderColor: '#2563eb',
+                          color: '#2563eb',
+                          backgroundColor: filtersOpen ? '#eff6ff' : '#ffffff'
+                        }}
                       >
                         Filters
                         {activeFilterCount > 0 && (
-                          <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-semibold text-white">
+                          <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">
                             {activeFilterCount}
                           </span>
                         )}
+                      </Button>
+
+                      {/* Clear Filters (Placed next to Filter button) */}
+                      <Button
+                        onClick={() => {
+                          setSearchText('')
+                          setCentreFilter([])
+                          setOrderDateRange(null)
+                          setStatusFilter(null)
+                          setProjectNumberFilter([])
+                          setGroupFilter([])
+                          setIsAcknowledgedFilter(null)
+                          setSmallValueProjectFilter(null)
+                          setSelectedDateField('enquiry_date')
+                          setStartDate(null)
+                          setEndDate(null)
+                          setShowNewMessagesOnly(false)
+                          setShowPendingReplyOnly(false)
+                          setShowDuplicatesOnly(false)
+                        }}
+                        className="h-10 rounded-lg font-medium"
+                        style={{ borderColor: '#ef4444', color: '#dc2626' }}
+                      >
+                        Clear Filters
                       </Button>
 
                       {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
                         <>
                           <Button
                             type={showNewMessagesOnly ? 'primary' : 'default'}
+                            size="small"
                             onClick={() => {
                               setShowNewMessagesOnly(!showNewMessagesOnly)
                               setShowPendingReplyOnly(false)
@@ -3352,6 +3399,7 @@ function Proposals() {
 
                           <Button
                             type={showPendingReplyOnly ? 'primary' : 'default'}
+                            size="small"
                             onClick={() => {
                               setShowPendingReplyOnly(!showPendingReplyOnly)
                               setShowNewMessagesOnly(false)
@@ -3369,26 +3417,6 @@ function Proposals() {
 
                       {/* Action Controls */}
                       <Space wrap size="small">
-                        <Button
-                          onClick={() => {
-                            setSearchText('')
-                            setCentreFilter([])
-                            setOrderDateRange(null)
-                            setStatusFilter(null)
-                            setProjectNumberFilter([])
-                            setGroupFilter([])
-                            setIsAcknowledgedFilter(null)
-                            setSmallValueProjectFilter(null)
-                            setSelectedDateField('enquiry_date')
-                            setStartDate(null)
-                            setEndDate(null)
-                            setShowNewMessagesOnly(false)
-                            setShowPendingReplyOnly(false)
-                          }}
-                          className="h-10 rounded-lg text-slate-600"
-                        >
-                          Clear Filters
-                        </Button>
                         {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
                           <Button onClick={handleShowDuplicateQuoteRefs} className="h-10 rounded-lg text-slate-600">
                             Duplicate Quote Refs

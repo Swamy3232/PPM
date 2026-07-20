@@ -161,198 +161,208 @@ function Sidebar() {
   return (
     <Sider
       width={260}
-      className="bg-white shadow-lg flex flex-col justify-between"
-      style={{ position: 'fixed', left: 0, top: 0, bottom: 0, height: '100vh', zIndex: 100 }}
+      style={{ 
+        position: 'fixed', 
+        left: 0, 
+        top: 0, 
+        bottom: 0, 
+        height: '100vh', 
+        zIndex: 100,
+        background: '#ffffff',
+        borderRight: '1px solid #e2e8f0',
+        boxShadow: '4px 0 24px rgba(148, 163, 184, 0.08)'
+      }}
     >
-      <div>
-        <div className="flex flex-col items-start gap-4 px-6 py-8 border-b border-slate-200">
-          <div className="w-full flex items-center justify-center">
+      <div className="flex flex-col justify-between h-full">
+        <div>
+          {/* Logo Section */}
+          <div className="flex items-center justify-center px-6 py-6 border-b border-slate-100">
             <img
               src={cmtiLogo}
               alt="CMTI logo"
-              className="h-16 w-auto object-contain"
+              className="h-14 w-auto object-contain transition-transform duration-300 hover:scale-105"
             />
           </div>
+
+          {/* Welcome User Profile Card */}
           {userName && (
-            <div className="mt-2 w-full text-center">
-              <Text type="secondary">Welcome</Text>
-              <div>
-                <Text strong>{userName}</Text>
+            <div className="px-4 py-4">
+              <div className="bg-gradient-to-r from-slate-50 to-blue-50/30 rounded-xl p-4 border border-slate-100 shadow-sm flex flex-col items-center">
+                <Text style={{ fontSize: '12px', color: '#64748b', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Welcome Back</Text>
+                <Text className="mt-1 text-slate-800 font-semibold" style={{ fontSize: '15px' }}>{userName}</Text>
+                <div className="mt-1.5 px-2.5 py-0.5 bg-blue-500/10 text-blue-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                  {userRole || 'User'}
+                </div>
               </div>
             </div>
           )}
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          onClick={(info) => {
-            const prefix = `/${basePath}`
 
-            if (info.key === 'configuration') navigate(`${prefix}/configuration`)
-            else if (info.key === 'projects') navigate(`${prefix}/projects`)
-            else if (info.key === 'analytics') navigate(`${prefix}/analytics`)
-            // else if (info.key === 'financial-analytics') navigate(`${prefix}/financial-analytics`)
-            else if (info.key === 'master-proposals') navigate(`${prefix}/master-proposals`)
-            else if (info.key === 'gh-master-proposals') navigate(`${prefix}/gh-master-proposals`)
-            else if (info.key === 'notification') navigate(`${prefix}/notification`)
-            else if (info.key === 'gh-notification') navigate(`${prefix}/gh-notification`)
-            else if (info.key === 'access-control') navigate(`${prefix}/access-control`)
-            else if (info.key === 'customers') navigate(`${prefix}/customers`)
-            else if (info.key === 'overall-analytics') navigate(`${prefix}/overall-analytics`)
-            
-            else navigate(`${prefix}/proposals`)
-          }}
-          items={[
-            { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals / Projects' },
-            ...(!isDirector ? [{ key: 'projects', icon: <ProjectOutlined />, label: 'Projects Documents' }] : []),
+          {/* Menu Links */}
+          <Menu
+            mode="inline"
+            selectedKeys={[selectedKey]}
+            style={{ borderRight: 'none', padding: '0 8px' }}
+            onClick={(info) => {
+              const prefix = `/${basePath}`
 
-            // ...(isGHOrScientist
-            //   ? [
-            //       {
-            //         key: 'gh-master-proposals',
-            //         icon: <ProfileOutlined />,
-            //         label: 'Master Proposals',
-            //       },
-            //     ]
-            //   : []),
+              if (info.key === 'configuration') navigate(`${prefix}/configuration`)
+              else if (info.key === 'projects') navigate(`${prefix}/projects`)
+              else if (info.key === 'analytics') navigate(`${prefix}/analytics`)
+              else if (info.key === 'master-proposals') navigate(`${prefix}/master-proposals`)
+              else if (info.key === 'gh-master-proposals') navigate(`${prefix}/gh-master-proposals`)
+              else if (info.key === 'notification') navigate(`${prefix}/notification`)
+              else if (info.key === 'gh-notification') navigate(`${prefix}/gh-notification`)
+              else if (info.key === 'access-control') navigate(`${prefix}/access-control`)
+              else if (info.key === 'customers') navigate(`${prefix}/customers`)
+              else if (info.key === 'overall-analytics') navigate(`${prefix}/overall-analytics`)
+              
+              else navigate(`${prefix}/proposals`)
+            }}
+            items={[
+              { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals / Projects' },
+              ...(!isDirector ? [{ key: 'projects', icon: <ProjectOutlined />, label: 'Projects Documents' }] : []),
 
-            ...(isGHOrScientist
-              ? [
-                  {
-                    key: 'gh-notification',
-                    icon: <ProfileOutlined />,
-                    label: (
-                      <span>
-                        Notification
-                        {notificationCount > 0 && (
-                          <span
-                            style={{
+              ...(isGHOrScientist
+                ? [
+                    {
+                      key: 'gh-notification',
+                      icon: <ProfileOutlined />,
+                      label: (
+                        <span>
+                          Notification
+                          {notificationCount > 0 && (
+                            <span
+                              style={{
+                                backgroundColor: '#ff4d4f',
+                                borderRadius: '50%',
+                                color: 'white',
+                                padding: '0 6px',
+                                marginLeft: '8px',
+                                fontSize: '12px',
+                              }}
+                            >
+                              {notificationCount}
+                            </span>
+                          )}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),  
+
+              ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
+                ? [
+                    {
+                      key: 'master-proposals',
+                      icon: <ProfileOutlined />,
+                      label: (
+                        <span>
+                          Acknowledge Proposals
+                          {unacknowledgedCount > 0 && (
+                            <span
+                              style={{
+                                backgroundColor: '#ff4d4f',
+                                borderRadius: '50%',
+                                color: 'white',
+                                padding: '0 4px',
+                                marginLeft: '4px',
+                                fontSize: '10px',
+                                lineHeight: '14px',
+                                display: 'inline-block',
+                              }}
+                            >
+                              {unacknowledgedCount}
+                            </span>
+                          )}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
+
+              ...((isDirector || isCH || isGHOrScientist) ? [{
+                      key: 'analytics',
+                      icon: <BarChartOutlined />,
+                      label: isCH ? 'CH Analytics' : isDirector ? 'Project Analytics' : basePath === 'scientist' ? 'Scientist Analytics' : 'Analytics',
+              }] : []),
+
+              ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
+                ? [
+                    {
+                      key: 'overall-analytics',
+                      icon: <BarChartOutlined />,
+                      label: 'Overall Analytics',
+                    },
+                    {
+                      key: 'configuration',
+                      icon: <SettingOutlined />,
+                      label: 'Configuration',
+                    },
+                  ]
+                : []),
+
+                ...((normalizedBasePath === 'admin')
+                ? [
+                    {
+                      key: 'notification',
+                      icon: <BellOutlined />, 
+                      label: (
+                        <span>
+                          Notification
+                          {notificationCount > 0 && (
+                            <span style={{
                               backgroundColor: '#ff4d4f',
                               borderRadius: '50%',
                               color: 'white',
                               padding: '0 6px',
                               marginLeft: '8px',
-                              fontSize: '12px',
-                            }}
-                          >
-                            {notificationCount}
-                          </span>
-                        )}
-                      </span>
-                    ),
-                  },
-                ]
-              : []),  
+                              fontSize: '12px'
+                            }}>
+                              {notificationCount}
+                            </span>
+                          )}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
 
-            ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
-              ? [
+                ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
+                ? [
+                    {
+                      key: 'access-control',
+                      icon: <UsergroupAddOutlined />, 
+                      label: 'Access Control'
+                    },
+                  ]
+                : []),
+                ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
+                ? [
                   {
-                    key: 'master-proposals',
-                    icon: <ProfileOutlined />,
-                    label: (
-                      <span>
-                        Acknowledge Proposals
-                        {unacknowledgedCount > 0 && (
-                          <span
-                            style={{
-                              backgroundColor: '#ff4d4f',
-                              borderRadius: '50%',
-                              color: 'white',
-                              padding: '0 4px',
-                              marginLeft: '4px',
-                              fontSize: '10px',
-                              lineHeight: '14px',
-                              display: 'inline-block',
-                            }}
-                          >
-                            {unacknowledgedCount}
-                          </span>
-                        )}
-                      </span>
-                    ),
-                  },
+                    key: 'customers',
+                    icon: <TeamOutlined />,
+                    label: 'Customers'
+                  }
                 ]
-              : []),
+                : [])
+            ]}
+            className="text-base"
+          />
+        </div>
 
-            ...((isDirector || isCH || isGHOrScientist) ? [{
-                    key: 'analytics',
-                    icon: <BarChartOutlined />,
-                    label: isCH ? 'CH Analytics' : isDirector ? 'Project Analytics' : basePath === 'scientist' ? 'Scientist Analytics' : 'Analytics',
-            }] : []),
-
-            // ...(isDirector ? [{
-            //         key: 'financial-analytics',
-            //         icon: <BarChartOutlined />,
-            //         label: 'Financial Analytics',
-            // }] : []),
-
-            ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
-              ? [
-                  {
-                    key: 'overall-analytics',
-                    icon: <BarChartOutlined />,
-                    label: 'Overall Analytics',
-                  },
-                  {
-                    key: 'configuration',
-                    icon: <SettingOutlined />,
-                    label: 'Configuration',
-                  },
-                ]
-              : []),
-
-              ...((normalizedBasePath === 'admin')
-              ? [
-                  {
-                    key: 'notification',
-                    icon: <BellOutlined />, 
-                    label: (
-                      <span>
-                        Notification
-                        {notificationCount > 0 && (
-                          <span style={{
-                            backgroundColor: '#ff4d4f',
-                            borderRadius: '50%',
-                            color: 'white',
-                            padding: '0 6px',
-                            marginLeft: '8px',
-                            fontSize: '12px'
-                          }}>
-                            {notificationCount}
-                          </span>
-                        )}
-                      </span>
-                    ),
-                  },
-                ]
-              : []),
-
-              ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
-              ? [
-                  {
-                    key: 'access-control',
-                    icon: <UsergroupAddOutlined />, 
-                    label: 'Access Control'
-                  },
-                ]
-              : []),
-              ...((normalizedBasePath === 'admin' || normalizedBasePath === 'guest')
-              ? [
-                {
-                  key: 'customers',
-                  icon: <TeamOutlined />,
-                  label: 'Customers'
-                }
-              ]
-              : [])
-          ]}
-          className="text-base"
-        />
-      </div>
-      <div className="px-4 pb-4 border-t border-slate-200 pt-3">
-        <Button danger block onClick={handleLogout}>
-          Logout
-        </Button>
+        {/* Footer & Logout */}
+        <div className="px-4 pb-6 border-t border-slate-100 pt-4 bg-slate-50/50">
+          <Button 
+            danger 
+            block 
+            size="large"
+            type="primary"
+            onClick={handleLogout}
+            style={{ borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            Logout
+          </Button>
+        </div>
       </div>
     </Sider>
   )
