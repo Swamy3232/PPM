@@ -2171,20 +2171,24 @@ function Proposals() {
         width: 110,
         render: (_, record) => {
           const isGuest = ['guest', 'role'].includes(currentUserRole?.toLowerCase().trim())
-          const unseenCount = countUnseenReplies(record)
-          const pendingReply = isPendingReply(record)
+          const unseenCount = isGuest ? 0 : countUnseenReplies(record)
+          const pendingReply = isGuest ? false : isPendingReply(record)
           const hasBadge = unseenCount > 0 || pendingReply
 
           const menuItems = [
-            {
-              key: 'chat',
-              label: (
-                <span title={`Chat${unseenCount > 0 ? ` (${unseenCount} new)` : ''}${pendingReply ? ' - Reply needed' : ''}`} style={{ color: unseenCount > 0 ? '#ff4d4f' : undefined, display: 'flex', justifyContent: 'center', fontSize: '16px' }}>
-                  <MessageOutlined />
-                </span>
-              ),
-              onClick: () => openChatModal(record),
-            },
+            ...(!isGuest
+              ? [
+                {
+                  key: 'chat',
+                  label: (
+                    <span title={`Chat${unseenCount > 0 ? ` (${unseenCount} new)` : ''}${pendingReply ? ' - Reply needed' : ''}`} style={{ color: unseenCount > 0 ? '#ff4d4f' : undefined, display: 'flex', justifyContent: 'center', fontSize: '16px' }}>
+                      <MessageOutlined />
+                    </span>
+                  ),
+                  onClick: () => openChatModal(record),
+                },
+              ]
+              : []),
             ...(isProposalConverted(record.proposals_converted)
               ? [
                 {
@@ -2250,17 +2254,19 @@ function Proposals() {
                   title="Edit"
                 />
               )}
-              <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-                <Badge dot={hasBadge} color="#ff4d4f" offset={[-2, 2]}>
-                  <Button
-                    size="small"
-                    type="link"
-                    icon={<MoreOutlined />}
-                    title="More actions"
-                    style={{ color: hasBadge ? '#ff4d4f' : undefined }}
-                  />
-                </Badge>
-              </Dropdown>
+              {menuItems.length > 0 && (
+                <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                  <Badge dot={hasBadge} color="#ff4d4f" offset={[-2, 2]}>
+                    <Button
+                      size="small"
+                      type="link"
+                      icon={<MoreOutlined />}
+                      title="More actions"
+                      style={{ color: hasBadge ? '#ff4d4f' : undefined }}
+                    />
+                  </Badge>
+                </Dropdown>
+              )}
             </Space>
           )
         },
@@ -2534,13 +2540,13 @@ function Proposals() {
                             valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                           />
                           {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
-                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                            <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                               {Object.entries(statistics.projectCodeBreakdown)
                                 .filter(([, count]) => count > 0)
                                 .map(([code, count], idx, arr) => (
                                   <span key={code}>
                                     {code}: {count}
-                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                    {idx < arr.length - 1 ? ' |' : ''}
                                   </span>
                                 ))}
                             </div>
@@ -2560,13 +2566,13 @@ function Proposals() {
                             valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                           />
                           {Object.keys(statistics.technicallyCompletedBreakdown).length > 0 && (
-                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                            <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                               {Object.entries(statistics.technicallyCompletedBreakdown)
                                 .filter(([, count]) => count > 0)
                                 .map(([code, count], idx, arr) => (
                                   <span key={code}>
                                     {code}: {count}
-                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                    {idx < arr.length - 1 ? ' |' : ''}
                                   </span>
                                 ))}
                             </div>
@@ -2586,13 +2592,13 @@ function Proposals() {
                             valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                           />
                           {Object.keys(statistics.financiallyCompletedBreakdown).length > 0 && (
-                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                            <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                               {Object.entries(statistics.financiallyCompletedBreakdown)
                                 .filter(([, count]) => count > 0)
                                 .map(([code, count], idx, arr) => (
                                   <span key={code}>
                                     {code}: {count}
-                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                    {idx < arr.length - 1 ? ' |' : ''}
                                   </span>
                                 ))}
                             </div>
@@ -2612,13 +2618,13 @@ function Proposals() {
                             valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                           />
                           {Object.keys(statistics.ongoingProjectsBreakdown).length > 0 && (
-                            <div className="mt-2 text-[11px] text-white/80 font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                            <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                               {Object.entries(statistics.ongoingProjectsBreakdown)
                                 .filter(([, count]) => count > 0)
                                 .map(([code, count], idx, arr) => (
                                   <span key={code}>
                                     {code}: {count}
-                                    {idx < arr.length - 1 ? ' | ' : ''}
+                                    {idx < arr.length - 1 ? ' |' : ''}
                                   </span>
                                 ))}
                             </div>
@@ -3330,29 +3336,33 @@ function Proposals() {
                         )}
                       </Button>
 
-                      <Button
-                        type={showNewMessagesOnly ? 'primary' : 'default'}
-                        onClick={() => {
-                          setShowNewMessagesOnly(!showNewMessagesOnly)
-                          setShowPendingReplyOnly(false)
-                        }}
-                        className={`h-10 rounded-lg ${showNewMessagesOnly ? 'shadow-md hover:shadow-lg' : (unreadChatsCount > 0 ? 'blink-chat-btn' : '')}`}
-                        style={showNewMessagesOnly ? {} : (unreadChatsCount > 0 ? {} : { borderColor: '#1890ff', color: '#1890ff' })}
-                      >
-                        💬 Unread Chats ({unreadChatsCount})
-                      </Button>
+                      {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
+                        <>
+                          <Button
+                            type={showNewMessagesOnly ? 'primary' : 'default'}
+                            onClick={() => {
+                              setShowNewMessagesOnly(!showNewMessagesOnly)
+                              setShowPendingReplyOnly(false)
+                            }}
+                            className={`h-10 rounded-lg ${showNewMessagesOnly ? 'shadow-md hover:shadow-lg' : (unreadChatsCount > 0 ? 'blink-chat-btn' : '')}`}
+                            style={showNewMessagesOnly ? {} : (unreadChatsCount > 0 ? {} : { borderColor: '#1890ff', color: '#1890ff' })}
+                          >
+                            💬 Unread Chats ({unreadChatsCount})
+                          </Button>
 
-                      <Button
-                        type={showPendingReplyOnly ? 'primary' : 'default'}
-                        onClick={() => {
-                          setShowPendingReplyOnly(!showPendingReplyOnly)
-                          setShowNewMessagesOnly(false)
-                        }}
-                        className={`h-10 rounded-lg ${showPendingReplyOnly ? 'shadow-md hover:shadow-lg' : ''}`}
-                        style={showPendingReplyOnly ? {} : { borderColor: '#fa8c16', color: '#fa8c16' }}
-                      >
-                        ⚠️ Reply Needed ({pendingReplyCount})
-                      </Button>
+                          <Button
+                            type={showPendingReplyOnly ? 'primary' : 'default'}
+                            onClick={() => {
+                              setShowPendingReplyOnly(!showPendingReplyOnly)
+                              setShowNewMessagesOnly(false)
+                            }}
+                            className={`h-10 rounded-lg ${showPendingReplyOnly ? 'shadow-md hover:shadow-lg' : ''}`}
+                            style={showPendingReplyOnly ? {} : { borderColor: '#fa8c16', color: '#fa8c16' }}
+                          >
+                            ⚠️ Reply Needed ({pendingReplyCount})
+                          </Button>
+                        </>
+                      )}
 
                       {/* Spacer */}
                       <div className="flex-grow" />
@@ -3379,9 +3389,11 @@ function Proposals() {
                         >
                           Clear Filters
                         </Button>
-                        <Button onClick={handleShowDuplicateQuoteRefs} className="h-10 rounded-lg text-slate-600">
-                          Duplicate Quote Refs
-                        </Button>
+                        {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
+                          <Button onClick={handleShowDuplicateQuoteRefs} className="h-10 rounded-lg text-slate-600">
+                            Duplicate Quote Refs
+                          </Button>
+                        )}
                         {!['guest', 'role'].includes(currentUserRole?.toLowerCase().trim()) && (
                           <Button
                             icon={<UploadOutlined />}

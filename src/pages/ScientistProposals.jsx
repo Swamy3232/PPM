@@ -1426,8 +1426,6 @@ function ScientistProposals() {
     }
   }
 
-
-
   // Open/Close Coordinator Add Modal
   const openCoordinatorAddModal = () => {
     coordinatorForm.resetFields()

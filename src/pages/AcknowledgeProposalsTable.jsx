@@ -61,6 +61,23 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
   const [currentUserRole, setCurrentUserRole] = useState('')
 
   const [expandedRowKeys, setExpandedRowKeys] = useState([])
+  const [searchText, setSearchText] = useState('')
+  const [customerTypeFilter, setCustomerTypeFilter] = useState('ALL')
+
+  const filteredProposals = useMemo(() => {
+    return pendingProposals.filter((p) => {
+      const matchesSearch = searchText
+        ? [p.customer_name, p.quote_reference, p.quotation_given_by_name]
+            .some(val => (val || '').toString().toLowerCase().includes(searchText.toLowerCase()))
+        : true
+
+      const matchesCustomerType = customerTypeFilter === 'ALL'
+        ? true
+        : (p.customer_type || '').toString().toLowerCase().trim().includes(customerTypeFilter.toLowerCase())
+
+      return matchesSearch && matchesCustomerType
+    })
+  }, [pendingProposals, searchText, customerTypeFilter])
 
   const fetchPendingProposals = useCallback(async () => {
     setLoading(true)
@@ -292,7 +309,30 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
       render: (text) => formatDate(text),
     },
     { title: 'Customer Name', dataIndex: 'customer_name', key: 'customer_name', width: 180, ellipsis: true },
-    { title: 'Customer Type', dataIndex: 'customer_type', key: 'customer_type', width: 130 },
+    {
+      title: 'Customer Type',
+      dataIndex: 'customer_type',
+      key: 'customer_type',
+      width: 130,
+      render: (value) => {
+        if (!value) return '-'
+        const normalized = String(value).toLowerCase().trim()
+        let bg = '#F3F4F6'
+        let color = '#374151'
+        if (normalized.includes('private')) {
+          bg = '#DCFCE7'
+          color = '#15803D'
+        } else if (normalized.includes('govt') || normalized.includes('government') || normalized.includes('public')) {
+          bg = '#E0F2FE'
+          color = '#0369A1'
+        }
+        return (
+          <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full" style={{ backgroundColor: bg, color: color }}>
+            {value}
+          </span>
+        )
+      }
+    },
     { title: 'Quote Reference', dataIndex: 'quote_reference', key: 'quote_reference', width: 160, ellipsis: true },
     {
       title: 'Quote Date',
@@ -367,75 +407,139 @@ const AcknowledgeProposalsTable = ({ fetchProposalsTrigger }) => {
 
   // Everything else lives here, revealed by clicking the row's expand arrow
   const renderExpandedRow = (record) => (
-    <div className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-lg bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
-      <div>
-        <div className="text-xs font-medium text-slate-400">Address</div>
-        <div className="text-sm text-slate-700">{record.address || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Email</div>
-        <div className="text-sm text-slate-700">{record.email || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Phone No</div>
-        <div className="text-sm text-slate-700">{record.phone_no || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Alternate Contact</div>
-        <div className="text-sm text-slate-700">{record.alternate_contact_details || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Request Type</div>
-        <div className="text-sm text-slate-700">{record.request_type || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Email Reference</div>
-        <div className="text-sm text-slate-700">{record.email_reference || '-'}</div>
-      </div>
-      <div className="sm:col-span-2 lg:col-span-3">
-        <div className="text-xs font-medium text-slate-400">Quote Description</div>
-        <div className="text-sm text-slate-700">{record.quote_description || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Revised/Negotiated</div>
-        <div className="text-sm text-slate-700">{record['revised/negotiated'] || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Revised Quote Date</div>
-        <div className="text-sm text-slate-700">{formatDate(record['revised/negotiated_quote_date']) || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Revised Quote Amount</div>
-        <div className="text-sm text-slate-700">{record['revised/negotiated_quote_amount'] || '-'}</div>
-      </div>
-      <div>
-        <div className="text-xs font-medium text-slate-400">Department</div>
-        <div className="text-sm text-slate-700">{record.quotation_given_by_department || '-'}</div>
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-inner">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Column 1: Contact Details */}
+        <div className="space-y-3 bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+          <div className="font-semibold text-xs text-blue-600 uppercase tracking-wider border-b border-slate-100 pb-1.5 mb-2">
+            Contact Details
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Address</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.address || '-'}</div>
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Phone</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.phone_no || '-'}</div>
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Email</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.email || '-'}</div>
+          </div>
+        </div>
+
+        {/* Column 2: Proposal Specs */}
+        <div className="space-y-3 bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+          <div className="font-semibold text-xs text-indigo-600 uppercase tracking-wider border-b border-slate-100 pb-1.5 mb-2">
+            Proposal Specs
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Request Type</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.request_type || '-'}</div>
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Department</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.quotation_given_by_department || '-'}</div>
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Email Ref</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.email_reference || '-'}</div>
+          </div>
+        </div>
+
+        {/* Column 3: Financial Adjustments */}
+        <div className="space-y-3 bg-white p-4 rounded-lg border border-slate-100 shadow-sm">
+          <div className="font-semibold text-xs text-emerald-600 uppercase tracking-wider border-b border-slate-100 pb-1.5 mb-2">
+            Financial Adjustments
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Revised Date</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{formatDate(record['revised/negotiated_quote_date']) || '-'}</div>
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Revised Amount</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record['revised/negotiated_quote_amount'] || '-'}</div>
+          </div>
+          <div>
+            <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Description</div>
+            <div className="text-slate-800 font-medium text-sm mt-0.5">{record.quote_description || '-'}</div>
+          </div>
+        </div>
       </div>
     </div>
   )
 
   return (
-    <div className="overflow-x-auto">
-      <Table
-        rowKey="key"
-        columns={pendingColumns}
-        dataSource={pendingProposals}
-        loading={loading}
-        pagination={{ pageSize: 15 }}
-        bordered
-        scroll={{ y: 500 }}
-        sticky
-        expandable={{
-          expandedRowRender: renderExpandedRow,
-          expandedRowKeys: expandedRowKeys,
-          onExpand: (expanded, record) => {
-            setExpandedRowKeys(expanded ? [record.key] : [])
-          },
-          showExpandColumn: false,
-        }}
-        locale={{ emptyText: 'No pending proposals to acknowledge' }}
-      />
+    <div className="space-y-4">
+      {/* Header Toolbar */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2 border-b border-slate-100">
+        <Typography.Title level={3} className="!mb-0 flex flex-wrap items-center gap-2 text-slate-800">
+          Acknowledge Proposals Submitted by Project Coordinators
+          <span className="inline-flex items-center justify-center bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-1 rounded-full border border-blue-200">
+            {pendingProposals.length} Pending
+          </span>
+        </Typography.Title>
+        <div className="flex items-center gap-3">
+          <Input.Search
+            placeholder="Search proposals..."
+            allowClear
+            size="middle"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onSearch={setSearchText}
+            style={{ width: 260 }}
+            className="rounded-lg"
+          />
+          <Select
+            placeholder="Filter Customer Type"
+            value={customerTypeFilter}
+            onChange={setCustomerTypeFilter}
+            style={{ width: 185 }}
+            className="rounded-lg"
+            options={[
+              { label: 'All Customer Types', value: 'ALL' },
+              { label: 'Government (Govt)', value: 'Govt' },
+              { label: 'Private', value: 'Private' }
+            ]}
+          />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto acknowledge-table">
+        <Table
+          rowKey="key"
+          columns={pendingColumns}
+          dataSource={filteredProposals}
+          loading={loading}
+          pagination={{ pageSize: 15 }}
+          bordered
+          scroll={{ y: 500 }}
+          sticky
+          expandable={{
+            expandedRowRender: renderExpandedRow,
+            expandedRowKeys: expandedRowKeys,
+            onExpand: (expanded, record) => {
+              setExpandedRowKeys(expanded ? [record.key] : [])
+            },
+            showExpandColumn: false,
+          }}
+          locale={{ emptyText: 'No pending proposals to acknowledge' }}
+        />
+      </div>
+
+      <style>{`
+        .acknowledge-table .ant-table-thead > tr > th {
+          color: #334155 !important;
+          font-weight: 600 !important;
+          font-size: 11px !important;
+          text-transform: uppercase !important;
+          letter-spacing: 0.05em !important;
+          background-color: #f8fafc !important;
+        }
+        .acknowledge-table .ant-table-tbody > tr:hover > td {
+          background-color: #f1f5f9 !important;
+        }
+      `}</style>
 
       {/* Uploaded Documents (Version List) Modal */}
       <Modal

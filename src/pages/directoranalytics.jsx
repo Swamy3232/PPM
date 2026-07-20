@@ -6,6 +6,13 @@ import {
   FilterOutlined,
   CalendarOutlined,
   FullscreenOutlined,
+  FileTextOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  AppstoreOutlined,
+  DollarCircleOutlined,
+  PlayCircleOutlined,
+  StopOutlined,
 } from '@ant-design/icons'
 import {
   AutoComplete,
@@ -2474,64 +2481,45 @@ function directoranalytics() {
                   {/* Statistics Cards */}
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
                     <Card
-                      className="bg-gradient-to-br from-slate-500 to-slate-700 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-slate-500 to-slate-700 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => setStatusFilter(null)}
                     >
+                      <FileTextOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Total Proposals Submitted
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Total Submitted</span>}
                         value={statistics.allCount}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                     <Card
-                      className="
-bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => {
                         setStatusFilter('proposals')
                         setProjectNumberFilter([])
                       }}
                     >
+                      <ClockCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Pending
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Pending</span>}
                         value={statistics.totalProposals}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => setStatusFilter('totalProjects')}
                     >
+                      <CheckCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Converted to Projects
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Converted</span>}
                         value={statistics.totalProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                       {Object.keys(statistics.projectCodeBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
+                        <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                           {Object.entries(statistics.projectCodeBreakdown)
                             .filter(([, count]) => count > 0)
                             .map(([code, count], idx, arr) => (
@@ -2544,24 +2532,18 @@ bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl t
                       )}
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => setStatusFilter('technicallyCompleted')}
                     >
+                      <AppstoreOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Technically Completed
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Tech Completed</span>}
                         value={statistics.technicallyCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                       {Object.keys(statistics.technicallyCompletedBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
+                        <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                           {Object.entries(statistics.technicallyCompletedBreakdown)
                             .filter(([, count]) => count > 0)
                             .map(([code, count], idx, arr) => (
@@ -2574,24 +2556,18 @@ bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl t
                       )}
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => setStatusFilter('financiallyNotCompleted')}
                     >
+                      <StopOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Financially Not Completed
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Fin. Not Completed</span>}
                         value={statistics.financiallyNotCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                       {Object.keys(statistics.financiallyNotCompletedBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
+                        <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                           {Object.entries(statistics.financiallyNotCompletedBreakdown)
                             .filter(([, count]) => count > 0)
                             .map(([code, count], idx, arr) => (
@@ -2604,24 +2580,18 @@ bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl t
                       )}
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => setStatusFilter('financiallyCompleted')}
                     >
+                      <DollarCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Financially Completed
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Financially Completed</span>}
                         value={statistics.financiallyCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                       {Object.keys(statistics.financiallyCompletedBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
+                        <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                           {Object.entries(statistics.financiallyCompletedBreakdown)
                             .filter(([, count]) => count > 0)
                             .map(([code, count], idx, arr) => (
@@ -2634,24 +2604,18 @@ bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl t
                       )}
                     </Card>
                     <Card
-                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+                      style={{ borderRadius: '16px', border: 'none' }}
                       onClick={() => setStatusFilter('pendingProjects')}
                     >
+                      <PlayCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Ongoing Projects
-                          </span>
-                        }
+                        title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Ongoing Projects</span>}
                         value={statistics.pendingProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                       {Object.keys(statistics.ongoingProjectsBreakdown).length > 0 && (
-                        <div className="mt-2 text-xs text-white/80">
+                        <div className="mt-2 text-[11px] text-white/80 font-medium flex flex-wrap gap-x-1">
                           {Object.entries(statistics.ongoingProjectsBreakdown)
                             .filter(([, count]) => count > 0)
                             .map(([code, count], idx, arr) => (

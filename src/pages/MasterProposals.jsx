@@ -521,10 +521,6 @@ function MasterProposals() {
     <>
       {/* Master Proposals Table - Responsive with fixed header on vertical scroll */}
       <div className="rounded-3xl bg-white p-4 md:p-6 shadow-sm mt-8">
-        <Title level={3} className="mb-4">
-          Acknowledge Proposals Submitted by Project Coordinators
-        </Title>
-
         <AcknowledgeProposalsTable fetchProposalsTrigger={fetchProposals} />
       </div>
 

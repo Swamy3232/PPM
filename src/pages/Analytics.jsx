@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, Statistic, Row, Col, Select, Typography, message } from 'antd'
+import {
+  FileTextOutlined,
+  AppstoreOutlined,
+  DollarCircleOutlined,
+  PlayCircleOutlined,
+  ProjectOutlined,
+} from '@ant-design/icons'
 import Chart from 'chart.js/auto'
 import { API_BASE_URL } from '../config/api.js'
 
@@ -13,11 +20,11 @@ function Analytics() {
   const [masterProposals, setMasterProposals] = useState([])
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState(null)
-  
+
   // Default range: from 2018 to 2026
   const [selectedFromYear, setSelectedFromYear] = useState(2018)
   const [selectedToYear, setSelectedToYear] = useState(2026)
-  
+
   const chartRef = useRef(null)
   const chartInstanceRef = useRef(null)
   const pie1Ref = useRef(null)
@@ -148,11 +155,11 @@ function Analytics() {
     const technicallyCompleted = tableData.filter(
       (item) => item.technical_completed_year && item.technical_completed_year.trim() !== '',
     ).length
-    const financiallyCompleted = tableData.filter((item) => 
+    const financiallyCompleted = tableData.filter((item) =>
       item.technical_completed_year && item.technical_completed_year.toString().trim() !== '' &&
       item.financial_completed_year && item.financial_completed_year.toString().trim() !== ''
     ).length
-    const pendingProjects = tableData.filter((item) => 
+    const pendingProjects = tableData.filter((item) =>
       item.project_number && item.project_number.trim() !== '' &&
       (!item.technical_completed_year || item.technical_completed_year.trim() === '') &&
       (!item.financial_completed_year || item.financial_completed_year.trim() === '')
@@ -223,14 +230,14 @@ function Analytics() {
   const proposalsPerYear = useMemo(() => {
     const counts = {}
     chartLabels.forEach(year => counts[year] = 0)
-    
+
     for (const mp of masterProposals) {
       const year = getQuoteYear(mp.quote_date)
       if (year && chartLabels.includes(year)) {
         counts[year] = (counts[year] || 0) + 1
       }
     }
-    
+
     return chartLabels.map(year => counts[year] || 0)
   }, [masterProposals, chartLabels])
 
@@ -247,7 +254,7 @@ function Analytics() {
   }, [proposals, chartLabels])
 
   const PROJECT_PREFIXES = ['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SVP', 'TOT', 'SVP', 'TOT']
-  
+
   const getProjectPrefix = (pn) => {
     if (!pn) return 'OTHER'
     const up = String(pn).toUpperCase().trim()
@@ -366,7 +373,7 @@ function Analytics() {
           y: {
             beginAtZero: true,
             suggestedMax: Math.max(
-              30, 
+              30,
               Math.max(...proposalsPerYear, ...projectsPerYear)
             ),
             ticks: {
@@ -391,7 +398,7 @@ function Analytics() {
           }
         },
         plugins: {
-          legend: { 
+          legend: {
             display: true,
             position: 'top',
             labels: {
@@ -431,7 +438,7 @@ function Analytics() {
           labels: dataset.labels,
           datasets: [
             {
-              data: dataset.data,                               
+              data: dataset.data,
               backgroundColor: colors,
               borderColor: '#ffffff',
               borderWidth: 1,
@@ -573,65 +580,86 @@ function Analytics() {
   return (
     <div style={{ padding: '24px', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
       <Title level={2} style={{ marginBottom: '24px' }}>Analytics Dashboard</Title>
-      
+
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={8} lg={5}>
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>Total Proposals</span>} 
-              value={proposalCount} 
-              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
+          <Card
+            className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+            style={{ borderRadius: '16px', border: 'none' }}
+          >
+            <FileTextOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+            <Statistic
+              title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Total Proposals</span>}
+              value={proposalCount}
+              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={5}>
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>Total Projects</span>} 
-              value={stats.totalProjects} 
-              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
+          <Card
+            className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+            style={{ borderRadius: '16px', border: 'none' }}
+          >
+            <ProjectOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+            <Statistic
+              title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Total Projects</span>}
+              value={stats.totalProjects}
+              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={5}>
-          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>Technically Completed</span>} 
-              value={stats.technicallyCompleted} 
-              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
+          <Card
+            className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+            style={{ borderRadius: '16px', border: 'none' }}
+          >
+            <AppstoreOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+            <Statistic
+              title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Technically Completed</span>}
+              value={stats.technicallyCompleted}
+              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={5}>
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>Financially Completed</span>} 
-              value={stats.financiallyCompleted} 
-              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
+          <Card
+            className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+            style={{ borderRadius: '16px', border: 'none' }}
+          >
+            <DollarCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+            <Statistic
+              title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Financially Completed</span>}
+              value={stats.financiallyCompleted}
+              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8} lg={4}>
-          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>Ongoing Projects</span>} 
-              value={stats.pendingProjects} 
-              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
+          <Card
+            className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer relative overflow-hidden"
+            style={{ borderRadius: '16px', border: 'none' }}
+          >
+            <PlayCircleOutlined className="absolute right-4 top-4 text-white opacity-25 text-3xl" />
+            <Statistic
+              title={<span className="text-white/80 text-xs font-semibold uppercase tracking-wider">Ongoing Projects</span>}
+              value={stats.pendingProjects}
+              valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
             />
           </Card>
         </Col>
       </Row>
 
-      <Card style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-          <Title level={4} style={{ margin: 0 }}>Proposals & Projects per Year</Title>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 500 }}>From:</span>
+      <Card style={{ marginBottom: '24px', borderRadius: '16px' }}>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <Title level={4} style={{ margin: 0 }}>Proposals &amp; Projects per Year</Title>
+          <div className="flex items-center gap-3 flex-wrap bg-slate-50 border border-slate-100 rounded-xl px-4 py-2">
+            <span className="text-slate-500 text-sm font-medium">From:</span>
             <Select
               value={selectedFromYear}
               onChange={(v) => setSelectedFromYear(Number(v))}
-              size="large"
-              style={{ width: 120 }}
+              size="middle"
+              style={{ width: 110 }}
+              className="rounded-lg"
             >
               {availableYears.map((y) => (
                 <Select.Option key={y} value={y}>
@@ -639,12 +667,13 @@ function Analytics() {
                 </Select.Option>
               ))}
             </Select>
-            <span style={{ fontWeight: 500 }}>To:</span>
+            <span className="text-slate-500 text-sm font-medium">To:</span>
             <Select
               value={selectedToYear}
               onChange={(v) => setSelectedToYear(Number(v))}
-              size="large"
-              style={{ width: 120 }}
+              size="middle"
+              style={{ width: 110 }}
+              className="rounded-lg"
             >
               {availableYears.map((y) => (
                 <Select.Option key={y} value={y}>
@@ -703,15 +732,15 @@ function Analytics() {
             <div style={{ height: '350px' }}>
               <canvas ref={pie4Ref}></canvas>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '12px', height: '12px', backgroundColor: '#4CAF50', borderRadius: '50%' }}></div>
-                <span>Converted: {conversionData?.converted_to_project || 0}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '12px', height: '12px', backgroundColor: '#F44336', borderRadius: '50%' }}></div>
-                <span>Remained: {conversionData?.remained_as_proposal || 0}</span>
-              </div>
+            <div className="flex justify-center gap-4 mt-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                Converted: {conversionData?.converted_to_project || 0}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100">
+                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+                Remained: {conversionData?.remained_as_proposal || 0}
+              </span>
             </div>
           </Card>
         </Col>
