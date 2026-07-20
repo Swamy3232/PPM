@@ -18,6 +18,27 @@ from services.dynamic_table_headers import compute_rows_for_header, set_cell_bac
 router = APIRouter(prefix="/dynamic-tables", tags=["Dynamic Tables"])
 
 
+def format_indian_currency(amount: float) -> str:
+    s = f"{amount:.2f}"
+    parts = s.split(".")
+    integer_part = parts[0]
+    decimal_part = parts[1] if len(parts) > 1 else "00"
+    
+    reversed_int = integer_part[::-1]
+    first_three = reversed_int[:3]
+    remaining = reversed_int[3:]
+    
+    groups = [first_three]
+    for i in range(0, len(remaining), 2):
+        groups.append(remaining[i:i+2])
+        
+    formatted_int = ",".join(groups)[::-1]
+    if formatted_int.startswith("-,") or formatted_int.startswith("-"):
+        formatted_int = "-" + formatted_int.replace("-", "").lstrip(",")
+        
+    return f"{formatted_int}.{decimal_part}"
+
+
 class DynamicTableItem(BaseModel):
     header_name: str
     columns: List[str]
@@ -287,7 +308,11 @@ def save_and_generate_word_document(
             is_total_row = "total" in first_val
 
             for col_idx, col_name in enumerate(item.columns):
-                cell_value = str(row_data.get(col_name, "") or "")
+                raw_val = row_data.get(col_name, "")
+                if isinstance(raw_val, (int, float)):
+                    cell_value = format_indian_currency(raw_val)
+                else:
+                    cell_value = str(raw_val or "")
                 row_cells[col_idx].text = cell_value
                 if is_total_row:
                     set_cell_background(row_cells[col_idx], "F7FAFC")
@@ -309,7 +334,7 @@ def save_and_generate_word_document(
     total_label_run = total_para.add_run(f"Total Amount{formula_suffix}: ")
     total_label_run.font.bold = True
     total_label_run.font.size = Pt(12)
-    total_value_run = total_para.add_run(f"{grand_total:.2f}")
+    total_value_run = total_para.add_run(format_indian_currency(grand_total))
     total_value_run.font.bold = True
     total_value_run.font.size = Pt(12)
 
