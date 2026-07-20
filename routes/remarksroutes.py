@@ -55,8 +55,11 @@ def create_Remarks(data: schemas.RemarksCreate, db: Session = Depends(get_db)):
 
 # ---------------- READ ALL ----------------
 @router.get("/", response_model=list[schemas.RemarksResponse])
-def get_all_Remarkss(db: Session = Depends(get_db)):
-    return db.query(Remarks).all()
+def get_all_Remarkss(project_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(Remarks)
+    if project_id is not None:
+        query = query.filter(Remarks.project_id == project_id)
+    return query.all()
 
 
 # ---------------- READ ONE ----------------

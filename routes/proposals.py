@@ -193,6 +193,8 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
 # ------------------------------
 # LIST ALL PROPOSALS
 # ------------------------------
+from sqlalchemy.orm import joinedload
+
 @router.get("/")
 def list_proposals(
     db: Session = Depends(get_db),
@@ -200,7 +202,7 @@ def list_proposals(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> List[ProposalResponse]:
-    query = db.query(Proposal).filter(Proposal.is_acknowledged == True)
+    query = db.query(Proposal).filter(Proposal.is_acknowledged == True).options(joinedload(Proposal.payments))
     
     # Apply date range filter if provided
     if date_field and start_date and end_date:
@@ -240,14 +242,9 @@ def list_proposals(
             if not key.startswith("_")
         }
         
-        # Get all payments for this proposal (linked via project_id)
-        payments = db.query(Payment).filter(
-            Payment.project_id == proposal.id
-        ).all()
-        
-        # Serialize payments data
+        # Serialize payments data from the pre-loaded relationship
         payments_data = []
-        for payment in payments:
+        for payment in proposal.payments:
             payment_dict = {
                 key: value
                 for key, value in payment.__dict__.items()
